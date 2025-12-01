@@ -1,7 +1,5 @@
 1.0.0 – Initial Release
 
-Date: 2025-XX-XX
-
 Added
 
 Full modern rebuild of the MoP Classic friends list UI.
@@ -35,8 +33,6 @@ Restored invite button visibility for non-BNet WoW friends (disabled in MoP Clas
 Correct faction icon behavior:
 
 Shows your faction icon for MoP Classic characters
-
-Opposite-faction icons planned for a future update
 
 Unified logic for online/offline handling.
 

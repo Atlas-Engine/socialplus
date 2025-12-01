@@ -1,0 +1,15 @@
+## Interface: 50500
+## Title: SocialPlus
+## Notes: Enhanced friends list with groups, smarter invites, and MoP Classic fixes.
+## Author: Atlas-Engine
+## Version: 1.0.0
+## SavedVariables: SocialPlus_SavedVars
+## DefaultState: Enabled
+## LoadOnDemand: 0
+
+## X-Category: Chat & Communication
+## X-Website: https://github.com/Atlas-Engine/socialplus
+## X-Credits: Based on FriendGroups, heavily refactored for MoP Classic.
+
+# Core Lua
+SocialPlus.lua

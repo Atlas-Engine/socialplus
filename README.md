@@ -10,13 +10,13 @@ Lightweight, responsive, and designed to feel native to the game.
 
 SocialPlus replaces Blizzard’s outdated MoP-era invite logic with a custom engine:
 
-Works for Battle.net friends
+Works for Battle.net friends.
 
-Works for normal WoW friends (non-BNet)
+Works for normal WoW friends (non-BNet).
 
-Supports cross-realm invites in MoP Classic
+Supports cross-realm invites in MoP Classic.
 
-Shows clear red tooltips when inviting is not possible
+Shows clear red tooltips when inviting is not possible.
 
 Blizzard’s client restrictions are inconsistent in MoP Classic — SocialPlus fixes that.
 
@@ -24,25 +24,25 @@ Blizzard’s client restrictions are inconsistent in MoP Classic — SocialPlus 
 
 Organize your friends list your way:
 
-Create custom groups
+Create custom groups.
 
-Assign or remove friends
+Assign or remove friends.
 
-Collapsible category headers
+Collapsible category headers.
 
-Clean visual separation
+Clean visual separation.
 
-Persistent saved settings
+Persistent saved settings.
 
 Perfect for large or community-driven friend lists.
 
 🎨 UI Enhancements
 
-Shows your own faction icon for players in MoP Classic (opposing faction icons will be supported in a future update).
+Shows your own faction icon for players in MoP Classic.
 
-Invite buttons restored for non-BNet WoW friends
+Invite buttons restored for non-BNet WoW friends.
 
-No layout conflicts with UI frameworks
+No layout conflicts with UI frameworks.
 
 Everything integrates seamlessly into Blizzard’s Social UI.
 
@@ -50,26 +50,26 @@ Everything integrates seamlessly into Blizzard’s Social UI.
 
 Right-click any group header to access:
 
-Hide all max-level characters
+Hide all max-level characters.
 
-Enable or disable class-colored names
+Enable or disable class-colored names.
 
-Hide all offline players
+Hide all offline players.
 
-Collapse or expand groups
+Collapse or expand groups.
 
-Remove or rename groups
+Remove or rename groups.
 
 🔧 MoP-Classic Engine Improvements
 
 MoP Classic uses a hybrid social API that causes inconsistent behavior in the default UI.
 SocialPlus improves these areas:
 
-Restores cross-realm invites
+Restores cross-realm invites.
 
-Fixes incorrect realm/client restriction messages
+Fixes incorrect realm/client restriction messages.
 
-Ensures offline characters never retain faction icons
+Ensures offline characters never retain faction icons.
 
 🙏 Credits
 
