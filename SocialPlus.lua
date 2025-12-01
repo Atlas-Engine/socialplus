@@ -602,7 +602,7 @@ local function SocialPlus_UpdateFriendButton(button)
 			-- Faction icon ONLY when online
 			if FACTION_ICON_PATH then
 				-- Bigger crest, centered, pulled slightly left
-				FG_ApplyGameIcon(button, FACTION_ICON_PATH, 42, "CENTER", "RIGHT", -27, -8)
+				FG_ApplyGameIcon(button, FACTION_ICON_PATH, 50, "CENTER", "RIGHT", -27, -9)
 			elseif button.gameIcon then
 				button.gameIcon:Hide()
 			end
@@ -696,22 +696,30 @@ local function SocialPlus_UpdateFriendButton(button)
 			end
 
 			-- Decide what icon to show:
-			--  - If they are playing the SAME WoW project as you (MoP classic),
-			--    show faction crest (Horde/Alliance) if we can figure it out.
-			--  - Otherwise show generic BNet/WoW client icon.
+			--  - If they are playing the SAME WoW project as you (MoP classic)
+			--    AND we can see their realm, show a faction crest.
+			--  - If they are in WoW but realm is missing (other region / unknown),
+			--    show a generic WoW icon instead.
+			--  - Otherwise show generic Battle.net / client icon.
 			local iconPath
 
-			if client == BNET_CLIENT_WOW and wowProjectID == WOW_PROJECT_ID then
-				-- Try to get their actual faction from account info (retail-style C_BattleNet)
-				if C_BattleNet and C_BattleNet.GetFriendAccountInfo then
-					local acct = C_BattleNet.GetFriendAccountInfo(id)
-					if acct and acct.gameAccountInfo and acct.gameAccountInfo.factionName then
-						local f = acct.gameAccountInfo.factionName
-						if f == "Horde" then
-							iconPath = "Interface\\TargetingFrame\\UI-PVP-Horde"
-						elseif f == "Alliance" then
-							iconPath = "Interface\\TargetingFrame\\UI-PVP-Alliance"
-						end
+			local acct, ga
+			if C_BattleNet and C_BattleNet.GetFriendAccountInfo then
+				acct = C_BattleNet.GetFriendAccountInfo(id)
+				ga = acct and acct.gameAccountInfo or nil
+			end
+
+			-- Realm is considered "known" if either GetFriendInfoById or accountInfo has it
+			local hasRealm = (realmName and realmName ~= "")
+				or (ga and ga.realmName and ga.realmName ~= "")
+
+			if client == BNET_CLIENT_WOW and wowProjectID == WOW_PROJECT_ID and hasRealm then
+				-- Try to get their actual faction from account info
+				if ga and ga.factionName then
+					if ga.factionName == "Horde" then
+						iconPath = "Interface\\TargetingFrame\\UI-PVP-Horde"
+					elseif ga.factionName == "Alliance" then
+						iconPath = "Interface\\TargetingFrame\\UI-PVP-Alliance"
 					end
 				end
 
@@ -721,7 +729,7 @@ local function SocialPlus_UpdateFriendButton(button)
 				end
 			end
 
-			-- If still no faction icon, show Battle.net / WoW client icon
+			-- If still no faction icon, fall back to generic WoW/BNet client icon
 			if not iconPath then
 				iconPath = FG_GetClientTextureSafe(client)
 			end
@@ -729,7 +737,7 @@ local function SocialPlus_UpdateFriendButton(button)
 			-- Different layout for faction crest vs generic game icon
 			if type(iconPath) == "string" and iconPath:find("UI%-PVP%-") then
 				-- Faction crest: larger, centered, slightly left
-				FG_ApplyGameIcon(button, iconPath, 50, "CENTER", "RIGHT", -27, -8)
+				FG_ApplyGameIcon(button, iconPath, 50, "CENTER", "RIGHT", -27, -9)
 			else
 				-- Generic BNet/WoW icon: smaller, tight to the right
 				FG_ApplyGameIcon(button, iconPath, 32, "RIGHT", "RIGHT", -20, 0)
@@ -747,12 +755,11 @@ local function SocialPlus_UpdateFriendButton(button)
 			--  • same WoW project (MoP classic)
 			-- No Blizzard invite restriction, no faction, no cross-realm.
 
-			hasTravelPassButton = true
+					hasTravelPassButton = true
 
 			local fgAllowed = true
 			local fgReason = nil
 
-			-- We are in the "isOnline" branch already, so only check client/project
 			if client ~= BNET_CLIENT_WOW then
 				fgAllowed = false
 				fgReason = "This friend is not currently in World of Warcraft."
@@ -761,7 +768,12 @@ local function SocialPlus_UpdateFriendButton(button)
 				fgReason = "This friend is not on your WoW version."
 			end
 
-			-- Store for tooltip
+			-- NEW: if we don’t have a realm, treat as “other region”
+			if fgAllowed and (not realmName or realmName=="") then
+				fgAllowed = false
+				fgReason = "You cannot invite this friend because their realm is not available (likely another region)."
+			end
+
 			button.travelPassButton.fgInviteAllowed = fgAllowed
 			button.travelPassButton.fgInviteReason  = fgReason
 
@@ -1480,35 +1492,62 @@ StaticPopupDialogs["FRIEND_SET_NOTE"] = {
 }
 
 local function SocialPlus_GetFullCharacterName(cf)
-	if not cf then return nil end
+    if not cf then return nil end
 
-	-- WoW friend: use the raw character/realm name we cached from GetFriendInfo
-	if cf.buttonType==FRIENDS_BUTTON_TYPE_WOW then
-		if cf.rawName and cf.rawName~="" then
-			-- this is already "Name" or "Name-Realm"
-			return cf.rawName
-		end
-		if cf.characterName and cf.characterName~="" then
-			if cf.realmName and cf.realmName~="" then
-				return cf.characterName.."-"..cf.realmName
-			else
-				return cf.characterName
-			end
-		end
-	end
+    -- Helper: attach *player's* realm if friend name has no realm suffix.
+    local function AttachPlayerRealm(name)
+        if not name or name == "" then return nil end
 
-	-- BNet friend: build Character-Realm from cached fields
-	if cf.buttonType==FRIENDS_BUTTON_TYPE_BNET then
-		if cf.characterName and cf.characterName~="" then
-			if cf.realmName and cf.realmName~="" then
-				return cf.characterName.."-"..cf.realmName
-			else
-				return cf.characterName
-			end
-		end
-	end
+        -- If already Name-Realm, don't touch it.
+        if name:find("%-") then
+            return name
+        end
 
-	return nil
+        -- Player's realm name (auto-detected, not hardcoded)
+        local realm = GetRealmName and GetRealmName() or nil
+        if not realm or realm == "" then
+            return name
+        end
+
+        -- Normalize: remove spaces / dashes (Blizzard requires this)
+        realm = realm:gsub("[%s%-]", "")
+
+        return name.."-"..realm
+    end
+
+    --------------------------------------------------------------------
+    -- NORMAL WOW (non-BNet) FRIEND
+    --------------------------------------------------------------------
+    if cf.buttonType == FRIENDS_BUTTON_TYPE_WOW then
+        -- rawName is exactly what's shown in the list (Name or Name-Realm)
+        if cf.rawName and cf.rawName ~= "" then
+            return AttachPlayerRealm(cf.rawName)
+        end
+
+        -- Backup: explicit character + realm fields (if provided)
+        if cf.characterName and cf.characterName ~= "" then
+            if cf.realmName and cf.realmName ~= "" then
+                return cf.characterName.."-"..cf.realmName
+            else
+                return AttachPlayerRealm(cf.characterName)
+            end
+        end
+    end
+
+    --------------------------------------------------------------------
+    -- BN FRIEND (do NOT attach your realm)
+    --------------------------------------------------------------------
+    if cf.buttonType == FRIENDS_BUTTON_TYPE_BNET then
+        if cf.characterName and cf.characterName ~= "" then
+            if cf.realmName and cf.realmName ~= "" then
+                return cf.characterName.."-"..cf.realmName
+            else
+                return cf.characterName -- leave untouched
+            end
+        end
+    end
+
+    return nil
 end
 
 local function SocialPlus_GetMenuTitle()
@@ -1744,77 +1783,91 @@ local function SocialPlus_SetCurrentFriend(button)
 	end
 end
 
-local function SocialPlus_CanCopyCharName()
+-- Can we copy the character name for the current dropdown target?
+function SocialPlus_CanCopyCharName()
 	local kind,id = SocialPlus_GetDropdownFriend()
-	if not kind or not id then return false end
-
-	if kind=="WOW" then
-		local fi = FG_GetFriendInfoByIndex(id)
-		return fi and fi.connected
+	if not kind or not id then
+		return false
 	end
 
-	if kind=="BNET" then
+	if kind == "WOW" then
+		-- Normal (non-BNet) friends: only when they are online
+		local info = FG_GetFriendInfoByIndex(id)
+		return info and info.connected
+
+	elseif kind == "BNET" then
+		-- Battle.net friend: mirror the same rules as the invite button
 		local accountName,characterName,class,level,isFavoriteFriend,
-		      isOnline,bnetAccountId,client,canCoop,wowProjectID =
+		      isOnline,bnetAccountId,client,canCoop,wowProjectID,lastOnline,
+		      isAFK,isGameAFK,isDND,isGameBusy,mobile,zoneName,gameText,realmName =
 		      GetFriendInfoById(id)
 
 		if not isOnline then return false end
-		if client~=BNET_CLIENT_WOW then return false end
-		if not characterName or characterName=="" then return false end
+		if client ~= BNET_CLIENT_WOW then return false end
+		if WOW_PROJECT_ID and wowProjectID and wowProjectID ~= WOW_PROJECT_ID then
+			return false
+		end
+		if not characterName or characterName == "" then return false end
+
+		-- Region gate: if no realm is shown, treat it as "other region" → disabled
+		if not realmName or realmName == "" then return false end
+
 		return true
 	end
 
 	return false
 end
 
-local function SocialPlus_CanInviteMenuTarget()
+-- Can we invite the current dropdown target to a group?
+function SocialPlus_CanInviteMenuTarget()
 	local kind,id = SocialPlus_GetDropdownFriend()
-	if not kind or not id then return false end
-
-	-- Player faction (Alliance / Horde) for same-faction gating
-	local playerFaction = nil
-	if UnitFactionGroup then
-		playerFaction = select(1,UnitFactionGroup("player"))
+	if not kind or not id then
+		return false
 	end
 
-	-- ==== Normal WoW friends (non-BNet, MoP client) ====
-	if kind=="WOW" then
-		local fi = FG_GetFriendInfoByIndex(id)
-		if not fi or not fi.connected then
-			return false
-		end
+	if kind == "WOW" then
+		-- Non-BNet: online only
+		local info = FG_GetFriendInfoByIndex(id)
+		return info and info.connected
 
-		-- Normal friend list on MoP is effectively:
-		--  • same project as us (MoP Classic client)
-		--  • same faction (you can’t have cross-faction char friends here)
-		-- So: if they’re online, they are a valid MoP-same-faction target.
-		return true
-	end
-
-	-- ==== Battle.net friends ====
-	if kind=="BNET" then
+	elseif kind == "BNET" then
+		-- Same conditions as above, because the button already works correctly
 		local accountName,characterName,class,level,isFavoriteFriend,
-		      isOnline,bnetAccountId,client,canCoop,wowProjectID,_,_,_,_,_,_,_,realmName =
+		      isOnline,bnetAccountId,client,canCoop,wowProjectID,lastOnline,
+		      isAFK,isGameAFK,isDND,isGameBusy,mobile,zoneName,gameText,realmName =
 		      GetFriendInfoById(id)
 
-		-- Only our simple rules:
-		--  • must be online
-		--  • must be in WoW client
-		--  • must be on the same WoW project as us (MoP classic)
 		if not isOnline then return false end
-		if client~=BNET_CLIENT_WOW then return false end
-
-		-- If wowProjectID is known and different from ours, block.
-		-- If it's nil, we don't block on it.
-		if WOW_PROJECT_ID and wowProjectID and wowProjectID~=WOW_PROJECT_ID then
+		if client ~= BNET_CLIENT_WOW then return false end
+		if WOW_PROJECT_ID and wowProjectID and wowProjectID ~= WOW_PROJECT_ID then
 			return false
 		end
+		if not characterName or characterName == "" then return false end
+		if not realmName or realmName == "" then return false end
 
-		-- No faction, no cross-realm, no Blizzard invite restriction, no canCoop gate.
 		return true
 	end
 
-	-- Any other kind is not invitible via our custom button
+	return false
+end
+
+-- Does the current dropdown friend have at least one group assigned
+local function SocialPlus_DropdownFriendHasGroup()
+	local _, _, note = SocialPlus_GetDropdownFriendNote()
+	if not note or note == "" then
+		return false
+	end
+
+	local groups = {}
+	NoteAndGroups(note, groups)
+
+	for group, present in pairs(groups) do
+		if present and group ~= "" then
+			-- At least one real group tag on this friend
+			return true
+		end
+	end
+
 	return false
 end
 
@@ -1986,11 +2039,14 @@ SocialPlus_FriendMenu.initialize = function(self, level)
 		UIDropDownMenu_AddButton(info,level)
 
 		-- CREATE / ADD / REMOVE GROUP
+		local hasGroup = SocialPlus_DropdownFriendHasGroup()
 		info=UIDropDownMenu_CreateInfo()
 		info.text="Create new group"
 		info.notCheckable=true
+		info.disabled = hasGroup      -- gray out if friend already has a group
 		info.func=SocialPlus_CreateGroupFromDropdown
 		UIDropDownMenu_AddButton(info,level)
+
 
 		info=UIDropDownMenu_CreateInfo()
 		info.text="Add to group"
@@ -2056,29 +2112,29 @@ frame:RegisterEvent("PLAYER_LOGIN")
 
 
 local function SocialPlus_OnClick(self, button)
-	-- Handle divider rows (group headers)
-	if self.buttonType == FRIENDS_BUTTON_TYPE_DIVIDER then
-		local group = self.info and self.info:GetText() or ""
-		if button == "RightButton" then
-			ToggleDropDownMenu(1, group, SocialPlus_Menu, "cursor", 0, 0)
-		else
-			SocialPlus_SavedVars.collapsed[group] = not SocialPlus_SavedVars.collapsed[group]
-			SocialPlus_Update()
-		end
-		return
-	end
+    -- Handle divider rows (group headers)
+    if self.buttonType == FRIENDS_BUTTON_TYPE_DIVIDER then
+        local group = self.info and self.info:GetText() or ""
+        if button == "RightButton" then
+            ToggleDropDownMenu(1, group, SocialPlus_Menu, "cursor", 0, 0)
+        else
+            SocialPlus_SavedVars.collapsed[group] = not SocialPlus_SavedVars.collapsed[group]
+            SocialPlus_Update()
+        end
+        return
+    end
 
-	-- For non-divider rows, keep Blizzard behaviour on left click
-	if button ~= "RightButton" then
-		if hooks and hooks["FriendsFrameFriendButton_OnClick"] then
-			return hooks["FriendsFrameFriendButton_OnClick"](self, button)
-		end
-		return
-	end
+    -- Left click: delegate back to Blizzard's original script for this button
+    if button ~= "RightButton" then
+        if self.SocialPlus_OrigOnClick then
+            return self.SocialPlus_OrigOnClick(self, button)
+        end
+        return
+    end
 
-	-- Right-click on a real friend row: show our own friend menu
-	SocialPlus_SetCurrentFriend(self)
-	ToggleDropDownMenu(1, nil, SocialPlus_FriendMenu, "cursor", 0, 0)
+    -- Right-click on a real friend row: show our own friend menu
+    SocialPlus_SetCurrentFriend(self)
+    ToggleDropDownMenu(1, nil, SocialPlus_FriendMenu, "cursor", 0, 0)
 end
 
 local function SocialPlus_OnEnter(self)
@@ -2091,22 +2147,27 @@ local function SocialPlus_OnEnter(self)
 end
 
 local function HookButtons()
-	local scrollFrame = FriendsScrollFrame
-	if not scrollFrame or not scrollFrame.buttons then return end
+    local scrollFrame = FriendsScrollFrame
+    if not scrollFrame or not scrollFrame.buttons then return end
 
-	local buttons = scrollFrame.buttons
-	local numButtons = #buttons
+    local buttons = scrollFrame.buttons
+    local numButtons = #buttons
 
-	for i=1,numButtons do
-		local btn = buttons[i]
-		if btn then
-			-- Always use our click handler so right-click sets SocialPlus_CurrentFriend correctly
-			btn:SetScript("OnClick", SocialPlus_OnClick)
+    for i=1,numButtons do
+        local btn = buttons[i]
+        if btn then
+            -- Save Blizzard's original OnClick once
+            if not btn.SocialPlus_OrigOnClick then
+                btn.SocialPlus_OrigOnClick = btn:GetScript("OnClick")
+            end
 
-			-- Only override tooltip handler if Blizzard didn't define one
-			if not FriendsFrameTooltip_Show then
-				btn:HookScript("OnEnter", SocialPlus_OnEnter)
-			end
+            -- Always use our click handler so right-click sets SocialPlus_CurrentFriend correctly
+            btn:SetScript("OnClick", SocialPlus_OnClick)
+
+            -- Only override tooltip handler if Blizzard didn't define one
+            if not FriendsFrameTooltip_Show then
+                btn:HookScript("OnEnter", SocialPlus_OnEnter)
+            end
 
 			-- Custom tooltip for the Blizzard invite (travel pass) button
 			local travel = btn.travelPassButton
@@ -2228,6 +2289,98 @@ function SocialPlus_ModifyGroupFromDropdown(group, mode)
 	SocialPlus_Update()
 end
 
+StaticPopupDialogs = StaticPopupDialogs or {}
+
+StaticPopupDialogs = StaticPopupDialogs or {}
+
+local function SocialPlus_DoRemoveBNetFriend(data)
+    if not data then return end
+
+    local bnIndex    = data.bnIndex
+    local presenceID = data.presenceID
+    local accountID  = data.accountID
+
+    FG_Debug(
+        "BNET confirm remove",
+        "bnIndex="..tostring(bnIndex),
+        "presenceID="..tostring(presenceID),
+        "accountID="..tostring(accountID)
+    )
+
+    local ok = false
+
+    -- Retail-style account remove (if it exists)
+    if C_BattleNet and C_BattleNet.RemoveFriend and accountID then
+        ok = pcall(C_BattleNet.RemoveFriend, accountID)
+    end
+
+    -- Fallbacks: BNRemoveFriend (presenceID or index)
+    if not ok and BNRemoveFriend then
+        if presenceID then
+            ok = pcall(BNRemoveFriend, presenceID)
+            FG_Debug("BNET remove via presenceID (confirm)",tostring(ok))
+        end
+        if not ok and bnIndex then
+            ok = pcall(BNRemoveFriend, bnIndex)
+            FG_Debug("BNET remove via index (confirm)",tostring(ok))
+        end
+    end
+
+    FG_Debug("BNET final remove result (confirm)",tostring(ok))
+    pcall(SocialPlus_Update)
+end
+
+StaticPopupDialogs["SOCIALPLUS_CONFIRM_REMOVE_BNET"] = {
+    text = 'Are you sure you want to remove "%s"?\n\nType "YES." to confirm.',
+    button1 = OKAY,
+    button2 = CANCEL,
+    hasEditBox = true,
+    timeout = 0,
+    hideOnEscape = 1,
+    whileDead = 1,
+    preferredIndex = 3,
+
+    OnShow = function(self, data)
+        self.data = data
+        local eb = self.editBox or self.EditBox
+        if eb then
+            eb:SetText("")
+            eb:SetFocus()
+            eb:SetMaxLetters(4)
+        end
+
+        -- **Force-disable OK using global button name**
+        local ok = _G[self:GetName().."Button1"]
+        if ok then
+            ok:Disable()
+        end
+    end,
+
+    EditBoxOnTextChanged = function(eb)
+        local parent = eb:GetParent()
+        local ok = _G[parent:GetName().."Button1"]
+        if not ok then return end
+
+        if eb:GetText() == "YES." then
+            ok:Enable()
+        else
+            ok:Disable()
+        end
+    end,
+
+    EditBoxOnEnterPressed = function(eb)
+        local parent = eb:GetParent()
+        local ok = _G[parent:GetName().."Button1"]
+        if ok and ok:IsEnabled() then
+            ok:Click()
+        end
+    end,
+
+    OnAccept = function(self, data)
+        SocialPlus_DoRemoveBNetFriend(data)
+    end,
+}
+
 function SocialPlus_RemoveCurrentFriend()
     local cf = SocialPlus_CurrentFriend
     if not cf or not cf.buttonType or not cf.id then
@@ -2275,7 +2428,7 @@ function SocialPlus_RemoveCurrentFriend()
         FG_Debug("WOW remove result", tostring(ok))
 
     elseif cf.buttonType == FRIENDS_BUTTON_TYPE_BNET then
-        -- BNet friend
+        -- BNet friend: show confirmation popup that requires typing "YES."
         local bnIndex = cf.bnetIndex or cf.id
         if kind == "BNET" and dropdownId then
             bnIndex = dropdownId
@@ -2286,33 +2439,26 @@ function SocialPlus_RemoveCurrentFriend()
         local presenceID = t[1]
         local accountID  = cf.accountID or t[1]
 
+        -- Try to get a nice Battle.net name: account name / battletag / fallback
+        local bnetName = t[2] or cf.accountName or cf.rawName or UNKNOWN
+
         FG_Debug(
-            "BNET remove",
+            "BNET remove (prompt)",
             "bnIndex="..tostring(bnIndex),
             "presenceID="..tostring(presenceID),
-            "accountID="..tostring(accountID)
+            "accountID="..tostring(accountID),
+            "name="..tostring(bnetName)
         )
 
-        local ok = false
+        local dialogData = {
+            bnIndex    = bnIndex,
+            presenceID = presenceID,
+            accountID  = accountID,
+        }
 
-        -- Retail-style account remove (if it exists on this client)
-        if C_BattleNet and C_BattleNet.RemoveFriend and accountID then
-            ok = pcall(C_BattleNet.RemoveFriend, accountID)
-        end
-
-        -- Fallbacks: BNRemoveFriend (different clients expect presenceID OR index)
-        if not ok and BNRemoveFriend then
-            if presenceID then
-                ok = pcall(BNRemoveFriend, presenceID)
-                FG_Debug("BNET remove via presenceID", tostring(ok))
-            end
-            if not ok then
-                ok = pcall(BNRemoveFriend, bnIndex)
-                FG_Debug("BNET remove via index", tostring(ok))
-            end
-        end
-
-        FG_Debug("BNET final remove result", tostring(ok))
+        -- Message: Are you sure you want to remove "BATTLENETNAME"?
+        StaticPopup_Show("SOCIALPLUS_CONFIRM_REMOVE_BNET", bnetName, nil, dialogData)
+        return
     end
 
     pcall(SocialPlus_Update)
@@ -2382,9 +2528,6 @@ frame:SetScript("OnEvent", function(self,event,...)
 --			Hook("FriendsFrame_UpdateFriends", SocialPlus_UpdateFriends)
 --		end
 
-		if FriendsFrameFriendButton_OnClick then
-			Hook("FriendsFrameFriendButton_OnClick", SocialPlus_OnClick)
-		end
 		if FriendsFrameTooltip_Show then
 			Hook("FriendsFrameTooltip_Show", SocialPlus_OnEnter, true) -- Fixes tooltip showing on groups
 		end
