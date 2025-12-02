@@ -250,7 +250,9 @@ local FriendRequestString=string.sub(FRIEND_REQUESTS,1,-6)
 local OPEN_DROPDOWNMENUS_SAVE=nil
 local friend_popup_menus={"FRIEND","FRIEND_OFFLINE","BN_FRIEND","BN_FRIEND_OFFLINE"}
 
--- Dropdown integration disabled on MoP Classic to avoid tainting secure menus.\r\n\r\nlocal currentExpansionMaxLevel=90 -- MoP Classic cap
+-- Dropdown integration disabled on MoP Classic to avoid tainting secure menus.
+
+local currentExpansionMaxLevel=90 -- MoP Classic cap
 if type(GetMaxPlayerLevel)=="function" then
 currentExpansionMaxLevel=GetMaxPlayerLevel()
 end
@@ -1238,7 +1240,9 @@ title=L.GROUP_UNGROUPED
 else
 title=group
 end
-local counts="("..(GroupOnline[group] or 0).."/"..(GroupTotal[group] or 0)..")"\r\n\r\n		if button["text"] then
+local counts="("..(GroupOnline[group] or 0).."/"..(GroupTotal[group] or 0)..")"
+
+        if button["text"] then
 button.text:SetText(title)
 button.text:Show()
 nameText=counts
@@ -1331,7 +1335,7 @@ else
 button:Hide()
 end
 
--- Tooltip handling	if FriendsTooltip.button==button then
+-- Tooltip handling    if FriendsTooltip.button==button then
 if FriendsFrameTooltip_Show then
 FriendsFrameTooltip_Show(button)
 elseif button.OnEnter then
@@ -3152,5 +3156,8 @@ hide_high_level=false
 end
 end
 end)
+
+
+
 
 
