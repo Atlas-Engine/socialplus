@@ -1,93 +1,56 @@
 # SocialPlus
 
-A modern, MoP-Classic-ready enhancement to the Friends List — rebuilt to feel like Blizzard shipped it today.  
-Fast, organized, fully bilingual (English + French), and clean, with zero taint issues and a native Blizzard look.
+Modernizes the MoP Classic Friends List with cleaner layout, smarter features, and full English/French support.  
+Zero taint, native Blizzard look, fast and lightweight.
 
 ---
 
-## ⭐ What SocialPlus Improves
-The default MoP Social panel was functional, but dated.  
-SocialPlus upgrades it with a smarter layout, better logic, proper localization, and tools the game should have had from the start.
+## 🇬🇧 English — Summary
 
-- A **real search bar** that ignores accents and symbols.
-- **Reliable invites** for both BNet and in-game friends.
-- **Custom friend groups** that stay neatly organized.
-- Correct icons, spacing, and panel alignment.
-- Fully MoP-compatible code with no UI taint.
-- **Automatic English/French detection** — the entire addon translates itself to your WoW client’s language.
+SocialPlus enhances the default Social panel with:
 
-Everything feels native — just way better.
+- **Instant search** (accent-insensitive)
+- **Reliable invites** for WoW + Battle.net friends
+- **Custom friend groups** using simple note tags (#GroupName)
+- **Collapsible sections** with online/offline counters
+- **Clean spacing, fixed icons, corrected layout**
+- **Automatic EN/FR detection**
+- **Smooth scrolling** and improved responsiveness
 
----
-
-## 🔍 Instant Search
-Find anyone instantly.
-
-- Accent-insensitive text matching.
-- Updates in real time as you type.
-- Designed to stay fast even with huge friend lists.
+Everything feels like an official Blizzard upgrade — just better.
 
 ---
 
-## 🎯 Smart Invite Handling
-The invite button finally behaves like it should.
+## 🇫🇷 Français — Résumé
 
-- Cross-realm support works consistently.
-- Clear messages when invites aren’t possible.
-- Correct checks for MoP version differences.
-- Unified logic for BNet and character-based friends.
+SocialPlus améliore complètement le panneau Social de MoP Classic :
 
-No more guessing why an invite fails.
+- **Recherche instantanée** (insensible aux accents)
+- **Invitations fiables** pour amis WoW et Battle.net
+- **Groupes personnalisés** via étiquettes dans les notes (#NomDuGroupe)
+- **Sections repliables** avec compteurs en ligne/hors ligne
+- **Icônes corrigées, alignement propre, espacement fixe**
+- **Détection automatique EN/FR**
+- **Défilement fluide** et interface plus réactive
 
----
-
-## 👥 Custom Friend Groups
-Organize your list effortlessly.
-
-- Create, rename, and delete groups on the fly.
-- Assign friends using simple note tags (`#GroupName`).
-- Collapsible sections with online/offline counters.
-- Notes stay synced — no external data files needed.
-
-Zero clutter. Maximum control.
+On dirait une mise à jour officielle de Blizzard — en mieux.
 
 ---
 
-## ⚙️ Lightweight Options
-Right-click any group header to toggle:
+## 🔧 Features
 
-- Hide offline characters  
-- Hide max-level characters  
+- Create, rename, delete groups  
+- Hide offline / hide max-level players  
 - Class-colored names  
-- Group management tools  
-
-Minimal, quick, and unobtrusive.
-
----
-
-## ✨ Quality of Life Improvements
-- Smoother, more responsive mouse-wheel scrolling.
-- Cleaner friend button layout with correct spacing.
-- Fully localized UI (English + French).
-- Stable behavior with large friend lists.
-- Modernized functionality without touching Blizzard art assets.
+- Accurate realm/version checks  
+- Modernized behavior without changing Blizzard’s art  
 
 ---
 
-## 🔧 MoP Fixes
-SocialPlus also resolves several MoP-specific quirks:
-
-- Fixed invite inconsistencies across realms and versions.
-- Corrected outdated restriction messages.
-- Improved handling of realm and character names.
+## 🙏 Credits / Crédits
+Inspired by **Mikeprod FriendGroups**, rebuilt for modern MoP Classic.
 
 ---
 
-## 🙏 Credits
-Inspired by the original **Mikeprod FriendGroups** addon —  
-reimagined and rebuilt for a modern MoP Classic experience.
-
----
-
-## 📄 License
-MIT License — simple, permissive, and open.
+## 📄 License / Licence
+MIT — open, simple, permissive.
