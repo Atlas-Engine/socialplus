@@ -1,83 +1,91 @@
 # SocialPlus
 
-A modern upgrade for the MoP Classic friends list — rebuilt to feel like Blizzard shipped it in 2025.
-Streamlined, polished, and dramatically more useful than the default Social panel.
+A modern, MoP-Classic-ready enhancement to the Friends List — rebuilt to feel like Blizzard shipped it today.  
+Fast, organized, and clean, with zero taint issues and a fully native look.
 
- 
+---
 
-## ⭐ Core Features
-SocialPlus introduces a smarter, cleaner, fully enhanced Social UI:
+## ⭐ What SocialPlus Improves
+The default MoP Social panel was functional, but dated.  
+SocialPlus upgrades it with a smarter layout, better logic, and tools the game should have had from the start.
 
-- **Real search bar** with accent-insensitive matching. 
-- **Universal invites** for BNet + WoW friends. 
-- **Custom friend groups** with clean organization tools. 
-- **Correct icons, clean layout, no overlaps or missing buttons.
-- **Safe, MoP-compatible code** with zero taint issues.
+- A **real search bar** that ignores accents and symbols.
+- **Reliable invites** for both BNet and in-game friends.
+- **Custom friend groups** that stay neatly organized.
+- Correct icons, spacing, and panel alignment.
+- Fully MoP-compatible code with no UI taint.
 
-Everything feels native — just better.
+Everything feels native — just way better.
 
- 
+---
 
 ## 🔍 Instant Search
-Find friends immediately by typing a few characters.
+Find anyone instantly.
 
-- Normalizes accents and symbols. 
-- Updates results in real-time without performance cost.
+- Accent-insensitive text matching.
+- Updates in real time as you type.
+- Designed to be fast even with huge friend lists.
 
- 
+---
 
-## 🎯 Modern Invite Logic
-Old MoP restrictions are replaced with clear and reliable behavior:
+## 🎯 Smart Invite Handling
+The invite button finally behaves like it should.
 
-- Direct invites for all BNet and in-game friends.
-- Full cross-realm support. 
-- Accurate version checks. 
-- Meaningful messages when an invite isn’t possible.
+- Cross-realm support works consistently.
+- Clear messages when invites aren’t possible.
+- Correct version checks for MoP Classic.
+- Unified logic for BNet and character-based friends.
 
-The invite button finally behaves predictably.
+You’ll never guess whether an invite will fail again.
 
- 
+---
 
-## 👥 Custom Groups
-Organize your list however you want:
+## 👥 Custom Friend Groups
+Organize your list effortlessly.
 
-- Create, rename, and delete groups. 
-- Drag-free assignment via note-based tagging. 
-- Collapsible sections with online/offline counters. 
-- Automatically saved in friend notes using `#GroupName`.
+- Create, rename, and delete groups on the fly.
+- Assign friends to groups using simple note tags (`#GroupName`).
+- Collapsible sections with online/offline counters.
+- Notes stay synced — no external data saved.
 
- 
+Zero clutter. Maximum control.
+
+---
 
 ## ⚙️ Lightweight Options
-Right-click any group to configure:
+Right-click any group header to toggle:
 
-- Hide offline entries. 
-- Hide max-level characters. 
-- Toggle class colors.
-- Manage or remove the group.
+- Hide offline characters
+- Hide max-level characters
+- Class-colored names
+- Group management tools
 
-Everything is minimal, fast, and unobtrusive.
+All options are minimal and quick — no bulky panels.
 
- 
+---
 
-## ✨ Quality of Life
-- Enhanced responsiveness when scrolling through large friend lists.
+## ✨ Quality of Life Improvements
+- Smoother, more responsive mouse-wheel scrolling.
+- Cleaner friend button layout.
+- Stable behavior with large friend lists.
+- Modernized UI without altering Blizzard’s style.
 
+---
 
 ## 🔧 MoP Fixes
-SocialPlus resolves several MoP-specific issues:
+SocialPlus also corrects several expansion-specific issues:
 
-- Incorrect restriction messages.
-- Cross-realm invite inconsistencies.
-- Realm name handling quirks.
+- Fixed invite inconsistencies across realms and versions.
+- Corrected outdated restriction messages.
+- Improved handling of realm and character names.
 
-Your friend list finally behaves like the modern game.
-
- 
+---
 
 ## 🙏 Credits
-Inspired by the original **Mikeprod FriendGroups** addon.
-Rebuilt and expanded for MoP Classic with modern UI standards.
+Inspired by the original **Mikeprod FriendGroups** addon  
+— reimagined and rebuilt for a modern MoP Classic experience.
+
+---
 
 ## 📄 License
-MIT License — open, simple, worry-free.
+MIT License — simple, permissive, and open.
