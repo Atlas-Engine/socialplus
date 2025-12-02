@@ -8,11 +8,11 @@ Streamlined, polished, and dramatically more useful than the default Social pane
 ## ⭐ Core Features
 SocialPlus introduces a smarter, cleaner, fully enhanced Social UI:
 
-- **Real search bar** with accent-insensitive matching
-- **Universal invites** for BNet + WoW friends
-- **Custom friend groups** with clean organization tools
-- **Correct icons, clean layout, no overlaps or missing buttons**
-- **Safe, MoP-compatible code** with zero taint issues
+- **Real search bar** with accent-insensitive matching. 
+- **Universal invites** for BNet + WoW friends. 
+- **Custom friend groups** with clean organization tools. 
+- **Correct icons, clean layout, no overlaps or missing buttons.
+- **Safe, MoP-compatible code** with zero taint issues.
 
 Everything feels native — just better.
 
@@ -21,19 +21,18 @@ Everything feels native — just better.
 ## 🔍 Instant Search
 Find friends immediately by typing a few characters.
 
-- Matches both WoW and BNet entries
-- Normalizes accents and symbols
-- Updates results in real-time without performance cost
+- Normalizes accents and symbols. 
+- Updates results in real-time without performance cost.
 
  
 
 ## 🎯 Modern Invite Logic
 Old MoP restrictions are replaced with clear and reliable behavior:
 
-- Direct invites for all BNet and in-game friends
-- Full cross-realm support
-- Accurate version checks
-- Meaningful messages when an invite isn’t possible
+- Direct invites for all BNet and in-game friends.
+- Full cross-realm support. 
+- Accurate version checks. 
+- Meaningful messages when an invite isn’t possible.
 
 The invite button finally behaves predictably.
 
@@ -42,42 +41,35 @@ The invite button finally behaves predictably.
 ## 👥 Custom Groups
 Organize your list however you want:
 
-- Create, rename, and delete groups
-- Drag-free assignment via note-based tagging
-- Collapsible sections with online/offline counters
-- Automatically saved in friend notes using `#GroupName`
-
-A simple system that stays tidy forever.
+- Create, rename, and delete groups. 
+- Drag-free assignment via note-based tagging. 
+- Collapsible sections with online/offline counters. 
+- Automatically saved in friend notes using `#GroupName`.
 
  
 
 ## ⚙️ Lightweight Options
 Right-click any group to configure:
 
-- Hide offline entries
-- Hide max-level characters
-- Toggle class colors
-- Manage or remove the group
+- Hide offline entries. 
+- Hide max-level characters. 
+- Toggle class colors.
+- Manage or remove the group.
 
 Everything is minimal, fast, and unobtrusive.
 
  
 
 ## ✨ Quality of Life
-- Character names auto-highlight when copying
-- **Ctrl+C instantly closes the popup** with a safe clipboard-friendly delay
-- Stable tooltips
-- Consistent selection state
-- Optimized update routines for smooth scrolling
+- Enhanced responsiveness when scrolling through large friend lists.
 
- 
 
 ## 🔧 MoP Fixes
 SocialPlus resolves several MoP-specific issues:
 
-- Incorrect restriction messages
-- Cross-realm invite inconsistencies
-- Realm name handling quirks
+- Incorrect restriction messages.
+- Cross-realm invite inconsistencies.
+- Realm name handling quirks.
 
 Your friend list finally behaves like the modern game.
 
