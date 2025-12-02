@@ -68,10 +68,76 @@ do
         L.INVITE_REASON_NOT_WOW       = "Cet ami n’est pas actuellement dans World of Warcraft."
         L.INVITE_REASON_WRONG_PROJECT = "Cet ami n’est pas sur votre version de WoW."
         L.INVITE_REASON_NO_REALM      = "Vous ne pouvez pas inviter cet ami car son royaume n’est pas disponible (probablement une autre région)."
-        L.CONFIRM_REMOVE_BNET_TEXT = 'Êtes-vous sûr de vouloir retirer "%s" ?\n\nTapez "OUI." pour confirmer.'
+        L.CONFIRM_REMOVE_BNET_TEXT = "Êtes-vous sûr de vouloir retirer "%s" ?\n\nTapez "OUI." pour confirmer."
 		L.CONFIRM_REMOVE_BNET_WORD = "OUI."
-        L.MSG_REMOVE_FRIEND_SUCCESS = 'Suppression de %s réussie.'
+        L.MSG_REMOVE_FRIEND_SUCCESS = "Suppression de %s réussie."
         L.INVITE_GENERIC_FAIL = "Vous ne pouvez pas inviter cet ami."
+
+if locale == "ruRU" then
+		-- Default: Russian
+        L.ADDON_NAME              = "SocialPlus"
+
+        ----------------------------------------------------------------
+        -- Interaction Menu
+        ----------------------------------------------------------------
+        L.MENU_INTERACT           = "Взаимодействие"
+        L.MENU_WHISPER            = "Шёпот"
+        L.MENU_INVITE             = "Пригласить"
+        L.MENU_COPY_NAME          = "Скопировать имя персонажа"
+
+        L.MENU_GROUPS             = "Группы"
+        L.MENU_CREATE_GROUP       = "Создать группу"
+        L.MENU_ADD_TO_GROUP       = "Добавить в группу"
+        L.MENU_REMOVE_FROM_GROUP  = "Удалить из группы"
+
+        L.MENU_OTHER_OPTIONS      = "Другие настройки"
+        L.MENU_SET_NOTE           = "Примечание"
+        L.MENU_REMOVE_BNET        = "Удалить друга из Bnet"
+
+        ----------------------------------------------------------------
+        -- Search & grouping
+        ----------------------------------------------------------------
+        L.SEARCH_PLACEHOLDER      = "Поиск друзей..."
+        L.GROUP_UNGROUPED         = "Общее"
+
+        ----------------------------------------------------------------
+        -- Group menu (header right-click)
+        ----------------------------------------------------------------
+        L.GROUP_INVITE_ALL        = "Пригласить всех в группу"
+        L.GROUP_RENAME            = "Переименовать группу"
+        L.GROUP_REMOVE            = "Удалить группу"
+        L.GROUP_SETTINGS          = "Настройки"
+        L.GROUP_NO_GROUPS         = "Нет групп"
+        L.GROUP_NO_GROUPS_REMOVE  = "Нет групп для удаления"
+
+        ----------------------------------------------------------------
+        -- Settings toggles (group submenu)
+        ----------------------------------------------------------------
+        L.SETTING_HIDE_OFFLINE      = "Скрыть тех, кто офлайн"
+        L.SETTING_HIDE_MAX_LEVEL    = "Скрыть макс. уровень"
+        L.SETTING_COLOR_NAMES       = "Цветные имена классов"
+
+        ----------------------------------------------------------------
+        -- Popup titles
+        ----------------------------------------------------------------
+        L.POPUP_RENAME_TITLE        = "Название группы"
+        L.POPUP_CREATE_TITLE        = "Название группы"
+        L.POPUP_NOTE_TITLE          = "Введите заметку для этого друга"
+        L.POPUP_COPY_TITLE          = "Имя персонажа (Ctrl+C, чтобы скопировать):"
+
+        ----------------------------------------------------------------
+        -- Extra messages
+        ----------------------------------------------------------------
+        L.MSG_INVITE_FAILED       = "Невозможно пригласить этого персонажа."
+        L.MSG_INVITE_CROSSREALM   = "Приглашение между игровыми мирами недоступно."
+        L.INVITE_REASON_NOT_WOW       = "Этот друг в настоящее время не в WoW."
+        L.INVITE_REASON_WRONG_PROJECT = "Этого друга нет в вашей версии WoW."
+        L.INVITE_REASON_NO_REALM      = "Вы не можете пригласить этого друга, так как его игровой мир недоступен (вероятно, другой регион)."
+ 		L.CONFIRM_REMOVE_BNET_TEXT = "Вы уверены, что хотите удалить '%s'?\n\nВведите 'ДА' для подтверждения."
+		L.CONFIRM_REMOVE_BNET_WORD = "ДА."
+        L.MSG_REMOVE_FRIEND_SUCCESS = "%s успешно удален."
+        L.INVITE_GENERIC_FAIL = "Вы не можете пригласить этого друга."
+		
 	else
 		-- Default: English
         L.ADDON_NAME              = "SocialPlus"
@@ -132,9 +198,9 @@ do
         L.INVITE_REASON_NOT_WOW       = "This friend is not currently in World of Warcraft."
         L.INVITE_REASON_WRONG_PROJECT = "This friend is not on your WoW version."
         L.INVITE_REASON_NO_REALM      = "You cannot invite this friend because their realm is not available (likely another region)."
- 		L.CONFIRM_REMOVE_BNET_TEXT = 'Are you sure you want to remove "%s"?\n\nType "YES." to confirm.'
+ 		L.CONFIRM_REMOVE_BNET_TEXT = "Are you sure you want to remove "%s"?\n\nType "YES." to confirm."
 		L.CONFIRM_REMOVE_BNET_WORD = "YES."
-        L.MSG_REMOVE_FRIEND_SUCCESS = 'Successfully deleted %s.'
+        L.MSG_REMOVE_FRIEND_SUCCESS = "Successfully deleted %s."
         L.INVITE_GENERIC_FAIL = "You cannot invite this friend."
 	end
 end
