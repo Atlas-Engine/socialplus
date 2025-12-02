@@ -5,7 +5,7 @@ Smooth, reliable, fully bilingual (EN/FR), and built with cross-realm play in mi
 
 ---
 
-# 🇬🇧 English — Overview
+# English — Overview
 
 **SocialPlus replaces the clunky 2012 Social panel with a clean, modern, fully functional system designed for today’s MoP Classic experience.**
 
@@ -41,7 +41,7 @@ SocialPlus elevates the Social UI to modern standards — simple, powerful, and 
 
 ---
 
-# 🇫🇷 Français — Présentation
+# Français — Présentation
 
 **SocialPlus transforme complètement le panneau Social de MoP Classic pour offrir une expérience moderne, fluide et adaptée au jeu d’aujourd’hui.**
 
