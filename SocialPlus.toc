@@ -1,6 +1,7 @@
-## Interface: 50500
+## Interface: 50503
 ## Title: SocialPlus
 ## Notes: Enhanced friends list with groups, smarter invites, and MoP Classic fixes.
+## Notes-ruRU: Расширенный список друзей с группами, более умными приглашениями и исправлениями для MoP Classic.
 ## Author: Atlas-Engine
 ## Version: 1.0.7
 ## SavedVariables: SocialPlus_SavedVars
