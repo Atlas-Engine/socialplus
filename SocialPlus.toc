@@ -2,7 +2,7 @@
 ## Title: SocialPlus
 ## Notes: Enhanced friends list with groups, smarter invites, and MoP Classic fixes.
 ## Author: Atlas-Engine
-## Version: 1.0.7
+## Version: 1.0.8
 ## SavedVariables: SocialPlus_SavedVars
 ## DefaultState: Enabled
 ## LoadOnDemand: 0

@@ -1,4 +1,4 @@
-local hooks = {}
+﻿local hooks = {}
 local SocialPlus_OriginalDropdownInit
 
 -----------------------------------------------------------------------
@@ -32,7 +32,7 @@ do
         ----------------------------------------------------------------
         -- Search & grouping
         ----------------------------------------------------------------
-        L.SEARCH_PLACEHOLDER      = "Rechercher un ami..."
+        L.SEARCH_PLACEHOLDER      = "Chercher un ami..."
         L.GROUP_UNGROUPED         = "Général"
 
         ----------------------------------------------------------------
@@ -48,9 +48,12 @@ do
         ----------------------------------------------------------------
         -- Settings toggles (group submenu)
         ----------------------------------------------------------------
-        L.SETTING_HIDE_OFFLINE      = "Masquer les hors ligne"
-        L.SETTING_HIDE_MAX_LEVEL    = "Masquer les niveaux max"
-        L.SETTING_COLOR_NAMES       = "Colorer les classes"
+        L.SETTING_HIDE_OFFLINE      = "Masquer les hors ligne."
+        L.SETTING_HIDE_MAX_LEVEL    = "Masquer les niveaux max."
+		L.SETTING_COLOR_NAMES       = "Colorer les classes."
+		L.SETTING_PRIORITIZE_CURRENT = "Prioriser les Contacts sur MOP."
+		L.SETTING_SCROLL_SPEED      = "Vitesse de défilement."
+		L.SETTING_SCROLL_SPEED_DESC = "Réglez la vitesse de défilement de la liste d'amis."
 
         ----------------------------------------------------------------
         -- Popup titles
@@ -67,7 +70,8 @@ do
         L.MSG_INVITE_CROSSREALM   = "Invitation inter-royaume non disponible."
         L.INVITE_REASON_NOT_WOW       = "Cet ami n’est pas actuellement dans World of Warcraft."
         L.INVITE_REASON_WRONG_PROJECT = "Cet ami n’est pas sur votre version de WoW."
-        L.INVITE_REASON_NO_REALM      = "Vous ne pouvez pas inviter cet ami car son royaume n’est pas disponible (probablement une autre région)."
+		L.INVITE_REASON_NO_REALM      = "Vous ne pouvez pas inviter cet ami car son royaume n’est pas disponible (probablement une autre région)."
+		L.INVITE_REASON_OPPOSITE_FACTION = "Cet ami est dans la faction opposée."
         L.CONFIRM_REMOVE_BNET_TEXT = 'Êtes-vous sûr de vouloir retirer "%s" ?\n\nTapez "OUI." pour confirmer.'
 		L.CONFIRM_REMOVE_BNET_WORD = "OUI."
         L.MSG_REMOVE_FRIEND_SUCCESS = 'Suppression de %s réussie.'
@@ -110,11 +114,14 @@ do
         L.GROUP_NO_GROUPS_REMOVE  = "No groups to remove"
 
         ----------------------------------------------------------------
-        -- Settings toggles (group submenu)
+        -- Settings toggles
         ----------------------------------------------------------------
-        L.SETTING_HIDE_OFFLINE      = "Hide offline"
-        L.SETTING_HIDE_MAX_LEVEL    = "Hide max-level"
-        L.SETTING_COLOR_NAMES       = "Color class names"
+        L.SETTING_HIDE_OFFLINE      = "Hide offline."
+        L.SETTING_HIDE_MAX_LEVEL    = "Hide max-level."
+		L.SETTING_COLOR_NAMES       = "Color class names."
+		L.SETTING_PRIORITIZE_CURRENT = "Prioritize MOP friends."
+		L.SETTING_SCROLL_SPEED      = "Scroll speed."
+		L.SETTING_SCROLL_SPEED_DESC = "Set the Friends list mousewheel scroll speed."
 
         ----------------------------------------------------------------
         -- Popup titles
@@ -131,13 +138,17 @@ do
         L.MSG_INVITE_CROSSREALM   = "Cross-realm invite is not available."
         L.INVITE_REASON_NOT_WOW       = "This friend is not currently in World of Warcraft."
         L.INVITE_REASON_WRONG_PROJECT = "This friend is not on your WoW version."
-        L.INVITE_REASON_NO_REALM      = "You cannot invite this friend because their realm is not available (likely another region)."
+		L.INVITE_REASON_NO_REALM      = "You cannot invite this friend because their realm is not available (likely another region)."
+		L.INVITE_REASON_OPPOSITE_FACTION = "This friend is on the opposite faction."
  		L.CONFIRM_REMOVE_BNET_TEXT = 'Are you sure you want to remove "%s"?\n\nType "YES." to confirm.'
 		L.CONFIRM_REMOVE_BNET_WORD = "YES."
         L.MSG_REMOVE_FRIEND_SUCCESS = 'Successfully deleted %s.'
         L.INVITE_GENERIC_FAIL = "You cannot invite this friend."
 	end
 end
+
+-- Also expose to global to allow calls from any scope
+-- NOTE: _G.SocialPlus_GetInviteStatus will be set after the function is defined below
 
 -- Debug helper to trace id resolution and menu actions (set FG_DEBUG = true to enable)
 local FG_DEBUG = false
@@ -174,6 +185,21 @@ end
 
 local SocialPlus_NAME_COLOR=NORMAL_FONT_COLOR
 
+-- Forward declaration for invite helper so early functions can reference it
+local SocialPlus_GetInviteStatus
+local SocialPlus_EnsureSavedVars
+
+-- Ensure savedvars exist and set reasonable defaults
+function SocialPlus_EnsureSavedVars()
+	SocialPlus_SavedVars = SocialPlus_SavedVars or {}
+	if SocialPlus_SavedVars.hide_offline == nil then SocialPlus_SavedVars.hide_offline = false end
+	if SocialPlus_SavedVars.hide_high_level == nil then SocialPlus_SavedVars.hide_high_level = false end
+	if SocialPlus_SavedVars.colour_classes == nil then SocialPlus_SavedVars.colour_classes = true end
+	if SocialPlus_SavedVars.scrollSpeed == nil then SocialPlus_SavedVars.scrollSpeed = SCROLL_BASE end
+    if SocialPlus_SavedVars.prioritize_current_client == nil then SocialPlus_SavedVars.prioritize_current_client = false end
+	SocialPlus_SavedVars.collapsed = SocialPlus_SavedVars.collapsed or {}
+end
+
 local INVITE_RESTRICTION_NO_GAME_ACCOUNTS=0
 local INVITE_RESTRICTION_CLIENT=1
 local INVITE_RESTRICTION_LEADER=2
@@ -207,6 +233,11 @@ local ONE_DAY=24*ONE_HOUR
 local ONE_MONTH=30*ONE_DAY
 local ONE_YEAR=12*ONE_MONTH
 
+-- Scroll speed base: slider value will be divided by this value to get the internal multiplier
+local SCROLL_BASE = 2.2
+-- Apply a tuning factor < 1.0 to slow speeds globally as requested
+local SCROLL_TUNE_FACTOR = 0.85
+
 local FriendButtons={count=0}
 local GroupCount=0
 local GroupTotal={}
@@ -238,11 +269,11 @@ end
 -------------------------------------------------
 -- SocialPlus simple search (accent/symbol-insensitive)
 -------------------------------------------------
-local SP_SearchBox
-local SP_SearchTerm=nil  -- always normalized or nil
+local SocialPlus_Searchbox
+local SocialPlus_SearchTerm=nil  -- always normalized or nil
 
 -- Normalize text: lowercase, strip accents, remove non-alphanumerics
-local function SP_NormalizeText(str)
+local function SocialPlus_NormalizeText(str)
     if not str then return "" end
     str=str:lower()
 
@@ -268,17 +299,17 @@ local function SP_NormalizeText(str)
     return str
 end
 
-local function SP_CreateSearchBox()
-	if SP_SearchBox or not FriendsFrame then return end
+local function SocialPlus_CreateSearchBox()
+	if SocialPlus_Searchbox or not FriendsFrame then return end
 
-	SP_SearchBox=CreateFrame("EditBox","SocialPlusSearchBox",FriendsFrame,"SearchBoxTemplate")
-	SP_SearchBox:SetAutoFocus(false)
+	SocialPlus_Searchbox=CreateFrame("EditBox","SocialPlusSearchBox",FriendsFrame,"SearchBoxTemplate")
+	SocialPlus_Searchbox:SetAutoFocus(false)
 
 		-- Subtle neon glow around the search box
-	local glow=CreateFrame("Frame",nil,SP_SearchBox,"BackdropTemplate")
-	glow:SetFrameLevel(SP_SearchBox:GetFrameLevel()+2)
-	glow:SetPoint("TOPLEFT",SP_SearchBox,-4,-1)
-	glow:SetPoint("BOTTOMRIGHT",SP_SearchBox,-1,1)
+	local glow=CreateFrame("Frame",nil,SocialPlus_Searchbox,"BackdropTemplate")
+	glow:SetFrameLevel(SocialPlus_Searchbox:GetFrameLevel()+2)
+	glow:SetPoint("TOPLEFT",SocialPlus_Searchbox,-4,-1)
+	glow:SetPoint("BOTTOMRIGHT",SocialPlus_Searchbox,-1,1)
 	glow:SetBackdrop({
 	edgeFile="Interface\\Buttons\\WHITE8x8",
 	edgeSize=1.5, -- thinner neon line
@@ -298,37 +329,40 @@ local function SP_CreateSearchBox()
 outer:SetBackdropBorderColor(0,0.5,1,0.15) -- light glow, barely there
 outer:Hide()
 
-SP_SearchGlow=glow
-SP_SearchGlowOuter=outer
+SocialPlus_SearchGlow=glow
+SocialPlus_SearchGlowOuter=outer
 
 
 
 	-- Fixed, visible position near top-right
-	SP_SearchBox:SetSize(170,20)
-	SP_SearchBox:SetPoint("TOPRIGHT",FriendsFrame,"TOPRIGHT",-8,-63)
-	SP_SearchBox.Instructions:SetText(L.SEARCH_PLACEHOLDER)
-	local font,size,flags=SP_SearchBox:GetFont()
-	SP_SearchBox:SetFont(font,size,flags)
-	SP_SearchBox:SetTextColor(1,1,1)
-	SP_SearchBox.Instructions:SetTextColor(0.8,0.8,0.8)
-	SP_SearchBox:SetScript("OnTextChanged",function(self)
+	local sbWidth = 139
+	local locale = GetLocale and GetLocale() or nil
+	if locale == "frFR" then sbWidth = 139 end
+	SocialPlus_Searchbox:SetSize(sbWidth,20)
+	SocialPlus_Searchbox:SetPoint("TOPRIGHT",FriendsFrame,"TOPRIGHT",-35,-63)
+	SocialPlus_Searchbox.Instructions:SetText(L.SEARCH_PLACEHOLDER)
+	local font,size,flags=SocialPlus_Searchbox:GetFont()
+	SocialPlus_Searchbox:SetFont(font,size,flags)
+	SocialPlus_Searchbox:SetTextColor(1,1,1)
+	SocialPlus_Searchbox.Instructions:SetTextColor(0.8,0.8,0.8)
+	SocialPlus_Searchbox:SetScript("OnTextChanged",function(self)
     SearchBoxTemplate_OnTextChanged(self)
     local txt=self:GetText() or ""
     txt=txt:match("^%s*(.-)%s*$") or ""
 
-    local norm=SP_NormalizeText(txt)
+    local norm=SocialPlus_NormalizeText(txt)
     if norm=="" then
-        SP_SearchTerm=nil
+        SocialPlus_SearchTerm=nil
     else
-        SP_SearchTerm=norm  -- already normalized (lowercase, no accents, no symbols)
+        SocialPlus_SearchTerm=norm  -- already normalized (lowercase, no accents, no symbols)
     end	
-        if SP_SearchGlow then
-	if SP_SearchTerm then
-		SP_SearchGlow:Show()
-		if SP_SearchGlowOuter then SP_SearchGlowOuter:Show() end
+        if SocialPlus_SearchGlow then
+	if SocialPlus_SearchTerm then
+		SocialPlus_SearchGlow:Show()
+		if SocialPlus_SearchGlowOuter then SocialPlus_SearchGlowOuter:Show() end
 	else
-		SP_SearchGlow:Hide()
-		if SP_SearchGlowOuter then SP_SearchGlowOuter:Hide() end
+		SocialPlus_SearchGlow:Hide()
+		if SocialPlus_SearchGlowOuter then SocialPlus_SearchGlowOuter:Hide() end
 	end
 	end
 
@@ -338,12 +372,12 @@ SP_SearchGlowOuter=outer
 
 
 
-	SP_SearchBox:SetScript("OnEscapePressed",function(self)
+	SocialPlus_Searchbox:SetScript("OnEscapePressed",function(self)
     self:SetText("")
     self:ClearFocus()
-    SP_SearchTerm=nil
-    if SP_SearchGlow then
-        SP_SearchGlow:Hide()
+    SocialPlus_SearchTerm=nil
+    if SocialPlus_SearchGlow then
+        SocialPlus_SearchGlow:Hide()
     end
     FriendsList_Update()
 	end)
@@ -351,13 +385,17 @@ SP_SearchGlowOuter=outer
 end
 
 -- Ensure it’s created when the UI is ready
-local SP_SearchFrame=CreateFrame("Frame")
-SP_SearchFrame:RegisterEvent("PLAYER_LOGIN")
-SP_SearchFrame:RegisterEvent("ADDON_LOADED")
-SP_SearchFrame:SetScript("OnEvent",function(_,event,addon)
+local SocialPlus_SearchFrame=CreateFrame("Frame")
+SocialPlus_SearchFrame:RegisterEvent("PLAYER_LOGIN")
+SocialPlus_SearchFrame:RegisterEvent("ADDON_LOADED")
+SocialPlus_SearchFrame:SetScript("OnEvent",function(_,event,addon)
 	if event=="PLAYER_LOGIN" or addon=="Blizzard_FriendsFrame" then
-		SP_CreateSearchBox()
-		SP_InitSmoothScroll()
+		SocialPlus_EnsureSavedVars()
+		SocialPlus_CreateSearchBox()
+		SocialPlus_InitSmoothScroll()
+		-- Create settings UI on login / Friends frame ready
+		SocialPlus_CreateSettingsButton()
+		SocialPlus_CreateSettingsPanel()
 	end
 end)
 
@@ -377,6 +415,7 @@ local function FG_InitFactionIcon()
 		FACTION_ICON_PATH=nil
 	end
 end
+ 
 
 local function FG_ApplyGameIcon(button,iconPath,size,point,relPoint,offX,offY)
 	if not iconPath or iconPath=="" or not button or not button.gameIcon then
@@ -432,22 +471,22 @@ end
 
 -- [[ Smooth scroll inertia (adaptive, fast enough) ]]
 
-local SP_ScrollAnim=nil
+local SocialPlus_ScrollAnim=nil
 
-local function SP_ScrollOnUpdate(self,elapsed)
-	if not SP_ScrollAnim or not SP_ScrollAnim.scrollBar then
-		SP_ScrollAnim=nil
+local function SocialPlus_ScrollOnUpdate(self,elapsed)
+	if not SocialPlus_ScrollAnim or not SocialPlus_ScrollAnim.scrollBar then
+		SocialPlus_ScrollAnim=nil
 		self:SetScript("OnUpdate",nil)
 		return
 	end
 
-	local a=SP_ScrollAnim
+	local a=SocialPlus_ScrollAnim
 	a.t=a.t+elapsed
 	local d=a.duration
 
 	if a.t>=d then
 		a.scrollBar:SetValue(a.to)
-		SP_ScrollAnim=nil
+		SocialPlus_ScrollAnim=nil
 		self:SetScript("OnUpdate",nil)
 		return
 	end
@@ -460,7 +499,7 @@ local function SP_ScrollOnUpdate(self,elapsed)
 	a.scrollBar:SetValue(value)
 end
 
-function SP_InitSmoothScroll()
+function SocialPlus_InitSmoothScroll()
 	local frame=FriendsScrollFrame
 	if not frame or not frame.scrollBar then return end
 
@@ -482,13 +521,26 @@ function SP_InitSmoothScroll()
  		 baseStep = range/14
 		end
 
+		-- Apply user-configured scroll speed mapping
+		-- Slider value is divided by SCROLL_BASE to generate internal multiplier.
+		local displayValue = (SocialPlus_SavedVars and SocialPlus_SavedVars.scrollSpeed) or SCROLL_BASE
+		displayValue = tonumber(displayValue) or SCROLL_BASE
+		if displayValue < 1.0 then displayValue = 1.0 end
+		if displayValue > 3.5 then displayValue = 3.5 end
+		local finalMultiplier = displayValue / SCROLL_BASE
+		-- Apply tuning factor to slow overall speed further
+		finalMultiplier = finalMultiplier * SCROLL_TUNE_FACTOR
+		-- Make sure finalMultiplier is not less than a tiny positive number
+		if finalMultiplier <= 0 then finalMultiplier = 0.01 end
+		baseStep = baseStep * finalMultiplier
+
 
 		local target=current-delta*baseStep
 		if target<min then target=min end
 		if target>max then target=max end
 		if target==current then return end
 
-		SP_ScrollAnim={
+		SocialPlus_ScrollAnim={
 			scrollBar=sb,
 			from=current,
 			to=target,
@@ -496,7 +548,7 @@ function SP_InitSmoothScroll()
 			duration=0.10, -- short, snappy
 		}
 
-		self:SetScript("OnUpdate",SP_ScrollOnUpdate)
+		self:SetScript("OnUpdate",SocialPlus_ScrollOnUpdate)
 	end)
 end
 
@@ -842,6 +894,30 @@ else
 		isAFK,isGameAFK,isDND,isGameBusy,mobile,zoneName,gameText,realmName
 end
 
+local function SocialPlus_IsCurrentClientFriend(buttonType,id)
+	-- Non-BNet WoW friend: if he’s online, he’s on your client/project
+	if buttonType==FRIENDS_BUTTON_TYPE_WOW then
+		local info=FG_GetFriendInfoByIndex(id)
+		return info and info.connected
+	end
+
+	-- BNet friend: must be online, WoW client, same project
+	if buttonType==FRIENDS_BUTTON_TYPE_BNET then
+		local accountName,characterName,class,level,isFavoriteFriend,
+		      isOnline,bnetAccountId,client,canCoop,wowProjectID =
+		      GetFriendInfoById(id)
+
+		if not isOnline then return false end
+		if client~=BNET_CLIENT_WOW then return false end
+		if WOW_PROJECT_ID and wowProjectID and wowProjectID~=WOW_PROJECT_ID then
+			return false
+		end
+		return true
+	end
+
+	return false
+end
+
 -- [[ BNet button name text builder ]]
 
 local function SocialPlus_GetBNetButtonNameText(accountName,client,canCoop,characterName,class,level,realmName)
@@ -935,9 +1011,14 @@ local function SocialPlus_UpdateFriendButton(button)
 			-- Invite button for online non-BNet WoW friends
 			hasTravelPassButton=true
 			if button.travelPassButton then
-				button.travelPassButton.fgInviteAllowed=true
-				button.travelPassButton.fgInviteReason=nil
-				button.travelPassButton:Enable()
+				local allowed, reason = SocialPlus_GetInviteStatus("WOW", FriendButtons[index].id)
+				button.travelPassButton.fgInviteAllowed = allowed
+				button.travelPassButton.fgInviteReason = reason
+				if allowed then
+					button.travelPassButton:Enable()
+				else
+					button.travelPassButton:Disable()
+				end
 			end
 		else
 			button.background:SetColorTexture(
@@ -1072,27 +1153,11 @@ local function SocialPlus_UpdateFriendButton(button)
 
 			hasTravelPassButton=true
 
-			local fgAllowed=true
-			local fgReason=nil
-
-			if client~=BNET_CLIENT_WOW then
-			fgAllowed=false
-			fgReason=L.INVITE_REASON_NOT_WOW
-			elseif WOW_PROJECT_ID and wowProjectID and wowProjectID~=WOW_PROJECT_ID then
-			fgAllowed=false
-			fgReason=L.INVITE_REASON_WRONG_PROJECT
-			end
-
-			if fgAllowed and (not realmName or realmName=="") then
-			fgAllowed=false
-			fgReason=L.INVITE_REASON_NO_REALM
-			end
-
-
-			button.travelPassButton.fgInviteAllowed=fgAllowed
-			button.travelPassButton.fgInviteReason=fgReason
-
-			if fgAllowed then
+			-- Determine invite eligibility for BNet friends using a centralized helper
+			local allowed, reason = SocialPlus_GetInviteStatus("BNET", id)
+			button.travelPassButton.fgInviteAllowed = allowed
+			button.travelPassButton.fgInviteReason = reason
+			if allowed then
 				button.travelPassButton:Enable()
 			else
 				button.travelPassButton:Disable()
@@ -1279,6 +1344,67 @@ local function SocialPlus_UpdateFriends()
 	end
 end
 
+local function SocialPlus_ReorderGeneralForCurrentClient()
+	if not (SocialPlus_SavedVars and SocialPlus_SavedVars.prioritize_current_client) then
+		return
+	end
+	if not FriendButtons or not FriendButtons.count or FriendButtons.count==0 then
+		return
+	end
+
+	-- Find the divider for the ungrouped bucket (group key == "")
+	local generalHeaderIndex=nil
+	for i=1,FriendButtons.count do
+		local fb=FriendButtons[i]
+		if fb and fb.buttonType==FRIENDS_BUTTON_TYPE_DIVIDER then
+			if fb.text=="" then
+				generalHeaderIndex=i
+				break
+			end
+		end
+	end
+	if not generalHeaderIndex then return end
+
+	-- Range of rows under that header, up to next divider (or end)
+	local startIdx=generalHeaderIndex+1
+	local endIdx=FriendButtons.count
+	for i=startIdx,FriendButtons.count do
+		local fb=FriendButtons[i]
+		if fb and fb.buttonType==FRIENDS_BUTTON_TYPE_DIVIDER then
+			endIdx=i-1
+			break
+		end
+	end
+	if endIdx<startIdx then return end
+
+	-- Partition into priority (same project) vs others
+	local priority={}
+	local others={}
+	for i=startIdx,endIdx do
+		local fb=FriendButtons[i]
+		if fb and fb.buttonType and fb.id then
+			if SocialPlus_IsCurrentClientFriend(fb.buttonType,fb.id) then
+				table.insert(priority,fb)
+			else
+				table.insert(others,fb)
+			end
+		else
+			table.insert(others,fb)
+		end
+	end
+
+	-- Rewrite the block: priority first, then others
+	local idx=startIdx
+	for _,fb in ipairs(priority) do
+		FriendButtons[idx]=fb
+		idx=idx+1
+	end
+	for _,fb in ipairs(others) do
+		FriendButtons[idx]=fb
+		idx=idx+1
+	end
+end
+
 -- [[ Group tag helpers ]]
 
 local function FillGroups(groups,note,...)
@@ -1364,14 +1490,14 @@ local function SocialPlus_Update(forceUpdate)
 	end
 
 		-- >>> SIMPLE NAME-ONLY SEARCH MODE (no groups) <<<
-	if SP_SearchTerm then
+	if SocialPlus_SearchTerm then
 		wipe(FriendButtons)
 		wipe(GroupTotal)
 		wipe(GroupOnline)
 		GroupCount=0
 
 
-		local term=SP_SearchTerm -- already normalized (lowercase, no accents/symbols)
+		local term=SocialPlus_SearchTerm -- already normalized (lowercase, no accents/symbols)
 		local addButtonIndex=0
 		local totalButtonHeight=0
 
@@ -1420,7 +1546,7 @@ local function SocialPlus_Update(forceUpdate)
 					or ""
 
 				-- Normalize first word for search (ignores accents and symbols)
-				local normalized=SP_NormalizeText(firstWord(primaryName))
+				local normalized=SocialPlus_NormalizeText(firstWord(primaryName))
 
 				if startsWith(normalized,term) then
 					AddButtonInfo(FRIENDS_BUTTON_TYPE_BNET,i)
@@ -1437,7 +1563,7 @@ local function SocialPlus_Update(forceUpdate)
 			if SocialPlus_SavedVars and SocialPlus_SavedVars.hide_offline and not connected then
 				-- skip offline if setting says so
 			elseif name and name~="" then
-				local searchName=SP_NormalizeText(firstWord(name))
+				local searchName=SocialPlus_NormalizeText(firstWord(name))
 				if startsWith(searchName,term) then
 					AddButtonInfo(FRIENDS_BUTTON_TYPE_WOW,i)
 				end
@@ -1449,11 +1575,11 @@ local function SocialPlus_Update(forceUpdate)
 
 		-- Clear SocialPlus search and restore full list
 		function SocialPlus_ClearSearch()
-			if SP_SearchBox then
-				SP_SearchBox:SetText("")
-				SP_SearchBox:ClearFocus()
+			if SocialPlus_Searchbox then
+				SocialPlus_Searchbox:SetText("")
+				SocialPlus_Searchbox:ClearFocus()
 			end
-			SP_SearchTerm=nil
+			SocialPlus_SearchTerm=nil
 		end
 
 
@@ -1699,6 +1825,9 @@ local function SocialPlus_Update(forceUpdate)
 		end
 	end
 	FriendButtons.count=index
+
+	-- Reorder "General" group to put same-project players on top if setting is enabled
+	SocialPlus_ReorderGeneralForCurrentClient()
 
 	local selectedFriend=0
 	if numBNetTotal+numWoWTotal>0 then
@@ -2088,7 +2217,7 @@ local function InviteOrGroup(clickedgroup,invite)
 		local noteText=t[13] or t[12] or nil
 		local note=NoteAndGroups(noteText,groups)
 
-		if groups[clickedgroup] then
+			if groups[clickedgroup] then
 			if invite then
 				local accountInfo=C_BattleNet and C_BattleNet.GetFriendAccountInfo and C_BattleNet.GetFriendAccountInfo(i)
 				if accountInfo and accountInfo.gameAccountInfo and accountInfo.gameAccountInfo.isOnline then
@@ -2101,7 +2230,11 @@ local function InviteOrGroup(clickedgroup,invite)
 						if realmName and realmName~="" then
 							target=characterName.."-"..realmName
 						end
-						pcall(InviteUnit,target)
+						-- Skip invite if not allowed (opposite faction etc.)
+						local allowed,reason = SocialPlus_GetInviteStatus("BNET", i)
+						if allowed then
+							pcall(InviteUnit,target)
+						end
 					end
 				end
 			else
@@ -2120,9 +2253,13 @@ local function InviteOrGroup(clickedgroup,invite)
 		local noteText=friend_info and friend_info.notes
 		local note=NoteAndGroups(noteText,groups)
 
-		if groups[clickedgroup] then
+			if groups[clickedgroup] then
 			if invite and connected and name and name~="" then
-				pcall(InviteUnit,name)
+				-- Skip invite if not allowed (opposite faction etc.)
+				local allowed,reason = SocialPlus_GetInviteStatus("WOW", i)
+				if allowed then
+					pcall(InviteUnit,name)
+				end
 			elseif not invite then
 				groups[clickedgroup]=nil
 				local newNote=CreateNote(note,groups)
@@ -2140,17 +2277,11 @@ SocialPlus_Menu.displayMode="MENU"
 local menu_items={
 	[1]={
 		{text="",notCheckable=true,isTitle=true},
-		{text=L.GROUP_INVITE_ALL
-,notCheckable=true,func=function(self,menu,clickedgroup) InviteOrGroup(clickedgroup,true) end},
+		{text=L.GROUP_INVITE_ALL,notCheckable=true,func=function(self,menu,clickedgroup) InviteOrGroup(clickedgroup,true) end},
 		{text=L.GROUP_RENAME,notCheckable=true,func=function(self,menu,clickedgroup) StaticPopup_Show("SocialPlus_RENAME",nil,nil,clickedgroup) end},
 		{text=L.GROUP_REMOVE,notCheckable=true,func=function(self,menu,clickedgroup) InviteOrGroup(clickedgroup,false) end},
-		{text=L.GROUP_SETTINGS,notCheckable=true,hasArrow=true},
 	},
-	[2]={
-		{text=L.SETTING_HIDE_OFFLINE,checked=function() return SocialPlus_SavedVars.hide_offline end,func=function() CloseDropDownMenus() SocialPlus_SavedVars.hide_offline=not SocialPlus_SavedVars.hide_offline SocialPlus_Update() end},
-		{text=L.SETTING_HIDE_MAX_LEVEL,checked=function() return SocialPlus_SavedVars.hide_high_level end,func=function() CloseDropDownMenus() SocialPlus_SavedVars.hide_high_level=not SocialPlus_SavedVars.hide_high_level SocialPlus_Update() end},
-		{text=L.SETTING_COLOR_NAMES,checked=function() return SocialPlus_SavedVars.colour_classes end,func=function() CloseDropDownMenus() SocialPlus_SavedVars.colour_classes=not SocialPlus_SavedVars.colour_classes SocialPlus_Update() end},
-	},
+	-- Settings are now in the left-side panel. This submenu is intentionally removed.
 }
 
 SocialPlus_Menu.initialize=function(self,level)
@@ -2160,13 +2291,14 @@ SocialPlus_Menu.initialize=function(self,level)
 	local groupKey=UIDROPDOWNMENU_MENU_VALUE
 	local isNoGroup=(groupKey==nil or groupKey=="")
 
-	for _,items in ipairs(menu_items[level]) do
+		for _,items in ipairs(menu_items[level]) do
 		local info=UIDropDownMenu_CreateInfo()
 
 		for prop,value in pairs(items) do
 			-- Replace empty text with the current group label
 			info[prop]=value~="" and value or (groupKey~="" and groupKey or L.GROUP_UNGROUPED)
 		end
+		-- Keep menu text static; slider popup shows the value
 
 		info.arg1=groupKey
 		info.arg2=groupKey
@@ -2183,6 +2315,395 @@ SocialPlus_Menu.initialize=function(self,level)
 		UIDropDownMenu_AddButton(info,level)
 	end
 end
+
+-- [[ Scroll speed popup UI ]]
+local function SocialPlus_CreateScrollSpeedPopup()
+	if SocialPlus_ScrollSpeedFrame then return end
+
+	local f=CreateFrame("Frame","SocialPlus_ScrollSpeedFrame",UIParent,"BackdropTemplate")
+	f:SetSize(340,110)
+	f:SetPoint("CENTER",UIParent,"CENTER",0,0)
+	f:SetBackdrop({bgFile="Interface\DialogFrame\UI-DialogBox-Background",edgeFile="Interface\DialogFrame\UI-DialogBox-Border",tile=false,tileSize=0,edgeSize=16,insets={left=8,right=8,top=6,bottom=6}})
+	-- Solid dark background overlay to avoid transparency
+	local bg = f:CreateTexture(nil, "BACKGROUND")
+	bg:SetAllPoints(f)
+	bg:SetColorTexture(0.06, 0.06, 0.06, 0.95)
+	if type(f.SetBackdropBorderColor)=="function" then
+		pcall(f.SetBackdropBorderColor,f,0.75,0.75,0.75,1)
+	end
+	f:SetMovable(true)
+	f:EnableMouse(true)
+	f:SetToplevel(true)
+
+	f.title=f:CreateFontString(nil,"OVERLAY","GameFontHighlightLarge")
+	f.title:SetPoint("TOP",f,"TOP",0,-8)
+	f.title:SetText(L.SETTING_SCROLL_SPEED)
+
+	f.desc=f:CreateFontString(nil,"OVERLAY","GameFontNormalSmall")
+	f.desc:SetPoint("TOP",f.title,"BOTTOM",0,-6)
+	f.desc:SetText(L.SETTING_SCROLL_SPEED_DESC)
+
+	local slider=CreateFrame("Slider","SocialPlus_ScrollSpeedSlider",f,"OptionsSliderTemplate")
+	slider:SetPoint("TOP",f.desc,"BOTTOM",0,-10)
+	slider:SetSize(260,16)
+	-- 1.0 to 3.5 range (0.1 steps) for smoother control
+	slider:SetMinMaxValues(1.0,3.5)
+	slider:SetValueStep(0.1)
+	slider:SetObeyStepOnDrag(true)
+	slider:SetValue(SocialPlus_SavedVars and SocialPlus_SavedVars.scrollSpeed or 2.2)
+
+	slider.text = _G[slider:GetName().."Text"]
+	if slider.text then slider.text:SetText(string.format("%.1f", slider:GetValue())) end
+
+	-- low/high labels if template didn't create them
+	if not _G[slider:GetName().."Low"] then
+		local low = slider:CreateFontString(nil,"ARTWORK","GameFontNormalSmall")
+		low:SetPoint("LEFT",slider,"LEFT",0,-18)
+		low:SetText("1.0")
+	end
+	if not _G[slider:GetName().."High"] then
+		local high = slider:CreateFontString(nil,"ARTWORK","GameFontNormalSmall")
+		high:SetPoint("RIGHT",slider,"RIGHT",0,-18)
+		high:SetText("3.5")
+	end
+
+	slider:SetScript("OnValueChanged",function(self,val)
+		val = tonumber(val) or 1.0
+		-- Snap to 0.1 increments
+		val = math.floor(val*10+0.5)/10
+		self:SetValue(val)
+		if self.text then self.text:SetText(string.format("%.1f", val)) end
+		-- Store as pending value; will be committed on OK / ENTER
+		if f then
+			f._pendingScrollSpeed = val
+		end
+	end)
+
+	local ok=CreateFrame("Button",nil,f,"UIPanelButtonTemplate")
+	ok:SetSize(100,22)
+	ok:SetPoint("BOTTOMRIGHT",f,-12,12)
+	ok:SetText(OKAY)
+	ok:SetScript("OnClick",function()
+		local val = f._pendingScrollSpeed or (tonumber(slider:GetValue()) or 2.2)
+		val = math.floor(val*10+0.5)/10
+		SocialPlus_SavedVars.scrollSpeed = val
+		f:Hide()
+	end)
+
+	local cancel=CreateFrame("Button",nil,f,"UIPanelButtonTemplate")
+	cancel:SetSize(100,22)
+	cancel:SetPoint("BOTTOMLEFT",f,12,12)
+	cancel:SetText(CANCEL)
+	cancel:SetScript("OnClick",function()
+		if f._pendingScrollSpeed then
+			local current = SocialPlus_SavedVars and SocialPlus_SavedVars.scrollSpeed or 2.2
+			slider:SetValue(current)
+			f._pendingScrollSpeed = nil
+		end
+		f:Hide()
+	end)
+
+	-- Keyboard handling: ESC to cancel, ENTER to accept
+	f:EnableKeyboard(true)
+	f:SetScript("OnShow",function(self)
+		-- try to focus slider for keyboard input; fallback gracefully
+		pcall(function() slider:SetFocus() end)
+		if type(self.SetPropagateKeyboardInput)=="function" then pcall(self.SetPropagateKeyboardInput,self,false) end
+		self:SetScript("OnKeyDown",function(inner,key)
+			if key=="ESCAPE" then
+				self:Hide()
+			elseif key=="ENTER" then
+				local val = self._pendingScrollSpeed or (tonumber(slider:GetValue()) or 2.2)
+				val = math.floor(val*10+0.5)/10
+				SocialPlus_SavedVars.scrollSpeed = val
+				self:Hide()
+			end
+		end)
+		self:SetScript("OnHide",function(inner)
+			inner:SetScript("OnKeyDown",nil)
+			-- Revert slider to saved value if pending exists
+			if inner._pendingScrollSpeed and inner._slider then
+				local current = SocialPlus_SavedVars and SocialPlus_SavedVars.scrollSpeed or 2.2
+				pcall(inner._slider.SetValue,inner._slider,current)
+				inner._pendingScrollSpeed = nil
+			end
+		end)
+	end)
+
+	SocialPlus_ScrollSpeedFrame = f
+	SocialPlus_ScrollSpeedFrame._slider = slider
+	SocialPlus_ScrollSpeedFrame._ok = ok
+	SocialPlus_ScrollSpeedFrame._cancel = cancel
+end
+
+function SocialPlus_ShowScrollSpeedPopup(group)
+	SocialPlus_CreateScrollSpeedPopup()
+	if not SocialPlus_ScrollSpeedFrame then return end
+	local v = SocialPlus_SavedVars and SocialPlus_SavedVars.scrollSpeed or 1
+	if SocialPlus_ScrollSpeedFrame._slider then
+		SocialPlus_ScrollSpeedFrame._slider:SetValue(v)
+		local txt = SocialPlus_ScrollSpeedFrame._slider.text
+		if txt then txt:SetText(tostring(v)) end
+	end
+	SocialPlus_ScrollSpeedFrame._pendingScrollSpeed = v
+	SocialPlus_ScrollSpeedFrame:Show()
+end
+
+-- [[ Preferences Panel (left-side) ]]
+function SocialPlus_CreateSettingsButton()
+	if SocialPlus_SettingsButton or not FriendsFrame then return end
+
+	local btn=CreateFrame("Button","SocialPlus_SettingsButton",FriendsFrame)
+	btn:SetSize(23,23)
+	btn:SetPoint("TOPRIGHT",FriendsFrame,"TOPRIGHT",-10,-59)
+
+	-- Backplate (Blizzard-style frame)
+	local back=btn:CreateTexture(nil,"BACKGROUND")
+	back:SetTexture("Interface\\Buttons\\UI-Quickslot2")
+	back:SetTexCoord(0.1,0.9,0.1,0.9)
+	back:SetSize(30,30)
+	back:SetPoint("CENTER",btn,"CENTER",0,0)
+	back:SetVertexColor(0.55,0.55,0.55) -- idle: dim so hover can pop
+
+	-- Inner dark fill behind the cog (removes empty look)
+	local fill = btn:CreateTexture(nil, "BACKGROUND", nil, 1)
+	fill:SetColorTexture(0,0,0,0.75) -- soft dark fill
+	fill:SetPoint("CENTER", btn, "CENTER", 0, 0)
+	fill:SetSize(20,20) -- slightly smaller than the 30x30 outer frame
+
+	-- Cogwheel normal/pushed
+	btn:SetNormalTexture("Interface\\Buttons\\UI-OptionsButton")
+	btn:SetPushedTexture("Interface\\Buttons\\UI-OptionsButton")
+
+	local normal=btn:GetNormalTexture()
+	local pushed=btn:GetPushedTexture()
+
+	if normal then
+		normal:ClearAllPoints()
+		normal:SetPoint("CENTER",btn,"CENTER",0,0)
+		normal:SetSize(15,15)
+		normal:SetTexCoord(0,1,0,1)
+		normal:SetVertexColor(0.9,0.9,0.9) -- idle: slightly dim
+	end
+
+	if pushed then
+		pushed:ClearAllPoints()
+		pushed:SetPoint("CENTER",btn,"CENTER",-1,-1) -- pressed offset
+		pushed:SetSize(15,15)
+		pushed:SetTexCoord(0,1,0,1)
+		pushed:SetVertexColor(0.6,0.6,0.6) -- clearly darker on press
+	end
+
+	-- Hover: light up frame + cog
+	btn:HookScript("OnEnter",function()
+		back:SetVertexColor(1.5,1.5,1.5)   -- strong highlight
+		if normal then normal:SetVertexColor(1,1,1) end
+	end)
+
+	btn:HookScript("OnLeave",function()
+		back:SetVertexColor(0.55,0.55,0.55) -- back to dim frame
+		if normal then normal:SetVertexColor(0.9,0.9,0.9) end
+	end)
+
+	btn:SetScript("OnClick",function()
+		if SocialPlus_SettingsPanel then
+			SocialPlus_SettingsPanel:SetShown(not SocialPlus_SettingsPanel:IsShown())
+		end
+	end)
+
+	SocialPlus_SettingsButton=btn
+end
+
+function SocialPlus_CreateSettingsPanel()
+	if SocialPlus_SettingsPanel or not FriendsFrame then return end
+
+	local f=CreateFrame("Frame","SocialPlus_SettingsPanel",FriendsFrame,"BackdropTemplate")
+	-- Slightly larger box
+	f:SetSize(340,280)
+
+	-- Right side of Friends frame
+	f:SetPoint("TOPLEFT",FriendsFrame,"TOPRIGHT",8,-24)
+
+	-- Tighter insets so the background fills closer to the border
+	f:SetBackdrop({
+    bgFile="Interface\\Tooltips\\UI-Tooltip-Background",
+    edgeFile="Interface\\Tooltips\\UI-Tooltip-Border",
+    tile=true, tileSize=16, edgeSize=16,
+    insets={left=4,right=4,top=4,bottom=4}
+})
+
+	-- Dark, almost identical to the Friends panel
+	f:SetBackdropColor(0.02,0.02,0.02,0.95)    -- inner fill
+	f:SetBackdropBorderColor(0.3,0.3,0.3,1)    -- subtle grey border
+
+	f:EnableMouse(true)
+	f:SetToplevel(true)
+
+	-- Title
+	f.title=f:CreateFontString(nil,"OVERLAY","GameFontHighlightLarge")
+	f.title:SetPoint("TOPLEFT",f,"TOPLEFT",14,-10)
+	f.title:SetText(L.GROUP_SETTINGS)
+
+	-- Close button (standard Blizzard X)
+	local close = CreateFrame("Button","SocialPlus_SettingsCloseButton",f,"UIPanelCloseButton")
+	close:SetPoint("TOPRIGHT",f,"TOPRIGHT",-4,-4)
+	close:SetScript("OnClick",function()
+		f:Hide()
+	end)
+
+	-- Checkboxes
+	local hideOffline=CreateFrame("CheckButton","SocialPlus_HideOfflineCheck",f,"UICheckButtonTemplate")
+	hideOffline:SetPoint("TOPLEFT",f,"TOPLEFT",14,-40)
+	_G[hideOffline:GetName().."Text"]:SetText(L.SETTING_HIDE_OFFLINE)
+	hideOffline:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.hide_offline)
+	hideOffline:SetScript("OnClick",function()
+		SocialPlus_SavedVars.hide_offline=not SocialPlus_SavedVars.hide_offline
+		SocialPlus_Update()
+	end)
+
+	local hideLevel=CreateFrame("CheckButton","SocialPlus_HideMaxLevelCheck",f,"UICheckButtonTemplate")
+	hideLevel:SetPoint("TOPLEFT",hideOffline,"BOTTOMLEFT",0,-6)
+	_G[hideLevel:GetName().."Text"]:SetText(L.SETTING_HIDE_MAX_LEVEL)
+	hideLevel:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.hide_high_level)
+	hideLevel:SetScript("OnClick",function()
+		SocialPlus_SavedVars.hide_high_level=not SocialPlus_SavedVars.hide_high_level
+		SocialPlus_Update()
+	end)
+
+	local colourNames=CreateFrame("CheckButton","SocialPlus_ColourNamesCheck",f,"UICheckButtonTemplate")
+	colourNames:SetPoint("TOPLEFT",hideLevel,"BOTTOMLEFT",0,-6)
+	_G[colourNames:GetName().."Text"]:SetText(L.SETTING_COLOR_NAMES)
+	colourNames:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.colour_classes)
+	colourNames:SetScript("OnClick",function()
+		SocialPlus_SavedVars.colour_classes=not SocialPlus_SavedVars.colour_classes
+		SocialPlus_Update()
+	end)
+
+	-- NEW: prioritize current-client players (MoP Classic / same project)
+	local prioritizeCurrent=CreateFrame("CheckButton","SocialPlus_PrioritizeCurrentClientCheck",f,"UICheckButtonTemplate")
+	prioritizeCurrent:SetPoint("TOPLEFT",colourNames,"BOTTOMLEFT",0,-6)
+	_G[prioritizeCurrent:GetName().."Text"]:SetText(L.SETTING_PRIORITIZE_CURRENT)
+	prioritizeCurrent:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.prioritize_current_client)
+	prioritizeCurrent:SetScript("OnClick",function()
+		SocialPlus_SavedVars.prioritize_current_client = not SocialPlus_SavedVars.prioritize_current_client
+		-- force full rebuild so ordering updates
+		SocialPlus_Update(true)
+	end)
+
+	-- Separator spanning almost full width, now below the new setting
+	local line=f:CreateTexture(nil,"ARTWORK")
+	line:SetSize(f:GetWidth()-24,1)
+	line:SetPoint("TOPLEFT",prioritizeCurrent,"BOTTOMLEFT",0,-12)
+
+	line:SetColorTexture(0.6,0.6,0.6,0.4)
+
+	-- Slider label + description
+	local lbl=f:CreateFontString(nil,"ARTWORK","GameFontHighlightSmall")
+	lbl:SetPoint("TOPLEFT",line,"BOTTOMLEFT",0,-10)
+	lbl:SetText(L.SETTING_SCROLL_SPEED)
+
+	local desc=f:CreateFontString(nil,"ARTWORK","GameFontNormalSmall")
+	desc:SetPoint("TOPLEFT",lbl,"BOTTOMLEFT",0,-6)
+	desc:SetText(L.SETTING_SCROLL_SPEED_DESC)
+
+	-- Slider (moved a bit UP and widened)
+	local slider=CreateFrame("Slider","SocialPlus_SettingsScrollSpeedSlider",f,"OptionsSliderTemplate")
+	slider:SetPoint("TOPLEFT",desc,"BOTTOMLEFT",0,-5)
+	slider:SetSize(f:GetWidth()-40,16)
+	slider:SetMinMaxValues(1.0,3.5)
+	slider:SetValueStep(0.1)
+	slider:SetObeyStepOnDrag(true)
+	slider:SetValue(SocialPlus_SavedVars and SocialPlus_SavedVars.scrollSpeed or 2.2)
+
+	-- Center numeric value under slider
+	slider.text=_G[slider:GetName().."Text"]
+	if slider.text then
+		slider.text:ClearAllPoints()
+		slider.text:SetPoint("TOP",slider,"BOTTOM",0,-2)
+		slider.text:SetJustifyH("CENTER")
+		slider.text:SetText(string.format("%.1f",slider:GetValue()))
+	end
+
+	slider:SetScript("OnValueChanged",function(self,val)
+		val=tonumber(val) or 2.2
+		val=math.floor(val*10+0.5)/10
+		self:SetValue(val)
+		if self.text then
+			self.text:SetText(string.format("%.1f",val))
+		end
+		SocialPlus_SavedVars.scrollSpeed=val
+		pcall(SocialPlus_InitSmoothScroll)
+	end)
+
+	-- Sync on show
+	f:SetScript("OnShow",function()
+		hideOffline:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.hide_offline)
+		hideLevel:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.hide_high_level)
+		colourNames:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.colour_classes)
+	    prioritizeCurrent:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.prioritize_current_client)
+		slider:SetValue(SocialPlus_SavedVars and SocialPlus_SavedVars.scrollSpeed or 2.2)
+	end)
+
+	f:Hide()
+	SocialPlus_SettingsPanel=f
+
+	if FriendsFrame then
+		FriendsFrame:HookScript("OnHide",function()
+			if SocialPlus_SettingsPanel then SocialPlus_SettingsPanel:Hide() end
+		end)
+	end
+end
+
+local function SocialPlus_UpdateFriendsTabVisibility()
+	if not FriendsFrame then return end
+
+	local tabID=PanelTemplates_GetSelectedTab(FriendsFrame) or FriendsFrame.selectedTab
+	local isFriendsTab=(tabID==1)
+
+	-- Show/hide search box
+	if SocialPlus_Searchbox then
+		-- When leaving the Friends tab: clear search completely
+		if not isFriendsTab then
+			SocialPlus_Searchbox:SetText("")
+			SocialPlus_Searchbox:ClearFocus()
+			SocialPlus_SearchTerm=nil
+
+			if SocialPlus_SearchGlow then
+				SocialPlus_SearchGlow:Hide()
+			end
+			if SocialPlus_SearchGlowOuter then
+				SocialPlus_SearchGlowOuter:Hide()
+			end
+
+			-- Force list back to full view
+			FriendsList_Update()
+		end
+
+		SocialPlus_Searchbox:SetShown(isFriendsTab)
+	end
+
+	-- Show/hide settings button
+	if SocialPlus_SettingsButton then
+		SocialPlus_SettingsButton:SetShown(isFriendsTab)
+	end
+
+	-- Auto-close settings when leaving the tab
+	if not isFriendsTab and SocialPlus_SettingsPanel and SocialPlus_SettingsPanel:IsShown() then
+		SocialPlus_SettingsPanel:Hide()
+	end
+end
+
+-- Run visibility fix on first load
+SocialPlus_UpdateFriendsTabVisibility()
+
+-- Update visibility when switching tabs
+FriendsFrame:HookScript("OnShow", SocialPlus_UpdateFriendsTabVisibility)
+
+hooksecurefunc("PanelTemplates_SetTab", function(frame, tabID)
+	if frame == FriendsFrame then
+		SocialPlus_UpdateFriendsTabVisibility()
+	end
+end)
 
 -- [[ Friend (row) right-click menu state ]]
 
@@ -2274,29 +2795,65 @@ function SocialPlus_CanInviteMenuTarget()
 	if not kind or not id then
 		return false
 	end
+	local allowed,reason = SocialPlus_GetInviteStatus(kind,id)
+	return allowed and true or false
+end
+
+-- Returns true/false, reason string, and optional invite restriction code
+-- Helper: SocialPlus_GetInviteStatus is declared at top scope
+
+SocialPlus_GetInviteStatus = function(kind,id)
+	if not kind or not id then return false, L.INVITE_GENERIC_FAIL, INVITE_RESTRICTION_INFO end
+
+	-- Ensure player faction is initialized
+	if not playerFaction then FG_InitFactionIcon() end
 
 	if kind=="WOW" then
 		local info=FG_GetFriendInfoByIndex(id)
-		return info and info.connected
+		if not info then return false, L.INVITE_GENERIC_FAIL, INVITE_RESTRICTION_INFO end
+		if not info.connected then return false, L.INVITE_REASON_NOT_WOW, INVITE_RESTRICTION_INFO end
+
+		-- Some WoW friend info may include factionName or faction; check if present
+		local friendFaction = info.factionName or info.faction
+		if friendFaction and playerFaction and friendFaction~=playerFaction then
+			return false, L.INVITE_REASON_OPPOSITE_FACTION, INVITE_RESTRICTION_FACTION
+		end
+
+		-- Otherwise allow invite (other checks like realm are not applicable for local friends)
+		return true, nil, INVITE_RESTRICTION_NONE
 	elseif kind=="BNET" then
 		local accountName,characterName,class,level,isFavoriteFriend,
-		      isOnline,bnetAccountId,client,canCoop,wowProjectID,lastOnline,
-		      isAFK,isGameAFK,isDND,isGameBusy,mobile,zoneName,gameText,realmName=
-		      GetFriendInfoById(id)
+			  isOnline,bnetAccountId,client,canCoop,wowProjectID,lastOnline,
+			  isAFK,isGameAFK,isDND,isGameBusy,mobile,zoneName,gameText,realmName = GetFriendInfoById(id)
 
-		if not isOnline then return false end
-		if client~=BNET_CLIENT_WOW then return false end
+		if not isOnline then return false, L.INVITE_REASON_NOT_WOW, INVITE_RESTRICTION_INFO end
+		if client~=BNET_CLIENT_WOW then return false, L.INVITE_REASON_NOT_WOW, INVITE_RESTRICTION_NO_GAME_ACCOUNTS end
 		if WOW_PROJECT_ID and wowProjectID and wowProjectID~=WOW_PROJECT_ID then
-			return false
+			return false, L.INVITE_REASON_WRONG_PROJECT, INVITE_RESTRICTION_WOW_PROJECT_ID
 		end
-		if not characterName or characterName=="" then return false end
-		if not realmName or realmName=="" then return false end
+		if not characterName or characterName=="" then return false, L.INVITE_GENERIC_FAIL, INVITE_RESTRICTION_INFO end
+		if not realmName or realmName=="" then return false, L.INVITE_REASON_NO_REALM, INVITE_RESTRICTION_REALM end
 
-		return true
+		-- Check faction for BNet friends via C_BattleNet.GetFriendAccountInfo if available
+		if C_BattleNet and C_BattleNet.GetFriendAccountInfo and type(C_BattleNet.GetFriendAccountInfo)=="function" then
+			local acct=C_BattleNet.GetFriendAccountInfo(id)
+			local ga=acct and acct.gameAccountInfo or nil
+			local friendFaction = ga and ga.factionName or nil
+			if friendFaction and playerFaction and friendFaction~=playerFaction then
+				return false, L.INVITE_REASON_OPPOSITE_FACTION, INVITE_RESTRICTION_FACTION
+			end
+		end
+
+		-- Allow invite if none of the conditions were met
+		return true, nil, INVITE_RESTRICTION_NONE
 	end
 
-	return false
+	-- Unknown kind
+	return false, L.INVITE_GENERIC_FAIL, INVITE_RESTRICTION_INFO
 end
+
+-- Expose global alias so third-party callers that expect a global will find it
+_G.SocialPlus_GetInviteStatus = SocialPlus_GetInviteStatus
 
 local function SocialPlus_DropdownFriendHasGroup()
 	local _,_,note=SocialPlus_GetDropdownFriendNote()
@@ -2418,8 +2975,23 @@ SocialPlus_FriendMenu.initialize=function(self,level)
 		info.text=L.MENU_INVITE
 		info.notCheckable=true
 
-		local canInvite=SocialPlus_CanInviteMenuTarget()
+		-- Determine invite eligibility and reason for the dropdown friend
+		local kind,id = SocialPlus_GetDropdownFriend()
+		local canInvite, reason = false, nil
+		if kind and id then
+			canInvite, reason = SocialPlus_GetInviteStatus(kind,id)
+		else
+			canInvite = false
+			reason = L.INVITE_GENERIC_FAIL
+		end
 		info.disabled=not canInvite
+		if info.disabled and reason and reason~="" then
+			info.tooltipTitle = "|cffff4444"..L.MENU_INVITE.."|r"
+			info.tooltipText = reason
+		else
+			info.tooltipTitle = L.MENU_INVITE
+			info.tooltipText = nil
+		end
 
 		info.func=function()
 			if not SocialPlus_CanInviteMenuTarget() or not InviteUnit then return end
@@ -2604,7 +3176,7 @@ local function HookButtons()
 				travel:HookScript("OnEnter",function(self)
 					if not GameTooltip then return end
 					GameTooltip:SetOwner(self,"ANCHOR_RIGHT")
-					local title=INVITE or "Invite"
+					local title=L.MENU_INVITE
 
 					if self.fgInviteAllowed or self:IsEnabled() then
 						GameTooltip:SetText(title,1,1,1)
@@ -2973,7 +3545,8 @@ frame:SetScript("OnEvent",function(self,event,...)
 				collapsed={},
 				hide_offline=false,
 				colour_classes=true,
-				hide_high_level=false
+				hide_high_level=false,
+				scrollSpeed=2.2
 			}
 		end
 	end

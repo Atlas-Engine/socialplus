@@ -1,90 +1,109 @@
-# 🌐 SocialPlus
+🇺🇸 ENGLISH  
+SocialPlus is a modern upgrade of the MoP-Classic Friends List, built on top of MikeProd’s original FriendsGroup code (cleaned, optimized, and expanded).
 
-A refined, modernized upgrade to the MoP Classic Friends List — built for players who expect a smooth, reliable, 2025-quality social experience.  
-Fast, elegant, fully bilingual (EN/FR), and engineered with flawless cross-realm compatibility.
+✨ MAIN FEATURES
 
-Inspired by **Mikeprod’s FriendGroups**, transformed into a polished, contemporary social system.
+🔍 Smart Search Bar  
+• Real-time filtering (supports accents & partial names)  
+• Clears automatically when switching tabs  
+• Hidden on Who / Raid tabs  
 
----
+📁 Friend Groups (MikeProd base, improved)  
+• Use “#GroupName” inside notes to assign friends  
+• Collapse / expand groups  
+• Rename groups  
+• Invite entire groups  
+• Remove all group tags at once  
 
-# 🇬🇧 English — Overview
+🔥 MoP-Specific Enhancements  
+• “Prioritize MoP Friends” setting — MoP players appear at the top of the General list  
+• Horde / Alliance icon for MoP WoW friends (when available)  
 
-**SocialPlus reimagines the outdated 2012 Social panel into a clean, intuitive, and powerful interface that finally matches the way players interact today.**
+🛠️ Settings Panel  
+• Options:  
+  - Hide offline friends  
+  - Hide max-level friends  
+  - Class-colored names  
+  - Prioritize MoP Friends  
+  - Adjustable scroll-speed slider (smooth scrolling)  
 
-From effortless cross-realm invitations to instant, accent-proof searching, every feature is designed to feel native, modern, and seamless.
+⚙️ Settings Cogwheel  
+• Blizzard-style frame, hover glow & pressed animation  
+• Auto-hides with the search bar when leaving the Friends tab  
 
-### 🔥 Core Advantages
-- **Instant Search Bar**  
-  Lightning-fast results, working even with accented or unconventional names.
+💬 Upgraded Right-Click Menu  
+• Whisper  
+• Invite  
+• **Cross-Realm Invite now works properly** (button or right-click)  
+• Copy character name  
+• Set note  
+• Add / remove from group  
+• Remove friend / Remove Battle.net friend  
 
-- **Reliable Cross-Realm Invites**  
-  SocialPlus repairs MoP’s broken logic.  
-  You can now invite friends on any realm with stable, predictable behavior and clear explanations when restrictions apply.
+🚀 Cross-Realm Fix  
+• You can now reliably invite friends playing on **other realms** directly from the Friends List.  
+• Works for MoP WoW friends and Battle.net WoW clients.  
+• Gives clear error messages when an invite is blocked.
 
-- **Intelligent Friend Groups**  
-  Create, rename, delete, and auto-organize groups using simple note tags (`#GroupName`).  
-  Everything stays synced using Blizzard’s own note system — no extra files.
+📦 INSTALLATION  
+• 🟢 **Recommended:** Install automatically via CurseForge.  
+• 📁 **Manual:** Drag the **SocialPlus** folder into:  
+  _World of Warcraft\_classic_\Interface\AddOns\_
 
-- **Polished Visual Layout**  
-  Correct icon alignment, fixed spacing, and collapsible categories with online/offline indicators.
+Fully translated into English and French.  
 
-- **Full English/French Support**  
-  Automatically matches your WoW client language. Nothing to set up.
 
-- **Smooth Scroll & Performance Enhancements**  
-  Ultra-responsive scrolling and instant updates, even with large friend lists.
+---------------------------------------------  
+🇫🇷 FRANÇAIS  
+SocialPlus modernise la liste d’amis de MoP-Classic, basé sur l’addon FriendsGroup de MikeProd (amélioré, nettoyé et étendu).
 
-### ✨ Why It Stands Out
-- Dramatically more usable than Blizzard’s default panel  
-- Flawless behavior for both Battle.net & character-based friends  
-- Ideal for guild management, PvP teams, social players, and alts  
-- No taint, no UI conflicts, 100% MoP Classic-safe  
+✨ FONCTIONNALITÉS PRINCIPALES
 
-**SocialPlus delivers the Social UI MoP Classic always deserved — modern, precise, and beautifully integrated.**
+🔍 Barre de recherche intelligente  
+• Filtrage instantané (accents et recherches partielles)  
+• S’efface automatiquement en changeant d’onglet  
+• Cachée sur les onglets Qui / Raid  
 
----
+📁 Groupes d’amis (base MikeProd améliorée)  
+• Utilisez “#NomDuGroupe” dans les notes  
+• Plier / déplier les groupes  
+• Renommer les groupes  
+• Inviter tout un groupe  
+• Retirer les tags de groupe pour tous les membres  
 
-# 🇫🇷 Français — Présentation
+🔥 Améliorations spécifiques à MoP  
+• Option « Prioriser les contacts sur MoP » — place les joueurs MoP en haut de la liste Générale  
+• Icône Horde / Alliance pour les amis WoW MoP (si disponible)  
 
-**SocialPlus remplace complètement le panneau Social daté de 2012 pour offrir une interface moderne, intuitive et parfaitement adaptée au jeu d’aujourd’hui.**
+🛠️ Panneau de paramètres  
+• Options :  
+  - Masquer les amis hors-ligne  
+  - Masquer les amis niveau max  
+  - Noms colorés par classe  
+  - Prioriser les contacts sur MoP  
+  - Curseur de vitesse de défilement (scroll fluide)  
 
-Des invitations inter-royaumes fiables à la recherche instantanée insensible aux accents, tout est conçu pour être fluide, cohérent et naturel.
+⚙️ Roue dentée des paramètres  
+• Style Blizzard, surbrillance et animation d’appui  
+• Se cache automatiquement hors de l’onglet Amis  
 
-### 🔥 Atouts Principaux
-- **Barre de recherche instantanée**  
-  Résultats immédiats, compatible avec tous les noms, même ceux avec accents.
+💬 Menu clic droit amélioré  
+• Chuchoter  
+• Inviter  
+• **Invitations cross-realm fonctionnelles** (bouton ou clic droit)  
+• Copier le nom du personnage  
+• Définir une note  
+• Ajouter / retirer du groupe  
+• Supprimer ami / Ami Battle.net  
 
-- **Invitations inter-royaumes fiables**  
-  SocialPlus corrige les limites de MoP.  
-  Vous pouvez enfin inviter vos amis sur d’autres serveurs avec un comportement clair et stable.
+🚀 Correctif Cross-Realm  
+• Vous pouvez maintenant inviter correctement les amis d’autres royaumes depuis la liste d’amis.  
+• Fonctionne pour les amis WoW MoP et les amis Battle.net.  
+• Affiche un message clair si l’invitation est impossible.
 
-- **Groupes d’amis intelligents**  
-  Créez, renommez, supprimez et organisez vos groupes simplement via des balises (`#NomDuGroupe`).  
-  Tout est géré via les notes Blizzard — aucun fichier externe.
+📦 INSTALLATION  
+• 🟢 **Recommandé :** installation automatique via CurseForge.  
+• 📁 **Manuel :** glissez le dossier **SocialPlus** dans :  
+  _World of Warcraft\_classic_\Interface\AddOns\_
 
-- **Interface visuelle soignée**  
-  Icônes alignées, espacement corrigé, catégories repliables avec compteurs en ligne/hors ligne.
-
-- **Bilingue complet (EN/FR)**  
-  L’addon adopte automatiquement la langue de votre client WoW.
-
-- **Défilement fluide & performance optimisée**  
-  Parfaitement réactif, même avec de longues listes d’amis.
-
-### ✨ Pourquoi SocialPlus se démarque
-- Plus clair, plus rapide, plus intuitif que le panneau d’origine  
-- Fonctionne parfaitement avec les amis Battle.net et en jeu  
-- Idéal pour les guildes, les équipes PvP et les joueurs sociaux  
-- Zéro taint, totalement sécurisé pour MoP Classic  
-
-**SocialPlus apporte enfin la qualité, la fluidité et la modernité que l’interface sociale de MoP aurait dû avoir dès le départ.**
-
----
-
-## 🙏 Credits / Crédits
-Inspired by **Mikeprod FriendGroups**, reimagined and rebuilt for MoP Classic in 2025.
-
----
-
-## 📄 License / Licence
-MIT — Open. Simple. Permissive.
+Entièrement traduit en anglais et en français.

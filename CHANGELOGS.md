@@ -1,9 +1,16 @@
-# v1.0.8
-### Added
-• New scroll-speed customization slider (1.0–3.5 range)
-• Settings menu entry under Group Settings → Scroll speed
-• Full English/French localization for scroll-speed UI
-• Slow/Fast labels added for clearer UX
+v1.0.8 – Major UI polish, new filters, and full Blizzard-style integration
+
+• Added a Blizzard-style Settings cogwheel button with hover glow, pressed animation, and proper frame border.
+• Added a fully redesigned Settings Panel using a dark stone Warcraft background identical to the Friends Panel.
+• Added a red X close button inside the settings panel.
+• Added a new toggle: “Prioritize MoP Friends” — automatically moves MoP Classic friends to the top of the General list (except those already in custom groups).
+• Improved friend sorting: prioritization only affects the ungrouped section, preserving all custom friend groups.
+• Search box + settings cog now automatically hide when switching to the Who / Raid tabs.
+• Search box now resets when switching tabs to avoid stuck filters.
+• Adjusted settings panel height, slider position, and spacing for a cleaner modern look.
+• Polish pass on the search bar visuals and text alignment.
+• Cleaned, reorganized, and optimized several UI update functions for stability and clarity.
+
 
 ### Improved
 • Scroll engine now uses SavedVars for per-account preferences
