@@ -3260,7 +3260,7 @@ SocialPlus_GetInviteStatus=function(kind,id)
 			return false,L.INVITE_REASON_OPPOSITE_FACTION,INVITE_RESTRICTION_FACTION
 		end
 
-		-- Otherwise allow invite (other checks like realm are not applicable for local friends)
+		-- Local WoW friends are fine if none of the above blocked it
 		return true,nil,INVITE_RESTRICTION_NONE
 
 	elseif kind=="BNET" then
@@ -3280,27 +3280,37 @@ SocialPlus_GetInviteStatus=function(kind,id)
 			return false,L.INVITE_REASON_WRONG_PROJECT,INVITE_RESTRICTION_WOW_PROJECT_ID
 		end
 
-		-- Try to get faction via C_BattleNet (if Classic client exposes it)
-		local friendFaction=nil
+		-- Region + faction info via C_BattleNet if available
+		local acct,ga=nil,nil
+		local friendFaction,friendRegionID=nil,nil
 		if C_BattleNet and C_BattleNet.GetFriendAccountInfo and type(C_BattleNet.GetFriendAccountInfo)=="function" then
-			local acct=C_BattleNet.GetFriendAccountInfo(id)
-			local ga=acct and acct.gameAccountInfo or nil
+			acct=C_BattleNet.GetFriendAccountInfo(id)
+			ga=acct and acct.gameAccountInfo or nil
 			friendFaction=ga and ga.factionName or nil
+			friendRegionID=ga and ga.regionID or nil
 		end
 
-		-- Blizzard's own "canCoop" flag is the truth for grouping:
-		-- false = can't group (cross-region, incompatible, opposite faction, etc.)
+		-- Player region from client portal (EU/US/KR/TW)
+		local playerPortal=GetCVar and GetCVar("portal") or nil
+		local regionMap={US=1,EU=2,KR=3,TW=4,CN=5}
+		local playerRegionID=playerPortal and regionMap[playerPortal] or nil
+
+		-- Hard block cross-region if we can detect a mismatch
+		if friendRegionID and playerRegionID and friendRegionID~=playerRegionID then
+			return false,L.MSG_INVITE_CROSSREALM or L.INVITE_REASON_NO_REALM,INVITE_RESTRICTION_REALM
+		end
+
+		-- Blizzard's canCoop: final gate for grouping
 		if canCoop==false then
 			-- If we know faction and it's opposite, prefer that reason
 			if friendFaction and playerFaction and friendFaction~=playerFaction then
 				return false,L.INVITE_REASON_OPPOSITE_FACTION,INVITE_RESTRICTION_FACTION
 			end
-			-- Otherwise generic cross-realm/region style reason
 			local reason=L.MSG_INVITE_CROSSREALM or L.INVITE_REASON_NO_REALM
 			return false,reason,INVITE_RESTRICTION_REALM
 		end
 
-		-- If we got here, let Blizzard handle any edge cases when we click the button
+		-- If we got here, let Blizzard handle any final edge cases when we click the button
 		return true,nil,INVITE_RESTRICTION_NONE
 	end
 
