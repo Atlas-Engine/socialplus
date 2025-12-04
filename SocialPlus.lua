@@ -67,10 +67,10 @@ do
         -- Extra messages
         ----------------------------------------------------------------
         L.MSG_INVITE_FAILED       = "Invitation impossible pour ce contact."
-        L.MSG_INVITE_CROSSREALM   = "Invitation inter-royaume non disponible."
+        L.MSG_INVITE_CROSSREALM   = "Invitation impossible : cet ami se trouve dans un serveur différent."
         L.INVITE_REASON_NOT_WOW       = "Cet ami n’est pas actuellement dans World of Warcraft."
         L.INVITE_REASON_WRONG_PROJECT = "Cet ami n’est pas sur votre version de WoW."
-		L.INVITE_REASON_NO_REALM      = "Vous ne pouvez pas inviter cet ami car son royaume n’est pas disponible (probablement une autre région)."
+		L.INVITE_REASON_NO_REALM      = "Invitation impossible : cet ami se trouve dans une région différente."
 		L.INVITE_REASON_OPPOSITE_FACTION = "Cet ami est dans la faction opposée."
         L.CONFIRM_REMOVE_BNET_TEXT = 'Êtes-vous sûr de vouloir retirer "%s" ?\n\nTapez "OUI." pour confirmer.'
 		L.CONFIRM_REMOVE_BNET_WORD = "OUI."
@@ -135,10 +135,10 @@ do
         -- Extra messages
         ----------------------------------------------------------------
         L.MSG_INVITE_FAILED       = "Unable to invite this contact."
-        L.MSG_INVITE_CROSSREALM   = "Cross-realm invite is not available."
+        L.MSG_INVITE_CROSSREALM   = "You cannot invite this friend because they are on a different server."
         L.INVITE_REASON_NOT_WOW       = "This friend is not currently in World of Warcraft."
         L.INVITE_REASON_WRONG_PROJECT = "This friend is not on your WoW version."
-		L.INVITE_REASON_NO_REALM      = "You cannot invite this friend because their realm is not available (likely another region)."
+		L.INVITE_REASON_NO_REALM      = "You cannot invite this friend because they are on a different region."
 		L.INVITE_REASON_OPPOSITE_FACTION = "This friend is on the opposite faction."
  		L.CONFIRM_REMOVE_BNET_TEXT = 'Are you sure you want to remove "%s"?\n\nType "YES." to confirm.'
 		L.CONFIRM_REMOVE_BNET_WORD = "YES."
@@ -263,6 +263,42 @@ if WOW_PROJECT_ID==WOW_PROJECT_CLASSIC then
 	INVITE_RESTRICTION_MOBILE=9
 end
 
+
+local playerRegionID=nil
+
+local function SocialPlus_GetClientRegionID()
+	if playerRegionID~=nil then
+		return playerRegionID
+	end
+
+	local portal=nil
+	if GetCVar then
+		pcall(function()
+			portal=GetCVar("portal")
+		end)
+	end
+
+	if portal then
+		portal=portal:lower()
+		if portal=="us" or portal=="us-realms" or portal=="test" or portal=="ptr" then
+			playerRegionID=1 -- Americas
+		elseif portal=="kr" then
+			playerRegionID=2 -- Korea
+		elseif portal=="eu" then
+			playerRegionID=3 -- Europe
+		elseif portal=="tw" then
+			playerRegionID=4 -- Taiwan
+		elseif portal=="cn" or portal=="cn-realms" then
+			playerRegionID=5 -- China
+		else
+			playerRegionID=nil
+		end
+	end
+
+	return playerRegionID
+end
+
+-- Time constants
 local ONE_MINUTE=60
 local ONE_HOUR=60*ONE_MINUTE
 local ONE_DAY=24*ONE_HOUR
@@ -855,6 +891,87 @@ else
 	FriendButtonTemplate="FriendsFrameButtonTemplate"
 end
 
+-- [[ Unified invite helpers (WOW + BNET) ]]
+
+local function SocialPlus_PerformInvite(kind,id)
+	if not kind or not id then
+		return false,L.INVITE_GENERIC_FAIL
+	end
+
+	-- Use your existing logic (region, faction, project, canCoop, etc.)
+	local allowed,reason=SocialPlus_GetInviteStatus(kind,id)
+	if not allowed then
+		return false,reason or L.INVITE_GENERIC_FAIL
+	end
+
+	if kind=="WOW" then
+		-- Normal WoW friend
+		local info=FG_GetFriendInfoByIndex(id)
+		local name=info and info.name
+
+		if not info or not info.connected or not name or name=="" then
+			return false,L.INVITE_GENERIC_FAIL
+		end
+
+		if InviteUnit then
+			pcall(InviteUnit,name)
+			return true
+		end
+		return false,L.INVITE_GENERIC_FAIL
+	elseif kind=="BNET" then
+		-- Battle.net friend
+		if C_BattleNet and C_BattleNet.GetFriendAccountInfo and type(C_BattleNet.GetFriendAccountInfo)=="function" then
+			local accountInfo=C_BattleNet.GetFriendAccountInfo(id)
+			local game=accountInfo and accountInfo.gameAccountInfo
+			local characterName=game and game.characterName
+
+			if characterName and characterName~="" then
+				local target=characterName
+				local realmName=game.realmName
+				if realmName and realmName~="" then
+					target=characterName.."-"..realmName
+				end
+				if InviteUnit then
+					pcall(InviteUnit,target)
+					return true
+				end
+			end
+		end
+
+		-- Fallback to BNet invite APIs if for some reason we couldn't build a unit name
+		if BNInviteFriend then
+			pcall(BNInviteFriend,id)
+			return true
+		elseif BNSendGameInvite then
+			pcall(BNSendGameInvite,id)
+			return true
+		end
+
+		return false,L.INVITE_GENERIC_FAIL
+	end
+
+	return false,L.INVITE_GENERIC_FAIL
+end
+
+function SocialPlus_PerformInviteFromButton(button)
+	if not button or not button.buttonType or not button.id then return end
+
+	local kind=nil
+	if button.buttonType==FRIENDS_BUTTON_TYPE_WOW then
+		kind="WOW"
+	elseif button.buttonType==FRIENDS_BUTTON_TYPE_BNET then
+		kind="BNET"
+	else
+		return
+	end
+
+	local ok,reason=SocialPlus_PerformInvite(kind,button.id)
+	if not ok and reason and UIErrorsFrame and UIErrorsFrame.AddMessage then
+		UIErrorsFrame:AddMessage(reason,1,0.1,0.1,1.0)
+	end
+end
+
+
 -- [[ Smooth scroll inertia (adaptive, fast enough) ]]
 
 local SocialPlus_ScrollAnim=nil
@@ -1110,7 +1227,6 @@ local function FG_SetBNetFriendNote(index,note)
 end
 
 -- [[ Class colour helper ]]
-
 local function ClassColourCode(class,returnTable)
 	if not class then
 		return returnTable and FRIENDS_GRAY_COLOR or string.format("|cFF%02x%02x%02x",FRIENDS_GRAY_COLOR.r*255,FRIENDS_GRAY_COLOR.g*255,FRIENDS_GRAY_COLOR.b*255)
@@ -1146,7 +1262,6 @@ local function ClassColourCode(class,returnTable)
 end
 
 -- [[ Scroll helpers ]]
-
 local function SocialPlus_GetTopButton(offset)
 	local usedHeight=0
 	for i=1,FriendButtons.count do
@@ -1161,7 +1276,6 @@ local function SocialPlus_GetTopButton(offset)
 end
 
 -- [[ Online info text helper ]]
-
 local function GetOnlineInfoText(client,isMobile,rafLinkType,locationText)
 	if not locationText or locationText=="" then
 		return UNKNOWN
@@ -1181,7 +1295,6 @@ local function GetOnlineInfoText(client,isMobile,rafLinkType,locationText)
 end
 
 -- [[ BNet friend detail helper ]]
-
 local function GetFriendInfoById(id)
 	local accountName,characterName,class,level,isFavoriteFriend,isOnline,
 		bnetAccountId,client,canCoop,wowProjectID,lastOnline,
@@ -1701,6 +1814,27 @@ end
 		nameText=nil
 	end
 
+	    -- Attach unified SocialPlus click handler once per button
+    if button.travelPassButton and not button.travelPassButton.SocialPlusClickHooked then
+        button.travelPassButton.SocialPlusClickHooked=true
+
+        -- Preserve Blizzard's original handler as a fallback
+        button.travelPassButton.SocialPlusOrigOnClick=button.travelPassButton:GetScript("OnClick")
+
+        button.travelPassButton:SetScript("OnClick",function(self,...)
+            -- If SocialPlus says this row is inviteable, always use our helper
+            if self.fgInviteAllowed then
+                SocialPlus_PerformInviteFromButton(button)
+                return
+            end
+
+            -- Otherwise fall back to Blizzard's behaviour, if it exists
+            if self.SocialPlusOrigOnClick then
+                self.SocialPlusOrigOnClick(self,...)
+            end
+        end)
+    end
+	-- Show/hide travel pass button
 	if hasTravelPassButton then
 		button.travelPassButton:Show()
 	else
@@ -3201,7 +3335,6 @@ local function SocialPlus_SetCurrentFriend(button)
 end
 
 -- [[ Capability checks for menu actions ]]
-
 function SocialPlus_CanCopyCharName()
 	local kind,id=SocialPlus_GetDropdownFriend()
 	if not kind or not id then
@@ -3250,70 +3383,80 @@ SocialPlus_GetInviteStatus=function(kind,id)
 	if not playerFaction then FG_InitFactionIcon() end
 
 	if kind=="WOW" then
-		local info=FG_GetFriendInfoByIndex(id)
-		if not info then return false,L.INVITE_GENERIC_FAIL,INVITE_RESTRICTION_INFO end
-		if not info.connected then return false,L.INVITE_REASON_NOT_WOW,INVITE_RESTRICTION_INFO end
-
-		-- Some WoW friend info may include factionName or faction; check if present
-		local friendFaction=info.factionName or info.faction
-		if friendFaction and playerFaction and friendFaction~=playerFaction then
-			return false,L.INVITE_REASON_OPPOSITE_FACTION,INVITE_RESTRICTION_FACTION
-		end
-
-		-- Local WoW friends are fine if none of the above blocked it
-		return true,nil,INVITE_RESTRICTION_NONE
-
-	elseif kind=="BNET" then
-		local accountName,characterName,class,level,isFavoriteFriend,
-		      isOnline,bnetAccountId,client,canCoop,wowProjectID,lastOnline,
-		      isAFK,isGameAFK,isDND,isGameBusy,mobile,zoneName,gameText,realmName=
-		      GetFriendInfoById(id)
-
-		-- Must be online and actually in WoW
-		if not isOnline then
-			return false,L.INVITE_REASON_NOT_WOW,INVITE_RESTRICTION_INFO
-		end
-		if client~=BNET_CLIENT_WOW then
-			return false,L.INVITE_REASON_NOT_WOW,INVITE_RESTRICTION_NO_GAME_ACCOUNTS
-		end
-		if WOW_PROJECT_ID and wowProjectID and wowProjectID~=WOW_PROJECT_ID then
-			return false,L.INVITE_REASON_WRONG_PROJECT,INVITE_RESTRICTION_WOW_PROJECT_ID
-		end
-
-		-- Region + faction info via C_BattleNet if available
-		local acct,ga=nil,nil
-		local friendFaction,friendRegionID=nil,nil
-		if C_BattleNet and C_BattleNet.GetFriendAccountInfo and type(C_BattleNet.GetFriendAccountInfo)=="function" then
-			acct=C_BattleNet.GetFriendAccountInfo(id)
-			ga=acct and acct.gameAccountInfo or nil
-			friendFaction=ga and ga.factionName or nil
-			friendRegionID=ga and ga.regionID or nil
-		end
-
-		-- Player region from client portal (EU/US/KR/TW)
-		local playerPortal=GetCVar and GetCVar("portal") or nil
-		local regionMap={US=1,EU=2,KR=3,TW=4,CN=5}
-		local playerRegionID=playerPortal and regionMap[playerPortal] or nil
-
-		-- Hard block cross-region if we can detect a mismatch
-		if friendRegionID and playerRegionID and friendRegionID~=playerRegionID then
-			return false,L.MSG_INVITE_CROSSREALM or L.INVITE_REASON_NO_REALM,INVITE_RESTRICTION_REALM
-		end
-
-		-- Blizzard's canCoop: final gate for grouping
-		if canCoop==false then
-			-- If we know faction and it's opposite, prefer that reason
-			if friendFaction and playerFaction and friendFaction~=playerFaction then
-				return false,L.INVITE_REASON_OPPOSITE_FACTION,INVITE_RESTRICTION_FACTION
-			end
-			local reason=L.MSG_INVITE_CROSSREALM or L.INVITE_REASON_NO_REALM
-			return false,reason,INVITE_RESTRICTION_REALM
-		end
-
-		-- If we got here, let Blizzard handle any final edge cases when we click the button
-		return true,nil,INVITE_RESTRICTION_NONE
+	local info=FG_GetFriendInfoByIndex(id)
+	if not info then
+		return false,L.INVITE_GENERIC_FAIL,INVITE_RESTRICTION_INFO
 	end
 
+	-- Treat explicit false as offline; nil = "unknown", don't block on that
+	if info.connected==false then
+		return false,L.INVITE_REASON_NOT_WOW,INVITE_RESTRICTION_INFO
+	end
+
+	-- Some WoW friend info may include factionName or faction; check if present
+	local friendFaction=info.factionName or info.faction
+	if friendFaction and playerFaction and friendFaction~=playerFaction then
+		return false,L.INVITE_REASON_OPPOSITE_FACTION,INVITE_RESTRICTION_FACTION
+	end
+
+	-- ✅ Passed all checks: same project, same faction (or unknown), not explicitly offline
+	return true,nil,INVITE_RESTRICTION_NONE
+
+	elseif kind=="BNET" then
+	local accountName,characterName,class,level,isFavoriteFriend,
+	      isOnline,bnetAccountId,client,canCoop,wowProjectID,lastOnline,
+	      isAFK,isGameAFK,isDND,isGameBusy,mobile,zoneName,gameText,realmName=
+	      GetFriendInfoById(id)
+
+	-- Must be online and actually in WoW
+	if not isOnline then
+		return false,L.INVITE_REASON_NOT_WOW,INVITE_RESTRICTION_INFO
+	end
+	if client~=BNET_CLIENT_WOW then
+		return false,L.INVITE_REASON_NOT_WOW,INVITE_RESTRICTION_NO_GAME_ACCOUNTS
+	end
+	if WOW_PROJECT_ID and wowProjectID and wowProjectID~=WOW_PROJECT_ID then
+		return false,L.INVITE_REASON_WRONG_PROJECT,INVITE_RESTRICTION_WOW_PROJECT_ID
+	end
+
+	-- Extra faction/region compatibility via C_BattleNet if available
+	local acct,ga=nil,nil
+	local friendFaction,friendRegionID=nil,nil
+	if C_BattleNet and C_BattleNet.GetFriendAccountInfo and type(C_BattleNet.GetFriendAccountInfo)=="function" then
+		acct=C_BattleNet.GetFriendAccountInfo(id)
+		ga=acct and acct.gameAccountInfo or nil
+		friendFaction=ga and ga.factionName or nil
+		friendRegionID=ga and ga.regionID or nil
+	end
+
+	-- If we know faction, block obvious opposite-faction cases first
+	if friendFaction and playerFaction and friendFaction~=playerFaction then
+		return false,L.INVITE_REASON_OPPOSITE_FACTION,INVITE_RESTRICTION_FACTION
+	end
+
+	-- Hard cross-region block: compare BNet regionID with client portal
+	local playerRegionID=SocialPlus_GetClientRegionID()
+	if friendRegionID and playerRegionID and friendRegionID~=playerRegionID then
+		return false,L.INVITE_REASON_NO_REALM,INVITE_RESTRICTION_REALM
+	end
+
+	-- Trust Blizzard's canCoop flag for "this can never group" leftovers
+	if canCoop==false then
+		-- If we *didn't* already classify it as a region issue, fall back to generic
+		if friendRegionID and not playerRegionID then
+			return false,L.INVITE_REASON_NO_REALM,INVITE_RESTRICTION_REALM
+		end
+		return false,L.INVITE_GENERIC_FAIL,INVITE_RESTRICTION_INFO
+	end
+
+	-- At this point:
+	-- - Online
+	-- - In WoW
+	-- - Same project
+	-- - Not obviously opposite faction
+	-- - Not obviously other region
+	return true,nil,INVITE_RESTRICTION_NONE
+end
 	-- Unknown kind
 	return false,L.INVITE_GENERIC_FAIL,INVITE_RESTRICTION_INFO
 end
@@ -3445,16 +3588,15 @@ local label = isSuggest and (L.MENU_SUGGEST or L.MENU_INVITE) or L.MENU_INVITE
 info.text=label
 info.notCheckable=true
 
-
-		-- Determine invite eligibility and reason for the dropdown friend
-		local kind,id=SocialPlus_GetDropdownFriend()
-		local canInvite,reason=false,nil
-		if kind and id then
-			canInvite,reason=SocialPlus_GetInviteStatus(kind,id)
-		else
-			canInvite=false
-			reason=L.INVITE_GENERIC_FAIL
-		end
+-- Determine invite eligibility and reason for the dropdown friend
+local kind,id=SocialPlus_GetDropdownFriend()
+local canInvite,reason=false,nil
+if kind and id then
+	canInvite,reason=SocialPlus_GetInviteStatus(kind,id)
+else
+	canInvite=false
+	reason=L.INVITE_GENERIC_FAIL
+end
 
 info.disabled=not canInvite
 if info.disabled and reason and reason~="" then
@@ -3465,48 +3607,20 @@ else
 	info.tooltipText=nil
 end
 
+info.func=function()
+	if not SocialPlus_CanInviteMenuTarget() then return end
 
-				info.func=function()
-			if not SocialPlus_CanInviteMenuTarget() then return end
+	local kind,id=SocialPlus_GetDropdownFriend()
+	if not kind or not id then return end
 
-			local kind,id=SocialPlus_GetDropdownFriend()
-			if not kind or not id then return end
+	-- Use the unified invite helper (same logic as buttons)
+	local ok,reason=SocialPlus_PerformInvite(kind,id)
+	if not ok and reason and UIErrorsFrame and UIErrorsFrame.AddMessage then
+		UIErrorsFrame:AddMessage(reason,1,0.1,0.1,1.0)
+	end
+end
 
-			-- Recheck permission using the same helper the button uses
-			local allowed,reason=SocialPlus_GetInviteStatus(kind,id)
-			if not allowed then
-				if reason and UIErrorsFrame and UIErrorsFrame.AddMessage then
-					UIErrorsFrame:AddMessage(reason,1,0.1,0.1,1.0)
-				end
-				return
-			end
-
-			-- Find the actual row button in the scroll frame
-			local rowButton=SocialPlus_GetFriendRowButton(kind,id)
-			if not rowButton or not rowButton.travelPassButton then
-				return
-			end
-
-			local travel=rowButton.travelPassButton
-
-			-- Mirror the button's own enable/disable state + tooltip reason
-			if not(travel.fgInviteAllowed or travel:IsEnabled()) then
-				local why=travel.fgInviteReason or reason or L.INVITE_GENERIC_FAIL
-				if UIErrorsFrame and UIErrorsFrame.AddMessage then
-					UIErrorsFrame:AddMessage(why,1,0.1,0.1,1.0)
-				end
-				return
-			end
-
-			-- 🔑 Core trick: simulate clicking the invite button itself
-			if travel.Click then
-				travel:Click()
-			elseif travel:GetScript("OnClick") then
-				travel:GetScript("OnClick")(travel)
-			end
-		end
-
-		UIDropDownMenu_AddButton(info,level)
+UIDropDownMenu_AddButton(info,level)
 
 		-- Copy character name
 		info=UIDropDownMenu_CreateInfo()
