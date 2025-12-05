@@ -1,4 +1,4 @@
-﻿local hooks = {}
+local hooks = {}
 local SocialPlus_OriginalDropdownInit
 
 -----------------------------------------------------------------------
@@ -17,21 +17,26 @@ do
         ----------------------------------------------------------------
         L.MENU_INTERACT           = "Interagir"
         L.MENU_WHISPER            = "Chuchoter"
-        L.MENU_INVITE             = "Inviter"
-        L.MENU_SUGGEST           = "Suggérer une invitation"
-		L.MENU_COPY_NAME          = "Copier le nom du personnage"
-        L.MENU_GROUPS             = "Groupes"
+		L.MENU_INVITE             = "Inviter"
+        L.MENU_SUGGEST            = "Suggérer une invitation"
+        L.MENU_COPY_NAME          = "Copier le nom du personnage"
+		L.MENU_VIEW_FRIENDS       = "Voir ses amis"
+        L.MENU_TARGET             = "Cibler"
+
+		L.MENU_GROUPS             = "Gestion des groupes"
         L.MENU_CREATE_GROUP       = "Créer un groupe"
         L.MENU_ADD_TO_GROUP       = "Ajouter au groupe"
+        L.MENU_MOVE_TO_GROUP      = "Déplacer vers un autre groupe"
         L.MENU_REMOVE_FROM_GROUP  = "Retirer du groupe"
-        L.MENU_OTHER_OPTIONS      = "Autres options"
+
+        L.MENU_OTHER_OPTIONS      = "Options supplémentaires"
         L.MENU_SET_NOTE           = "Définir une note"
-        L.MENU_REMOVE_BNET        = "Retirer l’ami Bnet"
+        L.MENU_REMOVE_BNET        = "Retirer l’ami Battle.net"
 
         ----------------------------------------------------------------
         -- Search & grouping
         ----------------------------------------------------------------
-        L.SEARCH_PLACEHOLDER      = "Chercher un ami..."
+        L.SEARCH_PLACEHOLDER      = "Rechercher un ami..."
         L.GROUP_UNGROUPED         = "Général"
 
         ----------------------------------------------------------------
@@ -40,44 +45,48 @@ do
         L.GROUP_INVITE_ALL        = "Inviter tout le groupe"
         L.GROUP_RENAME            = "Renommer le groupe"
         L.GROUP_REMOVE            = "Supprimer le groupe"
-        L.GROUP_SETTINGS          = "Paramètres"
-        L.GROUP_NO_GROUPS         = "Aucun groupe"
+        L.GROUP_SETTINGS          = "Paramètres du groupe"
+        L.GROUP_NO_GROUPS         = "Aucun groupe disponible"
         L.GROUP_NO_GROUPS_REMOVE  = "Aucun groupe à retirer"
-        L.GROUP_REORDER_AZ        = "Réinitialiser les groupes (A-Z)"
+        L.GROUP_REORDER_AZ        = "Réorganiser les groupes (A–Z)"
 
-		----------------------------------------------------------------
+        ----------------------------------------------------------------
         -- Settings toggles (group submenu)
         ----------------------------------------------------------------
-        L.SETTING_HIDE_OFFLINE      = "Masquer les hors ligne."
-        L.SETTING_HIDE_MAX_LEVEL    = "Masquer les niveaux max."
-		L.SETTING_COLOR_NAMES       = "Colorer les classes."
-		L.SETTING_PRIORITIZE_CURRENT = "Prioriser les Contacts sur MOP."
-		L.SETTING_SCROLL_SPEED      = "Vitesse de défilement."
-		L.SETTING_SCROLL_SPEED_DESC = "Réglez la vitesse de défilement de la liste d'amis."
+        L.SETTING_HIDE_OFFLINE       = "Masquer les amis hors ligne"
+        L.SETTING_HIDE_MAX_LEVEL     = "Masquer les personnages de niveau maximal"
+        L.SETTING_COLOR_NAMES        = "Colorer les noms selon la classe"
+        L.SETTING_PRIORITIZE_CURRENT = "Prioriser les contacts sur Mists of Pandaria"
+        L.SETTING_SCROLL_SPEED       = "Vitesse de défilement"
+        L.SETTING_SCROLL_SPEED_DESC  = "Ajuste la vitesse de défilement de la liste d’amis."
 
         ----------------------------------------------------------------
         -- Popup titles
         ----------------------------------------------------------------
-        L.POPUP_RENAME_TITLE        = "Nom du groupe"
-        L.POPUP_CREATE_TITLE        = "Nom du groupe"
-        L.POPUP_NOTE_TITLE          = "Entrez une note pour cet ami"
+        L.POPUP_RENAME_TITLE        = "Renommer le groupe"
+        L.POPUP_CREATE_TITLE        = "Nom du nouveau groupe"
+        L.POPUP_NOTE_TITLE          = "Ajouter ou modifier une note"
         L.POPUP_COPY_TITLE          = "Nom du personnage (Ctrl+C pour copier) :"
 
         ----------------------------------------------------------------
         -- Extra messages
         ----------------------------------------------------------------
-        L.MSG_INVITE_FAILED       = "Invitation impossible pour ce contact."
-        L.MSG_INVITE_CROSSREALM   = "Invitation impossible : cet ami se trouve dans un serveur différent."
-        L.INVITE_REASON_NOT_WOW       = "Cet ami n’est pas actuellement dans World of Warcraft."
-        L.INVITE_REASON_WRONG_PROJECT = "Cet ami n’est pas sur votre version de WoW."
-		L.INVITE_REASON_NO_REALM      = "Invitation impossible : cet ami se trouve dans une région différente."
-		L.INVITE_REASON_OPPOSITE_FACTION = "Cet ami est dans la faction opposée."
-        L.CONFIRM_REMOVE_BNET_TEXT = 'Êtes-vous sûr de vouloir retirer "%s" ?\n\nTapez "OUI." pour confirmer.'
-		L.CONFIRM_REMOVE_BNET_WORD = "OUI."
-        L.MSG_REMOVE_FRIEND_SUCCESS = 'Suppression de %s réussie.'
-        L.INVITE_GENERIC_FAIL = "Vous ne pouvez pas inviter cet ami."
-	else
-		-- Default: English
+        L.MSG_INVITE_FAILED         = "Impossible d’inviter ce contact."
+        L.MSG_INVITE_CROSSREALM     = "Invitation impossible : cet ami est sur un autre royaume."
+        L.INVITE_REASON_NOT_WOW     = "Cet ami n’est pas actuellement dans World of Warcraft."
+        L.INVITE_REASON_WRONG_PROJECT = "Cet ami n’utilise pas la même version de WoW que vous."
+        L.INVITE_REASON_NO_REALM      = "Cet ami se trouve dans une autre région."
+        L.INVITE_REASON_OPPOSITE_FACTION = "Cet ami appartient à la faction adverse."
+
+        L.CONFIRM_REMOVE_BNET_TEXT  = 'Voulez-vous vraiment retirer "%s" ?\n\nTapez "OUI." pour confirmer.'
+        L.CONFIRM_REMOVE_BNET_WORD  = "OUI."
+        L.MSG_REMOVE_FRIEND_SUCCESS = 'Vous avez retiré %s avec succès.'
+        L.INVITE_GENERIC_FAIL       = "Vous ne pouvez pas inviter cet ami."
+
+    else
+        ----------------------------------------------------------------
+        -- Default: English
+        ----------------------------------------------------------------
         L.ADDON_NAME              = "SocialPlus"
 
         ----------------------------------------------------------------
@@ -85,16 +94,20 @@ do
         ----------------------------------------------------------------
         L.MENU_INTERACT           = "Interact"
         L.MENU_WHISPER            = "Whisper"
-        L.MENU_INVITE             = "Invite"
-        L.MENU_SUGGEST           = "Suggest invite"
-		L.MENU_COPY_NAME          = "Copy character name"
-        L.MENU_GROUPS             = "Groups"
-        L.MENU_CREATE_GROUP       = "Create group"
-        L.MENU_ADD_TO_GROUP       = "Add to group"
-        L.MENU_REMOVE_FROM_GROUP  = "Remove from group"
-        L.MENU_OTHER_OPTIONS      = "Other Options"
-        L.MENU_SET_NOTE           = "Set note"
-        L.MENU_REMOVE_BNET        = "Remove Bnet friend"
+		L.MENU_INVITE             = "Invite"
+        L.MENU_SUGGEST            = "Suggest Invite"
+        L.MENU_COPY_NAME          = "Copy Character Name"
+        L.MENU_VIEW_FRIENDS       = "View friends list"
+		L.MENU_TARGET             = "Target"
+		L.MENU_GROUPS             = "Group Management"
+        L.MENU_CREATE_GROUP       = "Create Group"
+        L.MENU_ADD_TO_GROUP       = "Add to Group"
+        L.MENU_MOVE_TO_GROUP      = "Move to Another Group"
+        L.MENU_REMOVE_FROM_GROUP  = "Remove from Group"
+
+        L.MENU_OTHER_OPTIONS      = "Additional Options"
+        L.MENU_SET_NOTE           = "Set Note"
+        L.MENU_REMOVE_BNET        = "Remove Battle.net Friend"
 
         ----------------------------------------------------------------
         -- Search & grouping
@@ -105,47 +118,49 @@ do
         ----------------------------------------------------------------
         -- Group menu (header right-click)
         ----------------------------------------------------------------
-        L.GROUP_INVITE_ALL        = "Invite all to party"
-        L.GROUP_RENAME            = "Rename group"
-        L.GROUP_REMOVE            = "Remove group"
-        L.GROUP_SETTINGS          = "Settings"
-        L.GROUP_NO_GROUPS         = "No groups"
+        L.GROUP_INVITE_ALL        = "Invite Entire Group"
+        L.GROUP_RENAME            = "Rename Group"
+        L.GROUP_REMOVE            = "Delete Group"
+        L.GROUP_SETTINGS          = "Group Settings"
+        L.GROUP_NO_GROUPS         = "No groups available"
         L.GROUP_NO_GROUPS_REMOVE  = "No groups to remove"
-        L.GROUP_REORDER_AZ        = "Reinitialize groups (A-Z)"
+        L.GROUP_REORDER_AZ        = "Reorder Groups (A–Z)"
 
-		----------------------------------------------------------------
+        ----------------------------------------------------------------
         -- Settings toggles
         ----------------------------------------------------------------
-        L.SETTING_HIDE_OFFLINE      = "Hide offline."
-        L.SETTING_HIDE_MAX_LEVEL    = "Hide max-level."
-		L.SETTING_COLOR_NAMES       = "Color class names."
-		L.SETTING_PRIORITIZE_CURRENT = "Prioritize MOP friends."
-		L.SETTING_SCROLL_SPEED      = "Scroll speed."
-		L.SETTING_SCROLL_SPEED_DESC = "Set the Friends list mousewheel scroll speed."
+        L.SETTING_HIDE_OFFLINE       = "Hide offline friends"
+        L.SETTING_HIDE_MAX_LEVEL     = "Hide max-level characters"
+        L.SETTING_COLOR_NAMES        = "Color names by class"
+        L.SETTING_PRIORITIZE_CURRENT = "Prioritize MoP contacts"
+        L.SETTING_SCROLL_SPEED       = "Scroll speed"
+        L.SETTING_SCROLL_SPEED_DESC  = "Adjust the scroll speed for the friends list."
 
         ----------------------------------------------------------------
         -- Popup titles
         ----------------------------------------------------------------
-        L.POPUP_RENAME_TITLE        = "Group name"
-        L.POPUP_CREATE_TITLE        = "Group name"
+        L.POPUP_RENAME_TITLE        = "Group Name"
+        L.POPUP_CREATE_TITLE        = "New Group Name"
         L.POPUP_NOTE_TITLE          = "Enter a note for this friend"
-        L.POPUP_COPY_TITLE          = "Character name (Ctrl+C to copy):"
+        L.POPUP_COPY_TITLE          = "Character Name (Ctrl+C to copy):"
 
         ----------------------------------------------------------------
         -- Extra messages
         ----------------------------------------------------------------
-        L.MSG_INVITE_FAILED       = "Unable to invite this contact."
-        L.MSG_INVITE_CROSSREALM   = "You cannot invite this friend because they are on a different server."
-        L.INVITE_REASON_NOT_WOW       = "This friend is not currently in World of Warcraft."
+        L.MSG_INVITE_FAILED         = "Unable to invite this contact."
+        L.MSG_INVITE_CROSSREALM     = "This friend is on a different realm and cannot be invited."
+        L.INVITE_REASON_NOT_WOW     = "This friend is not currently in World of Warcraft."
         L.INVITE_REASON_WRONG_PROJECT = "This friend is not on your WoW version."
-		L.INVITE_REASON_NO_REALM      = "You cannot invite this friend because they are on a different region."
-		L.INVITE_REASON_OPPOSITE_FACTION = "This friend is on the opposite faction."
- 		L.CONFIRM_REMOVE_BNET_TEXT = 'Are you sure you want to remove "%s"?\n\nType "YES." to confirm.'
-		L.CONFIRM_REMOVE_BNET_WORD = "YES."
-        L.MSG_REMOVE_FRIEND_SUCCESS = 'Successfully deleted %s.'
-        L.INVITE_GENERIC_FAIL = "You cannot invite this friend."
-	end
+        L.INVITE_REASON_NO_REALM      = "This friend is in a different region."
+        L.INVITE_REASON_OPPOSITE_FACTION = "This friend is on the opposite faction."
+
+        L.CONFIRM_REMOVE_BNET_TEXT  = 'Are you sure you want to remove "%s"?\n\nType "YES." to confirm.'
+        L.CONFIRM_REMOVE_BNET_WORD  = "YES."
+        L.MSG_REMOVE_FRIEND_SUCCESS = 'Successfully removed %s.'
+        L.INVITE_GENERIC_FAIL       = "You cannot invite this friend."
+    end
 end
+
 
 -- Also expose to global to allow calls from any scope
 -- NOTE: _G.SocialPlus_GetInviteStatus will be set after the function is defined below
@@ -200,10 +215,18 @@ function SocialPlus_EnsureSavedVars()
     if SocialPlus_SavedVars.hide_high_level==nil then SocialPlus_SavedVars.hide_high_level=false end
     if SocialPlus_SavedVars.colour_classes==nil then SocialPlus_SavedVars.colour_classes=true end
     if SocialPlus_SavedVars.scrollSpeed==nil then SocialPlus_SavedVars.scrollSpeed=SCROLL_BASE end
-    if SocialPlus_SavedVars.prioritize_current_client==nil then SocialPlus_SavedVars.prioritize_current_client=false end
-    SocialPlus_SavedVars.collapsed=SocialPlus_SavedVars.collapsed or {}
-    SocialPlus_SavedVars.groupOrder=SocialPlus_SavedVars.groupOrder or {}
+    -- Default ON for “Prioritize MoP contacts”
+    if SocialPlus_SavedVars.prioritize_current_client==nil then
+   	   SocialPlus_SavedVars.prioritize_current_client=true
+    end
+   	   SocialPlus_SavedVars.collapsed=SocialPlus_SavedVars.collapsed or {}
+       SocialPlus_SavedVars.groupOrder=SocialPlus_SavedVars.groupOrder or {}
+    -- Never persist collapse state for the ungrouped "General" bucket
+	if SocialPlus_SavedVars.collapsed[""] then
+	   SocialPlus_SavedVars.collapsed[""] = nil
+	end
 end
+
 
 -- Group / leader helpers
 local function SocialPlus_IsPlayerInGroup()
@@ -323,6 +346,73 @@ local SocialPlus_DragHoverGroup=nil
 local SocialPlus_DragSourceButton=nil
 local SocialPlus_DragGhostFrame=nil
 
+-- Global collapse/expand button state
+local SocialPlus_CollapseAllButton
+
+-- Returns anyCollapsed, anyExpanded for *custom* groups only (ignores General and Friend Requests)
+local function SocialPlus_GetAnyGroupCollapsed()
+	local anyCollapsed=false
+	local anyExpanded=false
+
+	if not GroupSorted or not SocialPlus_SavedVars or not SocialPlus_SavedVars.collapsed then
+		return false,false
+	end
+
+	for _,groupName in ipairs(GroupSorted) do
+		-- Ignore ungrouped bucket ("") and Friend Requests header
+		if groupName~="" and groupName~=FriendRequestString then
+			if SocialPlus_SavedVars.collapsed[groupName] then
+				anyCollapsed=true
+			else
+				anyExpanded=true
+			end
+		end
+	end
+
+	return anyCollapsed,anyExpanded
+end
+
+-- Update icon (+/-), visibility, and mode
+local function SocialPlus_UpdateCollapseAllButtonVisual()
+	if not SocialPlus_CollapseAllButton then return end
+	if not FriendsFrame or not FriendsFrame:IsShown() then
+		SocialPlus_CollapseAllButton:Hide()
+		return
+	end
+
+	-- Only show on the Friends tab
+	if FriendsFrame.selectedTab~=1 then
+		SocialPlus_CollapseAllButton:Hide()
+		return
+	end
+
+	local anyCollapsed,anyExpanded=SocialPlus_GetAnyGroupCollapsed()
+
+	-- No groups at all → just hide it
+	if not anyCollapsed and not anyExpanded then
+		SocialPlus_CollapseAllButton:Hide()
+		return
+	end
+
+	SocialPlus_CollapseAllButton:Show()
+
+	-- Rule:
+	-- - if there is a mix or all open → show "-" (collapse all)
+	-- - if all closed → show "+" (expand all)
+	if anyExpanded then
+		SocialPlus_CollapseAllButton.mode="COLLAPSE"
+		SocialPlus_CollapseAllButton:SetNormalTexture("Interface\\Buttons\\UI-MinusButton-Up")
+		SocialPlus_CollapseAllButton:SetPushedTexture("Interface\\Buttons\\UI-MinusButton-Down")
+	else
+		SocialPlus_CollapseAllButton.mode="EXPAND"
+		SocialPlus_CollapseAllButton:SetNormalTexture("Interface\\Buttons\\UI-PlusButton-Up")
+		SocialPlus_CollapseAllButton:SetPushedTexture("Interface\\Buttons\\UI-PlusButton-Down")
+	end
+
+	SocialPlus_CollapseAllButton:SetHighlightTexture("Interface\\Buttons\\UI-PlusButton-Hilight")
+end
+
+-- Get or create the drag ghost frame	
 local function SocialPlus_GetDragGhost()
 	if not SocialPlus_DragGhostFrame then
 		local f=CreateFrame("Frame","SocialPlusDragGhost",UIParent,"BackdropTemplate")
@@ -762,6 +852,53 @@ SocialPlus_SearchGlowOuter=outer
 	if locale == "frFR" then sbWidth = 139 end
 	SocialPlus_Searchbox:SetSize(sbWidth,20)
 	SocialPlus_Searchbox:SetPoint("TOPRIGHT",FriendsFrame,"TOPRIGHT",-35,-63)
+	-- Global collapse / expand groups button just left of the search box
+	if not SocialPlus_CollapseAllButton then
+		SocialPlus_CollapseAllButton=CreateFrame("Button","SocialPlusCollapseAllButton",FriendsFrame)
+		SocialPlus_CollapseAllButton:SetSize(18,18)
+		SocialPlus_CollapseAllButton:SetPoint("TOPRIGHT",FriendsFrame,"TOPLEFT",22,-64)
+
+		-- Default icon (will be refreshed by SocialPlus_UpdateCollapseAllButtonVisual)
+		SocialPlus_CollapseAllButton:SetNormalTexture("Interface\\Buttons\\UI-MinusButton-Up")
+		SocialPlus_CollapseAllButton:SetPushedTexture("Interface\\Buttons\\UI-MinusButton-Down")
+		SocialPlus_CollapseAllButton:SetHighlightTexture("Interface\\Buttons\\UI-PlusButton-Hilight")
+
+		SocialPlus_CollapseAllButton:SetScript("OnClick",function(self)
+	SocialPlus_EnsureSavedVars()
+
+	local anyCollapsed,anyExpanded=SocialPlus_GetAnyGroupCollapsed()
+
+	-- When there is at least one expanded custom group, we "collapse all custom groups".
+	-- When all custom groups are collapsed, we "expand all custom groups".
+	if anyExpanded then
+		-- Collapse all custom groups
+		if GroupSorted then
+			for _,groupName in ipairs(GroupSorted) do
+				if groupName~="" and groupName~=FriendRequestString then
+					SocialPlus_SavedVars.collapsed[groupName]=true
+				end
+			end
+		end
+	else
+		-- Expand all custom groups
+		if GroupSorted then
+			for _,groupName in ipairs(GroupSorted) do
+				if groupName~="" and groupName~=FriendRequestString then
+					SocialPlus_SavedVars.collapsed[groupName]=nil
+				end
+			end
+		end
+	end
+
+	SocialPlus_Update(true)
+	SocialPlus_UpdateCollapseAllButtonVisual()
+end)
+
+
+		SocialPlus_CollapseAllButton:Hide()
+	end
+
+	-- Configure search box appearance and behavior
 	SocialPlus_Searchbox.Instructions:SetText(L.SEARCH_PLACEHOLDER)
 	local font,size,flags=SocialPlus_Searchbox:GetFont()
 	SocialPlus_Searchbox:SetFont(font,size,flags)
@@ -822,7 +959,6 @@ SocialPlus_SearchFrame:SetScript("OnEvent",function(_,event,addon)
 end)
 
 -- [[ Faction + BNet/WoW icon helpers ]]
-
 local playerFaction=nil
 local FACTION_ICON_PATH=nil
 
@@ -838,7 +974,8 @@ local function FG_InitFactionIcon()
 	end
 end
  
-
+-- Apply a game/faction icon to a button's gameIcon texture
+-- If iconPath is nil or empty, hides the icon
 local function FG_ApplyGameIcon(button,iconPath,size,point,relPoint,offX,offY)
 	if not iconPath or iconPath=="" or not button or not button.gameIcon then
 		if button and button.gameIcon then
@@ -892,7 +1029,6 @@ else
 end
 
 -- [[ Unified invite helpers (WOW + BNET) ]]
-
 local function SocialPlus_PerformInvite(kind,id)
 	if not kind or not id then
 		return false,L.INVITE_GENERIC_FAIL
@@ -973,7 +1109,6 @@ end
 
 
 -- [[ Smooth scroll inertia (adaptive, fast enough) ]]
-
 local SocialPlus_ScrollAnim=nil
 
 local function SocialPlus_ScrollOnUpdate(self,elapsed)
@@ -1083,7 +1218,7 @@ local function FG_GetNumOnlineFriends()
 	return 0
 end
 
-local function FG_GetFriendInfoByIndex(index)
+function FG_GetFriendInfoByIndex(index)
 	if C_FriendList and C_FriendList.GetFriendInfoByIndex then
 		return C_FriendList.GetFriendInfoByIndex(index)
 	elseif GetFriendInfo then
@@ -1224,6 +1359,33 @@ local function FG_SetBNetFriendNote(index,note)
 	end
 
 	pcall(BNSetFriendNote,presenceID,note)
+end
+
+-- [[ Friends-of-Friends frame helper ]]	
+local function SocialPlus_ShowFriendsOfFriend(accountID)
+	if not accountID then return end
+
+	-- 1) Try Blizzard helper if present
+	if type(FriendsFriendsFrame_Show)=="function" then
+		FriendsFriendsFrame_Show(accountID)
+	else
+		-- 2) Brutal fallback: just show the frame manually
+		if FriendsFriendsFrame then
+			if ShowUIPanel and FriendsFriendsFrame:IsObjectType("Frame") then
+				ShowUIPanel(FriendsFriendsFrame)
+			else
+				FriendsFriendsFrame:Show()
+			end
+		elseif FriendsFrame and ShowUIPanel then
+			-- Worst case: open main Friends frame
+			ShowUIPanel(FriendsFrame)
+		end
+	end
+
+	-- 3) Make sure the FoF data is actually requested (older clients need this)
+	if BNRequestFOFInfo then
+		BNRequestFOFInfo(accountID)
+	end
 end
 
 -- [[ Class colour helper ]]
@@ -1698,16 +1860,31 @@ local function SocialPlus_UpdateFriendButton(button)
 				FG_ApplyGameIcon(button,iconPath,32,"RIGHT","RIGHT",-20,0)
 			end
 
-			nameColor=FRIENDS_BNET_NAME_COLOR
-			local fadeIcon=(client==BNET_CLIENT_WOW) and (wowProjectID~=WOW_PROJECT_ID)
-			button.gameIcon:SetAlpha(fadeIcon and 0.6 or 1)
+						nameColor=FRIENDS_BNET_NAME_COLOR
+
+			-- Determine invite eligibility for BNet friends using a centralized helper
+			local allowed,reason,restriction=SocialPlus_GetInviteStatus("BNET",id)
+			button.travelPassButton.fgInviteAllowed=allowed
+			button.travelPassButton.fgInviteReason=reason
+
+			-- Fade the WoW icon for “compatible client but not groupable” cases
+			-- (different project or different region).
+			local fadeIcon=false
+			if client==BNET_CLIENT_WOW then
+				-- Old project check (Retail vs Classic, etc.)
+				if WOW_PROJECT_ID and wowProjectID and wowProjectID~=WOW_PROJECT_ID then
+					fadeIcon=true
+				-- New: region / realm restriction coming from our invite helper
+				elseif not allowed and (restriction==INVITE_RESTRICTION_WOW_PROJECT_ID or restriction==INVITE_RESTRICTION_REALM) then
+					fadeIcon=true
+				end
+			end
+			if button.gameIcon then
+				button.gameIcon:SetAlpha(fadeIcon and 0.4 or 1)
+			end
 
 			hasTravelPassButton=true
 
-			-- Determine invite eligibility for BNet friends using a centralized helper
-			local allowed, reason = SocialPlus_GetInviteStatus("BNET", id)
-			button.travelPassButton.fgInviteAllowed = allowed
-			button.travelPassButton.fgInviteReason = reason
 			if allowed then
 				button.travelPassButton:Enable()
 			else
@@ -1759,11 +1936,17 @@ local function SocialPlus_UpdateFriendButton(button)
 		end
 		nameColor=SocialPlus_NAME_COLOR
 
-		if SocialPlus_SavedVars.collapsed[group] then
-			button.status:SetTexture("Interface\\Buttons\\UI-PlusButton-UP")
+				-- For the General / ungrouped header, do NOT show +/- at all
+		if not group or group=="" then
+			button.status:SetTexture(nil)
 		else
-			button.status:SetTexture("Interface\\Buttons\\UI-MinusButton-UP")
+			if SocialPlus_SavedVars.collapsed[group] then
+				button.status:SetTexture("Interface\\Buttons\\UI-PlusButton-UP")
+			else
+				button.status:SetTexture("Interface\\Buttons\\UI-MinusButton-UP")
+			end
 		end
+
 		infoText=group
 		button.info:Hide()
 		button.gameIcon:Hide()
@@ -1920,6 +2103,10 @@ local function SocialPlus_UpdateFriends()
 		pcall(HybridScrollFrame_Update,scrollFrame,scrollFrame.totalFriendListEntriesHeight,usedHeight)
 	end
 
+	-- Keep global collapse/expand button state in sync
+	SocialPlus_UpdateCollapseAllButtonVisual()
+
+	-- Clean up collapsed groups that no longer exist	
 	for key,_ in pairs(SocialPlus_SavedVars.collapsed) do
 		if not GroupTotal[key] then
 			SocialPlus_SavedVars.collapsed[key]=nil
@@ -3262,6 +3449,11 @@ local function SocialPlus_UpdateFriendsTabVisibility()
 		SocialPlus_SettingsButton:SetShown(isFriendsTab)
 	end
 
+    -- keep +/- button in sync with the Friends tab
+	if SocialPlus_CollapseAllButton then
+		SocialPlus_UpdateCollapseAllButtonVisual()
+	end
+
 	-- Auto-close settings when leaving the tab
 	if not isFriendsTab and SocialPlus_SettingsPanel and SocialPlus_SettingsPanel:IsShown() then
 		SocialPlus_SettingsPanel:Hide()
@@ -3482,8 +3674,49 @@ local function SocialPlus_DropdownFriendHasGroup()
 	return false
 end
 
--- [[ Friend row dropdown (per-friend menu) ]]
+-- Ensure the friend dropdown is never narrower than our longest label
+local SocialPlus_MenuMeasureFS
 
+local function SocialPlus_GetStringWidth(str)
+    if not str or str=="" then return 0 end
+    if not SocialPlus_MenuMeasureFS then
+        SocialPlus_MenuMeasureFS=UIParent:CreateFontString(nil,"OVERLAY","GameFontNormal")
+        SocialPlus_MenuMeasureFS:Hide()
+    end
+    SocialPlus_MenuMeasureFS:SetText(str)
+    return SocialPlus_MenuMeasureFS:GetStringWidth() or 0
+end
+
+local function SocialPlus_ApplyMenuMinWidth(level)
+    level=level or 1
+    local listFrame=_G["DropDownList"..level]
+    if not listFrame then return end
+
+    -- Longest top-level label (EN/FR safe via L)
+    local baseText=L.MENU_MOVE_TO_GROUP or "Move to Another Group"
+    local textWidth=SocialPlus_GetStringWidth(baseText)
+    if textWidth<=0 then return end
+
+    -- Padding for left margin + icon + arrow
+    local padding=60
+    local targetWidth=textWidth+padding
+
+    local currentWidth=listFrame:GetWidth() or 0
+    if currentWidth<targetWidth then
+        listFrame:SetWidth(targetWidth)
+
+        -- Stretch buttons so the highlight reaches the new width
+        local num=listFrame.numButtons or 0
+        for i=1,num do
+            local btn=_G[listFrame:GetName().."Button"..i]
+            if btn then
+                btn:SetWidth(targetWidth-5)
+            end
+        end
+    end
+end
+
+-- [[ Friend row dropdown (per-friend menu) ]]
 SocialPlus_FriendMenu.initialize=function(self,level)
 	level=level or 1
 	if not SocialPlus_CurrentFriend then return end
@@ -3492,14 +3725,16 @@ SocialPlus_FriendMenu.initialize=function(self,level)
 	if level==1 then
 		local cf=SocialPlus_CurrentFriend
 
+		-- [ Friend Name ] title
 		info=UIDropDownMenu_CreateInfo()
 		info.text=SocialPlus_GetMenuTitle()
 		info.isTitle=true
 		info.notCheckable=true
 		info.disabled=true
-		info.justifyH="CENTER"
+		info.justifyH="LEFT"
 		UIDropDownMenu_AddButton(info,level)
 
+		-- Make the title a bit sharper
 		do
 			local listFrame=_G["DropDownList"..level]
 			if listFrame then
@@ -3514,13 +3749,114 @@ SocialPlus_FriendMenu.initialize=function(self,level)
 			end
 		end
 
+		-- Set Note
+		info=UIDropDownMenu_CreateInfo()
+		info.text=L.MENU_SET_NOTE
+		info.notCheckable=true
+		info.func=function()
+			local kind,id,note,setter=SocialPlus_GetDropdownFriendNote()
+			if not kind or not id or not setter then return end
+			StaticPopup_Show("FRIEND_SET_NOTE",nil,nil,{id=id,set=setter,note=note})
+		end
+		UIDropDownMenu_AddButton(info,level)
+
+		-- View BNet friend's friends (Blizzard-style "View Friends")
+		info=UIDropDownMenu_CreateInfo()
+		info.text=L.MENU_VIEW_FRIENDS
+		info.notCheckable=true
+		do
+			local cf=SocialPlus_CurrentFriend
+			if cf and cf.buttonType==FRIENDS_BUTTON_TYPE_BNET then
+				info.disabled=false
+			else
+				info.disabled=true
+			end
+		end
+
+		info.func=function()
+			local cf=SocialPlus_CurrentFriend
+			if not cf or cf.buttonType~=FRIENDS_BUTTON_TYPE_BNET then return end
+
+			local index=cf.bnetIndex or cf.id
+			if not index or not BNGetFriendInfo then return end
+
+			-- MoP-style BNGetFriendInfo:
+			-- presenceID = t[1], bnetIDAccount = last value
+			local t={BNGetFriendInfo(index)}
+			local presenceID=t[1]
+			local bnetIDAccount=t[#t]
+
+			if not presenceID then return end
+
+			-- 1) Show the Friends-of-Friends frame
+			if type(FriendsFriendsFrame_Show)=="function" then
+				FriendsFriendsFrame_Show(presenceID)
+			elseif FriendsFriendsFrame then
+				if ShowUIPanel then
+					ShowUIPanel(FriendsFriendsFrame)
+				else
+					FriendsFriendsFrame:Show()
+				end
+			end
+
+			-- 2) Actually request the FoF data so it fills
+			if BNRequestFOFInfo and bnetIDAccount then
+				BNRequestFOFInfo(bnetIDAccount)
+			end
+		end
+		UIDropDownMenu_AddButton(info,level)
+
+		-- --- separator before Interact block
 		SocialPlus_AddSeparator(level)
 
+		-- Interact header
 		info=UIDropDownMenu_CreateInfo()
 		info.text=L.MENU_INTERACT
 		info.isTitle=true
 		info.notCheckable=true
 		info.disabled=true
+		UIDropDownMenu_AddButton(info,level)
+
+		-- Invite / Suggest invite
+		info=UIDropDownMenu_CreateInfo()
+
+		local isSuggest=SocialPlus_ShouldSuggestInvite and SocialPlus_ShouldSuggestInvite()
+		local label=isSuggest and (L.MENU_SUGGEST or L.MENU_INVITE) or L.MENU_INVITE
+
+		info.text=label
+		info.notCheckable=true
+
+		-- Determine invite eligibility and reason for the dropdown friend
+		local kind,id=SocialPlus_GetDropdownFriend()
+		local canInvite,reason=false,nil
+		if kind and id then
+			canInvite,reason=SocialPlus_GetInviteStatus(kind,id)
+		else
+			canInvite=false
+			reason=L.INVITE_GENERIC_FAIL
+		end
+
+		info.disabled=not canInvite
+		if info.disabled and reason and reason~="" then
+			info.tooltipTitle="|cffff4444"..label.."|r"
+			info.tooltipText=reason
+		else
+			info.tooltipTitle=label
+			info.tooltipText=nil
+		end
+
+		info.func=function()
+			if not SocialPlus_CanInviteMenuTarget() then return end
+
+			local kind,id=SocialPlus_GetDropdownFriend()
+			if not kind or not id then return end
+
+			-- Use the unified invite helper (same logic as buttons)
+			local ok,reason=SocialPlus_PerformInvite(kind,id)
+			if not ok and reason and UIErrorsFrame and UIErrorsFrame.AddMessage then
+				UIErrorsFrame:AddMessage(reason,1,0.1,0.1,1.0)
+			end
+		end
 		UIDropDownMenu_AddButton(info,level)
 
 		-- Whisper
@@ -3579,49 +3915,6 @@ SocialPlus_FriendMenu.initialize=function(self,level)
 		end
 		UIDropDownMenu_AddButton(info,level)
 
--- Invite / Suggest invite
-info=UIDropDownMenu_CreateInfo()
-
-local isSuggest = SocialPlus_ShouldSuggestInvite and SocialPlus_ShouldSuggestInvite()
-local label = isSuggest and (L.MENU_SUGGEST or L.MENU_INVITE) or L.MENU_INVITE
-
-info.text=label
-info.notCheckable=true
-
--- Determine invite eligibility and reason for the dropdown friend
-local kind,id=SocialPlus_GetDropdownFriend()
-local canInvite,reason=false,nil
-if kind and id then
-	canInvite,reason=SocialPlus_GetInviteStatus(kind,id)
-else
-	canInvite=false
-	reason=L.INVITE_GENERIC_FAIL
-end
-
-info.disabled=not canInvite
-if info.disabled and reason and reason~="" then
-	info.tooltipTitle="|cffff4444"..label.."|r"
-	info.tooltipText=reason
-else
-	info.tooltipTitle=label
-	info.tooltipText=nil
-end
-
-info.func=function()
-	if not SocialPlus_CanInviteMenuTarget() then return end
-
-	local kind,id=SocialPlus_GetDropdownFriend()
-	if not kind or not id then return end
-
-	-- Use the unified invite helper (same logic as buttons)
-	local ok,reason=SocialPlus_PerformInvite(kind,id)
-	if not ok and reason and UIErrorsFrame and UIErrorsFrame.AddMessage then
-		UIErrorsFrame:AddMessage(reason,1,0.1,0.1,1.0)
-	end
-end
-
-UIDropDownMenu_AddButton(info,level)
-
 		-- Copy character name
 		info=UIDropDownMenu_CreateInfo()
 		info.text=L.MENU_COPY_NAME
@@ -3641,8 +3934,10 @@ UIDropDownMenu_AddButton(info,level)
 		end
 		UIDropDownMenu_AddButton(info,level)
 
+		-- --- separator before Groups section
 		SocialPlus_AddSeparator(level)
 
+		-- Groups section title
 		info=UIDropDownMenu_CreateInfo()
 		info.text=L.MENU_GROUPS
 		info.isTitle=true
@@ -3650,22 +3945,27 @@ UIDropDownMenu_AddButton(info,level)
 		info.disabled=true
 		UIDropDownMenu_AddButton(info,level)
 
+		-- Does this friend already have a #Group tag?
 		local hasGroup=SocialPlus_DropdownFriendHasGroup()
+
+		-- Create group from this friend
 		info=UIDropDownMenu_CreateInfo()
 		info.text=L.MENU_CREATE_GROUP
 		info.notCheckable=true
-		info.disabled=hasGroup
+		info.disabled=hasGroup -- only for ungrouped friends
 		info.func=SocialPlus_CreateGroupFromDropdown
 		UIDropDownMenu_AddButton(info,level)
 
+		-- Add / Move submenu
 		info=UIDropDownMenu_CreateInfo()
-		info.text=L.MENU_ADD_TO_GROUP
+		info.text=hasGroup and (L.MENU_MOVE_TO_GROUP or L.MENU_ADD_TO_GROUP) or L.MENU_ADD_TO_GROUP
 		info.notCheckable=true
 		info.hasArrow=true
 		info.value="SocialPlus_ADD_SUB"
-		info.disabled=hasGroup
+		info.disabled=false
 		UIDropDownMenu_AddButton(info,level)
 
+		-- Remove-from-group submenu
 		info=UIDropDownMenu_CreateInfo()
 		info.text=L.MENU_REMOVE_FROM_GROUP
 		info.notCheckable=true
@@ -3673,36 +3973,32 @@ UIDropDownMenu_AddButton(info,level)
 		info.value="SocialPlus_DEL_SUB"
 		UIDropDownMenu_AddButton(info,level)
 
-		SocialPlus_AddSeparator(level)
+        -- Separator before Other Options
+        SocialPlus_AddSeparator(level)
 
-		info=UIDropDownMenu_CreateInfo()
-		info.text=L.MENU_OTHER_OPTIONS
-		info.isTitle=true
-		info.notCheckable=true
-		info.disabled=true
-		UIDropDownMenu_AddButton(info,level)
+        -- Other Options header
+        info=UIDropDownMenu_CreateInfo()
+        info.text=L.MENU_OTHER_OPTIONS
+        info.isTitle=true
+        info.notCheckable=true
+        info.disabled=true
+        UIDropDownMenu_AddButton(info,level)
 
-		info=UIDropDownMenu_CreateInfo()
-		info.text=L.MENU_SET_NOTE
-		info.notCheckable=true
-		info.func=function()
-			local kind,id,note,setter=SocialPlus_GetDropdownFriendNote()
-			if not kind or not id or not setter then return end
-			StaticPopup_Show("FRIEND_SET_NOTE",nil,nil,{id=id,set=setter,note=note})
-		end
-		UIDropDownMenu_AddButton(info,level)
+        -- Remove Friend / Remove Battle.net Friend
+        info=UIDropDownMenu_CreateInfo()
+        info.notCheckable=true
+        info.func=function()
+            SocialPlus_RemoveCurrentFriend()
+        end
+        if cf and cf.buttonType==FRIENDS_BUTTON_TYPE_BNET then
+            info.text=L.MENU_REMOVE_BNET
+        else
+            info.text=REMOVE_FRIEND
+        end
+        UIDropDownMenu_AddButton(info,level)
 
-		info=UIDropDownMenu_CreateInfo()
-		info.notCheckable=true
-		info.func=function()
-			SocialPlus_RemoveCurrentFriend()
-		end
-		if cf and cf.buttonType==FRIENDS_BUTTON_TYPE_BNET then
-			info.text=L.MENU_REMOVE_BNET
-		else
-			info.text=REMOVE_FRIEND
-		end
-		UIDropDownMenu_AddButton(info,level)
+		-- After all level-1 buttons are added, enforce a minimum width
+        SocialPlus_ApplyMenuMinWidth(level)
 
 	elseif level==2 then
 		if UIDROPDOWNMENU_MENU_VALUE=="SocialPlus_ADD_SUB" then
@@ -3713,22 +4009,31 @@ UIDropDownMenu_AddButton(info,level)
 	end
 end
 
--- [[ FriendsFrame button hooks (click / tooltip / invite tooltip) ]]
 
+-- [[ FriendsFrame button hooks (click / tooltip / invite tooltip) ]]
 local frame=CreateFrame("Frame")
 frame:RegisterEvent("PLAYER_LOGIN")
 
 local function SocialPlus_OnClick(self,button)
 	if self.buttonType==FRIENDS_BUTTON_TYPE_DIVIDER then
-		local group=self.info and self.info:GetText() or ""
+		-- Use the raw group key; for General this is "" (ungrouped)
+		local groupKey=self.SocialPlusGroupName or ""
+
 		if button=="RightButton" then
-			ToggleDropDownMenu(1,group,SocialPlus_Menu,"cursor",0,0)
+			-- Still allow the header context menu everywhere
+			ToggleDropDownMenu(1,groupKey,SocialPlus_Menu,"cursor",0,0)
 		else
-			SocialPlus_SavedVars.collapsed[group]=not SocialPlus_SavedVars.collapsed[group]
+			-- General / ungrouped header cannot be collapsed at all
+			if groupKey=="" then
+				return
+			end
+
+			SocialPlus_SavedVars.collapsed[groupKey]=not SocialPlus_SavedVars.collapsed[groupKey]
 			SocialPlus_Update()
 		end
 		return
 	end
+
 
 	if button~="RightButton" then
 		if self.SocialPlus_OrigOnClick then
@@ -3922,8 +4227,14 @@ function SocialPlus_ModifyGroupFromDropdown(group,mode)
 	local newNote
 
 	if mode=="ADD" then
+		-- Single-group / "move to group" semantics:
+		-- wipe all existing #Group tags, then apply the new one.
+		for k in pairs(groups) do
+			groups[k]=nil
+		end
 		newNote=AddGroup(baseNote,group)
 	else
+		-- Pure remove: just strip the selected group tag.
 		newNote=RemoveGroup(baseNote,group)
 	end
 
@@ -3939,8 +4250,7 @@ function SocialPlus_ModifyGroupFromDropdown(group,mode)
 	CloseDropDownMenus()
 end
 
-
-
+-- [[ BNet remove friend flow ]]	
 if not StaticPopupDialogs then
     StaticPopupDialogs={}
 end
@@ -4193,13 +4503,15 @@ frame:SetScript("OnEvent",function(self,event,...)
 		HookButtons()
 
 		if not SocialPlus_SavedVars then
-			SocialPlus_SavedVars={
-				collapsed={},
-				hide_offline=false,
-				colour_classes=true,
-				hide_high_level=false,
-				scrollSpeed=2.2
-			}
-		end
+    SocialPlus_SavedVars={
+        collapsed={},
+        hide_offline=false,
+        colour_classes=true,
+        hide_high_level=false,
+        scrollSpeed=2.2,
+        prioritize_current_client=true,
+        groupOrder={}
+ 		  }
+       end
 	end
 end)

@@ -4,7 +4,8 @@
 ## Version: @project-version@
 ## Notes: Modern Friends List enhancement for MoP-Classic.
 ## X-Curse-Project-ID: 1396027
-## X-Curse-Repository-ID: https://github.com/Atlas-Engine/SocialPlus
+## X-Curse-Repository-ID: https://github.com/Atlas-Engine/socialplus
+## SavedVariables: SocialPlus_SavedVars
 
 # Core Lua
 SocialPlus.lua
