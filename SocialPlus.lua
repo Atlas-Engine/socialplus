@@ -1072,12 +1072,13 @@ local function FG_GetClientTextureSafe(client)
 		end
 	end
 
-	-- Generic fallbacks (paths exist in MoP)
-	if client==BNET_CLIENT_WOW then
-		return "Interface\\FriendsFrame\\Battlenet-WoWicon"
-	else
-		return "Interface\\FriendsFrame\\Battlenet-Battleneticon"
-	end
+-- Base icon stays untouched (WoW or BNet).
+if client==BNET_CLIENT_WOW then
+    return "Interface\\FriendsFrame\\Battlenet-WoWicon"
+else
+    return "Interface\\FriendsFrame\\Battlenet-Battleneticon"
+end
+
 end
 
 local FriendsScrollFrame
@@ -1209,18 +1210,33 @@ function SocialPlus_InitSmoothScroll()
 		local min,max=sb:GetMinMaxValues()
 		local current=sb:GetValue() or 0
 
-		-- Normalize delta so "hard flick" isn't faster than micro-scroll
-		local dir
+		-- Interpret both tiny nudges and big spins
+		local dir,mag
 		if delta>0 then
 			dir=1
+			mag=delta
 		elseif delta<0 then
 			dir=-1
+			mag=-delta
 		else
 			return
 		end
 
-		-- Fixed base step: same baseline for everyone
-		local baseStep=80  -- lower = smoother, higher = snappier
+		-- Clamp raw magnitude from the wheel
+		if mag<0.25 then mag=0.25 end
+		if mag>3 then mag=3 end
+
+		-- Boost small flicks a bit without touching full spins:
+		-- mag=3 stays 3, mag small gets proportionally more.
+		local boost=0.80
+		mag=mag+boost*(1-mag/3)
+
+		-- Safety re-clamp
+		if mag>3 then mag=3 end
+		if mag<0.25 then mag=0.25 end
+
+		-- Base step: baseline distance per "normal" tick
+		local baseStep=80
 
 		-- Slider 1..5 → 0.4..1.8 multiplier
 		local displayValue=(SocialPlus_SavedVars and SocialPlus_SavedVars.scrollSpeed) or 2.2
@@ -1228,23 +1244,22 @@ function SocialPlus_InitSmoothScroll()
 		if displayValue<1.0 then displayValue=1.0 end
 		if displayValue>5.0 then displayValue=5.0 end
 
-		local t=(displayValue-1.0)/4.0 -- 1→0, 5→1
+		local t=(displayValue-1.0)/4.0
 		if t<0 then t=0 end
 		if t>1 then t=1 end
 
-		-- 1.0 → 0.4x (very smooth), 3.0 → ~1.1x, 5.0 → 1.8x (fast but controllable)
+		-- 1.0 → 0.4x, 5.0 → 1.8x
 		local finalMultiplier=0.4+1.4*t
 
-		local step=baseStep*finalMultiplier
+		-- Step now scales with both the slider and how hard you spin the wheel
+		local step=baseStep*finalMultiplier*mag
 
 		local target=current-dir*step
 		if target<min then target=min end
 		if target>max then target=max end
 		if target==current then return end
 
-		-- Duration scales with scroll speed:
-		-- speed 1 → ~0.06s (snappy)
-		-- speed 5 → ~0.11s (more glide for big jumps)
+		-- Same smooth animation duration as before (scaled only by slider)
 		local duration=0.06+0.05*t
 
 		SocialPlus_ScrollAnim={
@@ -1258,6 +1273,7 @@ function SocialPlus_InitSmoothScroll()
 		self:SetScript("OnUpdate",SocialPlus_ScrollOnUpdate)
 	end)
 end
+
 
 -- [[ Friend API wrappers (MoP / modern compatibility) ]]
 
@@ -1938,19 +1954,23 @@ local function SocialPlus_UpdateFriendButton(button)
 			-- Fade the WoW icon for “compatible client but not groupable” cases
 			-- (different project or different region).
 			local fadeIcon=false
-			if client==BNET_CLIENT_WOW then
-				-- Old project check (Retail vs Classic, etc.)
-				if WOW_PROJECT_ID and wowProjectID and wowProjectID~=WOW_PROJECT_ID then
-					fadeIcon=true
-				-- New: region / realm restriction coming from our invite helper
-				elseif not allowed and (restriction==INVITE_RESTRICTION_WOW_PROJECT_ID or restriction==INVITE_RESTRICTION_REALM) then
-					fadeIcon=true
-				end
-			end
-			if button.gameIcon then
-				button.gameIcon:SetAlpha(fadeIcon and 0.4 or 1)
-			end
 
+			if client==BNET_CLIENT_WOW then
+ 		    if WOW_PROJECT_ID and wowProjectID and wowProjectID~=WOW_PROJECT_ID then
+	        fadeIcon=true
+		    elseif not allowed and (restriction==INVITE_RESTRICTION_WOW_PROJECT_ID or restriction==INVITE_RESTRICTION_REALM) then
+ 	        fadeIcon=true
+ 	  	    end
+		else
+        -- Any non-WoW BNet client fades too
+           fadeIcon=true
+        end
+
+		if button.gameIcon then
+           button.gameIcon:SetAlpha(fadeIcon and 0.4 or 1)
+		end
+
+		-- Show invite button	
 			hasTravelPassButton=true
 
 			if allowed then
@@ -2137,7 +2157,6 @@ end
 end
 
 -- [[ Full friends list rebuild ]]
-
 local function SocialPlus_UpdateFriends()
 	local scrollFrame=FriendsScrollFrame
 	local offset=HybridScrollFrame_GetOffset(scrollFrame)
@@ -2244,7 +2263,6 @@ local function SocialPlus_ReorderGeneralForCurrentClient()
 end
 
 -- [[ Group tag helpers ]]
-
 local function FillGroups(groups,note,...)
 	wipe(groups)
 	local n=select('#',...)
@@ -4567,6 +4585,20 @@ frame:SetScript("OnEvent",function(self,event,...)
 		end
 
 		HookButtons()
+
+		-- Extra safety: force a clean repaint shortly after the Friends frame is shown.
+		-- This fixes rare cases where the list draws with stale rows until the user scrolls.
+		if FriendsFrame and not FriendsFrame.SocialPlusInitialRefreshHooked then
+  		FriendsFrame.SocialPlusInitialRefreshHooked=true
+ 	    FriendsFrame:HookScript("OnShow",function()
+        if FriendsList_Update and C_Timer and C_Timer.After then
+            -- Use a short delay so Battle.net/WoW friend data has settled.
+            C_Timer.After(0.08,function()
+                pcall(FriendsList_Update)
+            end)
+        end
+    end)
+end
 
 		if not SocialPlus_SavedVars then
     SocialPlus_SavedVars={
