@@ -1,5 +1,6 @@
 local hooks = {}
 local SocialPlus_OriginalDropdownInit
+local PLAYER_FACTION = UnitFactionGroup("player")  -- "Alliance" or "Horde"
 
 -----------------------------------------------------------------------
 -- Localization: English + French (auto-detected via GetLocale())
@@ -55,7 +56,7 @@ do
         L.SETTING_HIDE_OFFLINE       = "Masquer les amis hors ligne"
         L.SETTING_HIDE_MAX_LEVEL     = "Masquer les personnages de niveau maximal"
         L.SETTING_COLOR_NAMES        = "Colorer les noms selon la classe"
-        L.SETTING_PRIORITIZE_CURRENT = "Prioriser les contacts sur Mists of Pandaria"
+        L.SETTING_PRIORITIZE_CURRENT = "Prioriser les amis sur Mists of Pandaria"
         L.SETTING_SCROLL_SPEED       = "Vitesse de défilement"
         L.SETTING_SCROLL_SPEED_DESC  = "Ajuste la vitesse de défilement de la liste d’amis."
 
@@ -70,7 +71,7 @@ do
         ----------------------------------------------------------------
         -- Extra messages
         ----------------------------------------------------------------
-        L.MSG_INVITE_FAILED         = "Impossible d’inviter ce contact."
+        L.MSG_INVITE_FAILED         = "Impossible d’inviter cet ami."
         L.MSG_INVITE_CROSSREALM     = "Invitation impossible : cet ami est sur un autre royaume."
         L.INVITE_REASON_NOT_WOW     = "Cet ami n’est pas actuellement dans World of Warcraft."
         L.INVITE_REASON_WRONG_PROJECT = "Cet ami n’utilise pas la même version de WoW que vous."
@@ -131,7 +132,7 @@ do
         L.SETTING_HIDE_OFFLINE       = "Hide offline friends"
         L.SETTING_HIDE_MAX_LEVEL     = "Hide max-level characters"
         L.SETTING_COLOR_NAMES        = "Color names by class"
-        L.SETTING_PRIORITIZE_CURRENT = "Prioritize MoP contacts"
+        L.SETTING_PRIORITIZE_CURRENT = "Prioritize MoP friends"
         L.SETTING_SCROLL_SPEED       = "Scroll speed"
         L.SETTING_SCROLL_SPEED_DESC  = "Adjust the scroll speed for the friends list."
 
@@ -146,7 +147,7 @@ do
         ----------------------------------------------------------------
         -- Extra messages
         ----------------------------------------------------------------
-        L.MSG_INVITE_FAILED         = "Unable to invite this contact."
+        L.MSG_INVITE_FAILED         = "Unable to invite this friend."
         L.MSG_INVITE_CROSSREALM     = "This friend is on a different realm and cannot be invited."
         L.INVITE_REASON_NOT_WOW     = "This friend is not currently in World of Warcraft."
         L.INVITE_REASON_WRONG_PROJECT = "This friend is not on your WoW version."
@@ -165,7 +166,7 @@ end
 -- NOTE: _G.SocialPlus_GetInviteStatus will be set after the function is defined below
 
 -- Debug helper to trace id resolution and menu actions (set FG_DEBUG = true to enable)
-local FG_DEBUG = false
+local FG_DEBUG = true
 
 local function FG_Debug(...)
 	if not FG_DEBUG then return end
@@ -205,6 +206,7 @@ local SocialPlus_GetInviteStatus
 local SocialPlus_GetGroupKeyFromRow
 local SocialPlus_EnsureSavedVars
 local SocialPlus_SetCustomGroupOrderFromMove
+local SocialPlus_IsRowInDraggedGroup
 
 -- Ensure savedvars exist and set reasonable defaults
 function SocialPlus_EnsureSavedVars()
@@ -213,7 +215,7 @@ function SocialPlus_EnsureSavedVars()
     if SocialPlus_SavedVars.hide_high_level==nil then SocialPlus_SavedVars.hide_high_level=false end
     if SocialPlus_SavedVars.colour_classes==nil then SocialPlus_SavedVars.colour_classes=true end
     if SocialPlus_SavedVars.scrollSpeed==nil then SocialPlus_SavedVars.scrollSpeed=SCROLL_BASE end
-    -- Default ON for “Prioritize MoP contacts”
+    -- Default ON for “Prioritize MoP friends”
     if SocialPlus_SavedVars.prioritize_current_client==nil then
    	   SocialPlus_SavedVars.prioritize_current_client=true
     end
@@ -281,6 +283,43 @@ if WOW_PROJECT_ID==WOW_PROJECT_CLASSIC then
 	INVITE_RESTRICTION_WOW_PROJECT_CLASSIC=7
 	INVITE_RESTRICTION_NONE=8
 	INVITE_RESTRICTION_MOBILE=9
+end
+
+-- Invite tier helper for sorting:
+-- 1 = fully inviteable (same region+version)
+-- 2 = different region/realm
+-- 3 = different WoW project/version
+-- 4 = other online games / BNet app (non-WoW)
+-- 5 = everything else (generic/info/misc)
+local function SocialPlus_GetInviteTier(kind,id)
+    local allowed,_,restriction=SocialPlus_GetInviteStatus(kind,id)
+
+    -- Fully inviteable → very top
+    if allowed and restriction==INVITE_RESTRICTION_NONE then
+        return 1
+    end
+
+    -- Different region/realm
+    if restriction==INVITE_RESTRICTION_REALM
+       or (type(INVITE_RESTRICTION_REGION)~="nil" and restriction==INVITE_RESTRICTION_REGION) then
+        return 2
+    end
+
+    -- Different game version / project
+    if restriction==INVITE_RESTRICTION_WOW_PROJECT_ID
+       or restriction==INVITE_RESTRICTION_WOW_PROJECT_MAINLINE
+       or restriction==INVITE_RESTRICTION_WOW_PROJECT_CLASSIC then
+        return 3
+    end
+
+    -- Online but not in WoW (BNet app, other game, etc.)
+    if restriction==INVITE_RESTRICTION_CLIENT
+       or restriction==INVITE_RESTRICTION_NO_GAME_ACCOUNTS then
+        return 4
+    end
+
+    -- Generic / info / mobile / weird leftovers → lowest online tier
+    return 5
 end
 
 -- Determine the player's region ID based on the "portal" CVar
@@ -497,6 +536,23 @@ function SocialPlus_GetGroupKeyFromRow(btn)
 	return nil
 end
 
+-- Returns true if this visible row belongs to the group currently being dragged.
+local function SocialPlus_IsRowInDraggedGroup(button)
+    if not SocialPlus_DragSourceGroup or not button or not button.index then
+        return false
+    end
+
+    -- Header rows: the group divider itself
+    if button.buttonType==FRIENDS_BUTTON_TYPE_DIVIDER then
+        local groupName=button.SocialPlusGroupName or SocialPlus_GetGroupKeyFromRow(button)
+        return groupName==SocialPlus_DragSourceGroup
+    end
+
+    -- Regular friend rows: resolve group via helper
+    local groupName=SocialPlus_GetGroupKeyFromRow(button)
+    return groupName~=nil and groupName==SocialPlus_DragSourceGroup
+end
+
 -- Rebuild GroupSorted based on GroupTotal and saved custom order
 local function SocialPlus_ApplyGroupOrder()
 	wipe(GroupSorted)
@@ -631,6 +687,11 @@ local function SocialPlus_OnGroupDragStart(self)
 	SocialPlus_DragSourceGroup=group
 	SocialPlus_DragSourceButton=self
 
+	-- Immediately refresh so the entire group fades visually
+    if FriendsList_Update then
+        pcall(FriendsList_Update)
+    end
+
 	-- ghost frame
 	local ghost=SocialPlus_GetDragGhost()
 
@@ -752,15 +813,20 @@ local function SocialPlus_OnGroupDragStop(self)
 		end
 	end
 
-	SocialPlus_DragSourceButton=nil
-	SocialPlus_DragSourceGroup=nil
-	SocialPlus_DragHoverGroup=nil
+    SocialPlus_DragSourceButton=nil
+    SocialPlus_DragSourceGroup=nil
+    SocialPlus_DragHoverGroup=nil
 
-	-- still no valid target? Cancel.
-	if not target or target==source or target==FriendRequestString or target=="" then
-		return
-	end
+    -- Refresh rows so drag fade is immediately removed even on cancel
+    if FriendsList_Update then
+        pcall(FriendsList_Update)
+    end
 
+    -- still no valid target? Cancel.
+    if not target or target==source or target==FriendRequestString or target=="" then
+        return
+    end
+	-- Perform the move	
 	SocialPlus_SetCustomGroupOrderFromMove(source,target)
 end
 
@@ -1036,7 +1102,76 @@ local function FG_InitFactionIcon()
 		FACTION_ICON_PATH=nil
 	end
 end
- 
+
+-- Map BNet client programs to clean in-game icons (file IDs)
+local SOCIALPLUS_GAME_ICONS={}
+local SOCIALPLUS_DEFAULT_BNET_ICON=-6 -- generic Battle.net logo
+local SOCIALPLUS_UNKNOWN_CLIENTS={}   -- for optional debug logging
+
+local function SocialPlus_RegisterIcon(clientConst,fileID)
+	if clientConst and fileID then
+		SOCIALPLUS_GAME_ICONS[clientConst]=fileID
+	end
+end
+
+-- World of Warcraft + Battle.net ecosystem
+-- Use BNET_CLIENT_* if it exists, otherwise fall back to the known string token.
+SocialPlus_RegisterIcon(BNET_CLIENT_WOW or "WoW",-21)       -- World of Warcraft
+SocialPlus_RegisterIcon(BNET_CLIENT_SC2 or "S2",-16)        -- StarCraft II
+
+-- Diablo II / D2R (MoP Remix: OSI = D2R)
+SocialPlus_RegisterIcon(BNET_CLIENT_D2 or "OSI",-8)         -- Diablo II / D2R
+SocialPlus_RegisterIcon("D2R",-8)                           -- extra safety alias
+
+SocialPlus_RegisterIcon(BNET_CLIENT_D3 or "D3",-14)         -- Diablo III
+SocialPlus_RegisterIcon(BNET_CLIENT_D4 or "D4",-17)         -- Diablo IV
+SocialPlus_RegisterIcon(BNET_CLIENT_WTCG or "WTCG",-11)     -- Hearthstone
+
+-- Battle.net app / launcher
+SocialPlus_RegisterIcon(BNET_CLIENT_APP or "App",-6)        -- generic app
+SocialPlus_RegisterIcon("BSAp",-6)                          -- Remix launcher token
+
+SocialPlus_RegisterIcon(BNET_CLIENT_HEROES or "Hero",-13)   -- Heroes of the Storm
+SocialPlus_RegisterIcon(BNET_CLIENT_OVERWATCH or "Pro",-5)  -- Overwatch
+SocialPlus_RegisterIcon(BNET_CLIENT_CLNT or "CLNT",-6)      -- generic BNet client
+
+-- Warcraft III
+SocialPlus_RegisterIcon(BNET_CLIENT_WC3 or "W3",-20)
+SocialPlus_RegisterIcon("W3X",-20)
+SocialPlus_RegisterIcon("WTC",-20)
+
+-- Call of Duty (Remix: VIPR confirmed CoD)
+SocialPlus_RegisterIcon(BNET_CLIENT_COD or "COD",-12)
+SocialPlus_RegisterIcon("VIPR",-12)
+
+-- Extra safety for common alternates seen in modern BNet
+SocialPlus_RegisterIcon("Pro2",-5)                          -- Overwatch 2-style token
+SocialPlus_RegisterIcon("BNet",-6)                          -- generic Battle.net
+
+
+-- Auto-sizing helper so icons follow row height (including faction crests)
+local function SocialPlus_GetAutoIconSize(button,isFaction)
+    local h
+
+    if button and button.GetHeight then
+        h=button:GetHeight()
+    end
+    if (not h or h<=0) and button and button.buttonType and FRIENDS_BUTTON_HEIGHTS then
+        h=FRIENDS_BUTTON_HEIGHTS[button.buttonType]
+    end
+    if not h or h<=0 then
+        h=34 -- fallback
+    end
+
+    -- On a ~34px row:
+    --  crest ≈ 30–31px, game icons ≈ 26–27px
+    if isFaction then
+        return math.floor(h*0.92+0.5)
+    end
+
+    return math.floor(h*0.78+0.5)
+end
+
 -- Apply a game/faction icon to a button's gameIcon texture
 -- If iconPath is nil or empty, hides the icon
 local function FG_ApplyGameIcon(button,iconPath,size,point,relPoint,offX,offY)
@@ -1050,10 +1185,10 @@ local function FG_ApplyGameIcon(button,iconPath,size,point,relPoint,offX,offY)
 	local icon=button.gameIcon
 	icon:ClearAllPoints()
 
-	size=size or 20
+	size=size or 24
 	point=point or "RIGHT"
 	relPoint=relPoint or "RIGHT"
-	offX=offX or -4
+	offX=offX or -30
 	offY=offY or 0
 
 	icon:SetPoint(point,button,relPoint,offX,offY)
@@ -1063,8 +1198,54 @@ local function FG_ApplyGameIcon(button,iconPath,size,point,relPoint,offX,offY)
 	icon:Show()
 end
 
--- Safe BNet client texture helper with MoP fallbacks
+-- --------------------------------------------------------------------
+-- SocialPlus icon styles
+-- Central place to tweak size/position of every icon type
+-- --------------------------------------------------------------------
+local SocialPlus_IconStyles={
+	game={
+		size=24,
+		point="RIGHT",
+		relPoint="RIGHT",
+		offX=-24,
+		offY=0,
+	},
+	crest={
+		size=52,
+		point="RIGHT",
+		relPoint="RIGHT",
+		offX=-1,
+		offY=-10,
+	},
+}
+
+-- Apply an icon to a button using a named style	
+local function SocialPlus_ApplyIcon(button,iconPath,styleKey,overrideSize)
+	-- styleKey: "game","crest","smallGame", etc.
+	local style=SocialPlus_IconStyles[styleKey] or SocialPlus_IconStyles.game
+	local size=overrideSize or style.size or 48
+	local point=style.point or "RIGHT"
+	local relPoint=style.relPoint or "RIGHT"
+	local offX=style.offX or -10
+	local offY=style.offY or -8
+
+	FG_ApplyGameIcon(button,iconPath,size,point,relPoint,offX,offY)
+end
+
+-- Safe BNet client texture helper using clean MoP file-ID icons
 local function FG_GetClientTextureSafe(client)
+	-- Preferred: explicit file-ID map (gives the crisp icons you tested)
+	if client and SOCIALPLUS_GAME_ICONS[client] then
+		return SOCIALPLUS_GAME_ICONS[client]
+	end
+
+	-- Debug unknown clients once
+	if client and FG_DEBUG and not SOCIALPLUS_UNKNOWN_CLIENTS[client] then
+		SOCIALPLUS_UNKNOWN_CLIENTS[client]=true
+		FG_Debug("Unknown BNet client:",client)
+	end
+
+	-- Fallback to Blizzard’s helper (may return atlas/paths)
 	if BNet_GetClientTexture then
 		local tex=BNet_GetClientTexture(client)
 		if tex and tex~="" then
@@ -1072,15 +1253,11 @@ local function FG_GetClientTextureSafe(client)
 		end
 	end
 
--- Base icon stays untouched (WoW or BNet).
-if client==BNET_CLIENT_WOW then
-    return "Interface\\FriendsFrame\\Battlenet-WoWicon"
-else
-    return "Interface\\FriendsFrame\\Battlenet-Battleneticon"
+	-- Last resort: generic Battle.net logo
+	return SOCIALPLUS_DEFAULT_BNET_ICON
 end
 
-end
-
+-- [[ Friends list frame references ]]	
 local FriendsScrollFrame
 local FriendButtonTemplate
 
@@ -1639,29 +1816,33 @@ else
 		isAFK,isGameAFK,isDND,isGameBusy,mobile,zoneName,gameText,realmName
 end
 
-local function SocialPlus_IsCurrentClientFriend(buttonType,id)
-	-- Non-BNet WoW friend: if he’s online, he’s on your client/project
-	if buttonType==FRIENDS_BUTTON_TYPE_WOW then
-		local info=FG_GetFriendInfoByIndex(id)
-		return info and info.connected
+function SocialPlus_IsCurrentClientFriend(buttonType,id)
+	-- If the setting is off, never prioritize anyone
+	if not (SocialPlus_SavedVars and SocialPlus_SavedVars.prioritize_current_client) then
+		return false
 	end
 
-	-- BNet friend: must be online, WoW client, same project
-	if buttonType==FRIENDS_BUTTON_TYPE_BNET then
-		local accountName,characterName,class,level,isFavoriteFriend,
-		      isOnline,bnetAccountId,client,canCoop,wowProjectID =
-		      GetFriendInfoById(id)
-
-		if not isOnline then return false end
-		if client~=BNET_CLIENT_WOW then return false end
-		if WOW_PROJECT_ID and wowProjectID and wowProjectID~=WOW_PROJECT_ID then
-			return false
+	-- Non-BNet WoW friend → use the same rules as the invite helper
+	if buttonType==FRIENDS_BUTTON_TYPE_WOW then
+		local allowed = false
+		if SocialPlus_GetInviteStatus then
+			allowed = select(1,SocialPlus_GetInviteStatus("WOW",id))
 		end
-		return true
+		return allowed and true or false
+	end
+
+	-- BNet friend → must pass full invite checks (project, faction, REGION, canCoop, etc.)
+	if buttonType==FRIENDS_BUTTON_TYPE_BNET then
+		local allowed = false
+		if SocialPlus_GetInviteStatus then
+			allowed = select(1,SocialPlus_GetInviteStatus("BNET",id))
+		end
+		return allowed and true or false
 	end
 
 	return false
 end
+
 
 -- [[ BNet button name text builder ]]
 
@@ -1798,11 +1979,12 @@ local function SocialPlus_UpdateFriendButton(button)
 				infoText=GetOnlineInfoText(BNET_CLIENT_WOW,info.mobile,info.rafLinkType,info.area)
 			end
 
-			-- Faction icon when online
 			if FACTION_ICON_PATH then
-				FG_ApplyGameIcon(button,FACTION_ICON_PATH,50,"CENTER","RIGHT",-27,-9)
+				FG_ApplyGameIcon(button,FACTION_ICON_PATH,52,"RIGHT","RIGHT",-1,-10)
+				button.SocialPlusIconAlpha=1   -- always full for pure WoW friends
 			elseif button.gameIcon then
 				button.gameIcon:Hide()
+				button.SocialPlusIconAlpha=nil
 			end
 
 			-- Invite button for online non-BNet WoW friends
@@ -1911,64 +2093,104 @@ local function SocialPlus_UpdateFriendButton(button)
 				infoText=gameText
 			end
 
-			local iconPath
-			local acct,ga
-			if C_BattleNet and C_BattleNet.GetFriendAccountInfo then
-				acct=C_BattleNet.GetFriendAccountInfo(id)
-				ga=acct and acct.gameAccountInfo or nil
-			end
-
-			local hasRealm=(realmName and realmName~="")
-				or (ga and ga.realmName and ga.realmName~="")
-
-			if client==BNET_CLIENT_WOW and wowProjectID==WOW_PROJECT_ID and hasRealm then
-				if ga and ga.factionName then
-					if ga.factionName=="Horde" then
-						iconPath="Interface\\TargetingFrame\\UI-PVP-Horde"
-					elseif ga.factionName=="Alliance" then
-						iconPath="Interface\\TargetingFrame\\UI-PVP-Alliance"
-					end
-				end
-				if not iconPath and FACTION_ICON_PATH then
-					iconPath=FACTION_ICON_PATH
-				end
-			end
-
-			if not iconPath then
-				iconPath=FG_GetClientTextureSafe(client)
-			end
-
-			if type(iconPath)=="string" and iconPath:find("UI%-PVP%-") then
-				FG_ApplyGameIcon(button,iconPath,50,"CENTER","RIGHT",-27,-9)
-			else
-				FG_ApplyGameIcon(button,iconPath,32,"RIGHT","RIGHT",-20,0)
-			end
-
-						nameColor=FRIENDS_BNET_NAME_COLOR
-
-			-- Determine invite eligibility for BNet friends using a centralized helper
-			local allowed,reason,restriction=SocialPlus_GetInviteStatus("BNET",id)
-			button.travelPassButton.fgInviteAllowed=allowed
-			button.travelPassButton.fgInviteReason=reason
-
-			-- Fade the WoW icon for “compatible client but not groupable” cases
-			-- (different project or different region).
-			local fadeIcon=false
-
-			if client==BNET_CLIENT_WOW then
- 		    if WOW_PROJECT_ID and wowProjectID and wowProjectID~=WOW_PROJECT_ID then
-	        fadeIcon=true
-		    elseif not allowed and (restriction==INVITE_RESTRICTION_WOW_PROJECT_ID or restriction==INVITE_RESTRICTION_REALM) then
- 	        fadeIcon=true
- 	  	    end
-		else
-        -- Any non-WoW BNet client fades too
-           fadeIcon=true
+        local iconPath
+        local acct,ga
+        if C_BattleNet and C_BattleNet.GetFriendAccountInfo then
+            acct=C_BattleNet.GetFriendAccountInfo(id)
+            ga=acct and acct.gameAccountInfo or nil
         end
 
-		if button.gameIcon then
-           button.gameIcon:SetAlpha(fadeIcon and 0.4 or 1)
+        local hasRealm=(realmName and realmName~="")
+            or (ga and ga.realmName and ga.realmName~="")
+
+        -- Friend’s faction (if applicable)
+        local friendFaction
+        if ga and ga.factionName then
+            friendFaction=ga.factionName  -- "Alliance" or "Horde"
+        end
+
+        -- If same-project WoW with a real realm, prefer a faction crest
+        if client==BNET_CLIENT_WOW and wowProjectID==WOW_PROJECT_ID and hasRealm then
+            if friendFaction=="Horde" then
+                iconPath="Interface\\TargetingFrame\\UI-PVP-Horde"
+            elseif friendFaction=="Alliance" then
+                iconPath="Interface\\TargetingFrame\\UI-PVP-Alliance"
+            end
+            if not iconPath and FACTION_ICON_PATH then
+                iconPath=FACTION_ICON_PATH
+            end
+        end
+
+        -- Fallback: generic client logo
+        if not iconPath then
+            iconPath=FG_GetClientTextureSafe(client)
+        end
+
+        -- Crest vs game logo?
+        local isCrest=false
+        if iconPath==FACTION_ICON_PATH then
+            isCrest=true
+        elseif type(iconPath)=="string" and iconPath:find("UI%-PVP%-") then
+            isCrest=true
+        end
+
+        -- Crest alpha: ONLY opposite faction gets faded
+        local crestAlpha
+        if isCrest and friendFaction and PLAYER_FACTION then
+            crestAlpha=(friendFaction~=PLAYER_FACTION) and 0.4 or 1
+        end
+
+        -- Actually place the icon
+        if isCrest then
+            SocialPlus_ApplyIcon(button,iconPath,"crest")
+        else
+            SocialPlus_ApplyIcon(button,iconPath,"game")
+        end
+
+        -- Name color for BNet friends is always the same
+        nameColor=FRIENDS_BNET_NAME_COLOR
+
+        -- Invite logic
+        local allowed,reason,restriction=SocialPlus_GetInviteStatus("BNET",id)
+        button.travelPassButton.fgInviteAllowed=allowed
+        button.travelPassButton.fgInviteReason=reason
+
+        -- Fade rules for non-crest game logos
+        local fadeIcon=false
+        if client==BNET_CLIENT_WOW then
+            if WOW_PROJECT_ID and wowProjectID and wowProjectID~=WOW_PROJECT_ID then
+                -- Different project (Retail vs Classic) → fade
+                fadeIcon=true
+            elseif not allowed and (
+                restriction==INVITE_RESTRICTION_WOW_PROJECT_ID
+                or restriction==INVITE_RESTRICTION_REALM
+                or restriction==INVITE_RESTRICTION_REGION   -- 🔥 different REGION → fade
+            ) then
+                fadeIcon=true
+            end
+        else
+            -- Non-WoW clients: always slightly faded
+            fadeIcon=true
+        end
+
+		if isCrest then
+			-- Crest still fades for opposite faction, but ALSO fades for region/project restrictions
+			if fadeIcon then
+				button.SocialPlusIconAlpha = 0.4
+			else
+				button.SocialPlusIconAlpha = crestAlpha or 1
+			end
+		else
+			button.SocialPlusIconAlpha = fadeIcon and 0.4 or 1
 		end
+
+        -- Show invite button
+        hasTravelPassButton=true
+        if allowed then
+            button.travelPassButton:Enable()
+        else
+            button.travelPassButton:Disable()
+        end
 
 		-- Show invite button	
 			hasTravelPassButton=true
@@ -2056,7 +2278,6 @@ if not button.SocialPlusHeaderDragHooked then
 	button.SocialPlusHeaderDragHooked=true
 end
 
-
 	elseif button.buttonType==FRIENDS_BUTTON_TYPE_INVITE_HEADER then
 		local header=FriendsScrollFrame.PendingInvitesHeaderButton
 		header:SetPoint("TOPLEFT",button,1,0)
@@ -2105,19 +2326,38 @@ end
             end
         end)
     end
-	-- Show/hide travel pass button
-	if hasTravelPassButton then
-		button.travelPassButton:Show()
-	else
-		button.travelPassButton:Hide()
-	end
 
-	if FriendsFrame.selectedFriendType==FriendButtons[index].buttonType
-		and FriendsFrame.selectedFriend==FriendButtons[index].id then
-		button:LockHighlight()
-	else
-		button:UnlockHighlight()
-	end
+    -- Show/hide travel pass button
+    if hasTravelPassButton then
+        button.travelPassButton:Show()
+    else
+        button.travelPassButton:Hide()
+    end
+
+    if FriendsFrame.selectedFriendType==FriendButtons[index].buttonType
+        and FriendsFrame.selectedFriend==FriendButtons[index].id then
+        button:LockHighlight()
+    else
+        button:UnlockHighlight()
+    end
+
+	-- While dragging a group header, softly fade that group (header + members)
+    if SocialPlus_IsRowInDraggedGroup and SocialPlus_IsRowInDraggedGroup(button) then
+    -- Extra fade *on top* of the existing icon rules
+        button:SetAlpha(0.35)
+    else
+        button:SetAlpha(1)
+    end
+
+    -- Finalize icon alpha AFTER Blizzard has done its own layout/updates
+    if button.gameIcon then
+        if button.SocialPlusIconAlpha ~= nil then
+            button.gameIcon:SetAlpha(button.SocialPlusIconAlpha)
+        else
+            button.gameIcon:SetAlpha(1)
+        end
+    end
+    button.SocialPlusIconAlpha=nil
 
 	-- Search filtering
 	if nameText then
@@ -2201,67 +2441,6 @@ local function SocialPlus_UpdateFriends()
 	end
 end
 
-local function SocialPlus_ReorderGeneralForCurrentClient()
-	if not (SocialPlus_SavedVars and SocialPlus_SavedVars.prioritize_current_client) then
-		return
-	end
-	if not FriendButtons or not FriendButtons.count or FriendButtons.count==0 then
-		return
-	end
-
-	-- Find the divider for the ungrouped bucket (group key == "")
-	local generalHeaderIndex=nil
-	for i=1,FriendButtons.count do
-		local fb=FriendButtons[i]
-		if fb and fb.buttonType==FRIENDS_BUTTON_TYPE_DIVIDER then
-			if fb.text=="" then
-				generalHeaderIndex=i
-				break
-			end
-		end
-	end
-	if not generalHeaderIndex then return end
-
-	-- Range of rows under that header, up to next divider (or end)
-	local startIdx=generalHeaderIndex+1
-	local endIdx=FriendButtons.count
-	for i=startIdx,FriendButtons.count do
-		local fb=FriendButtons[i]
-		if fb and fb.buttonType==FRIENDS_BUTTON_TYPE_DIVIDER then
-			endIdx=i-1
-			break
-		end
-	end
-	if endIdx<startIdx then return end
-
-	-- Partition into priority (same project) vs others
-	local priority={}
-	local others={}
-	for i=startIdx,endIdx do
-		local fb=FriendButtons[i]
-		if fb and fb.buttonType and fb.id then
-			if SocialPlus_IsCurrentClientFriend(fb.buttonType,fb.id) then
-				table.insert(priority,fb)
-			else
-				table.insert(others,fb)
-			end
-		else
-			table.insert(others,fb)
-		end
-	end
-
-	-- Rewrite the block: priority first, then others
-	local idx=startIdx
-	for _,fb in ipairs(priority) do
-		FriendButtons[idx]=fb
-		idx=idx+1
-	end
-	for _,fb in ipairs(others) do
-		FriendButtons[idx]=fb
-		idx=idx+1
-	end
-end
-
 -- [[ Group tag helpers ]]
 local function FillGroups(groups,note,...)
 	wipe(groups)
@@ -2329,11 +2508,9 @@ end
 -- [[ Master update: builds FriendButtons + groups ]]
     function SocialPlus_Update(forceUpdate)
 
-	local numBNetTotal,numBNetOnline,numBNetFavorite,numBNetFavoriteOnline=FG_BNGetNumFriends()
-	numBNetFavorite=numBNetFavorite or 0
-	numBNetFavoriteOnline=numBNetFavoriteOnline or 0
-	local numBNetOffline=numBNetTotal-numBNetOnline
-	local numBNetFavoriteOffline=numBNetFavorite-numBNetFavoriteOnline
+	local numBNetTotal,numBNetOnline=FG_BNGetNumFriends()
+	numBNetTotal=numBNetTotal or 0
+	numBNetOnline=numBNetOnline or 0
 	local numWoWTotal=FG_GetNumFriends()
 	local numWoWOnline=FG_GetNumOnlineFriends()
 	local numWoWOffline=numWoWTotal-numWoWOnline
@@ -2453,10 +2630,10 @@ end
 	wipe(GroupSorted)
 	GroupCount=0
 
-
 	local BnetSocialPlus={}
 	local WowSocialPlus={}
 	local FriendReqGroup={}
+	local BNetOnlineStatus={}
 
 	local buttonCount=0
 
@@ -2490,57 +2667,31 @@ end
 		end
 	end
 
-	-- Favorite BNet friends online
-	for i=1,numBNetFavoriteOnline do
+	-- BNet friends (all) – MoP has no favorites, just online then offline
+	for i=1,numBNetTotal do
 		if not BnetSocialPlus[i] then
 			BnetSocialPlus[i]={}
 		end
-		local noteText=select(13,FG_BNGetFriendInfo(i))
+
+		local t={FG_BNGetFriendInfo(i)}
+		local isOnline=t[8] and true or false
+		local noteText=t[13]
+
+		BNetOnlineStatus[i]=isOnline
 		NoteAndGroups(noteText,BnetSocialPlus[i])
+
 		for group in pairs(BnetSocialPlus[i]) do
-			IncrementGroup(group,true)
+			IncrementGroup(group,isOnline)
 			if not SocialPlus_SavedVars.collapsed[group] then
-				buttonCount=buttonCount+1
-				AddButtonInfo(FRIENDS_BUTTON_TYPE_BNET,i)
+				if isOnline or not(SocialPlus_SavedVars.hide_offline) then
+					buttonCount=buttonCount+1
+					AddButtonInfo(FRIENDS_BUTTON_TYPE_BNET,i)
+				end
 			end
 		end
 	end
 
-	-- Favorite BNet friends offline
-	for i=1,numBNetFavoriteOffline do
-		local j=i+numBNetFavoriteOnline
-		if not BnetSocialPlus[j] then
-			BnetSocialPlus[j]={}
-		end
-		local noteText=select(13,FG_BNGetFriendInfo(j))
-		NoteAndGroups(noteText,BnetSocialPlus[j])
-		for group in pairs(BnetSocialPlus[j]) do
-			IncrementGroup(group)
-			if not SocialPlus_SavedVars.collapsed[group] and not SocialPlus_SavedVars.hide_offline then
-				buttonCount=buttonCount+1
-				AddButtonInfo(FRIENDS_BUTTON_TYPE_BNET,j)
-			end
-		end
-	end
-
-	-- Online BNet friends (non-favorite)
-	for i=1,numBNetOnline-numBNetFavoriteOnline do
-		local j=i+numBNetFavorite
-		if not BnetSocialPlus[j] then
-			BnetSocialPlus[j]={}
-		end
-		local noteText=select(13,FG_BNGetFriendInfo(j))
-		NoteAndGroups(noteText,BnetSocialPlus[j])
-		for group in pairs(BnetSocialPlus[j]) do
-			IncrementGroup(group,true)
-			if not SocialPlus_SavedVars.collapsed[group] then
-				buttonCount=buttonCount+1
-				AddButtonInfo(FRIENDS_BUTTON_TYPE_BNET,j)
-			end
-		end
-	end
-
-	-- Online WoW friends
+	-- WoW friends online
 	for i=1,numWoWOnline do
 		if not WowSocialPlus[i] then
 			WowSocialPlus[i]={}
@@ -2557,24 +2708,7 @@ end
 		end
 	end
 
-	-- Offline BNet friends (non-favorite)
-	for i=1,numBNetOffline-numBNetFavoriteOffline do
-		local j=i+numBNetFavorite+numBNetOnline-numBNetFavoriteOnline
-		if not BnetSocialPlus[j] then
-			BnetSocialPlus[j]={}
-		end
-		local noteText=select(13,FG_BNGetFriendInfo(j))
-		NoteAndGroups(noteText,BnetSocialPlus[j])
-		for group in pairs(BnetSocialPlus[j]) do
-			IncrementGroup(group)
-			if not SocialPlus_SavedVars.collapsed[group] and not SocialPlus_SavedVars.hide_offline then
-				buttonCount=buttonCount+1
-				AddButtonInfo(FRIENDS_BUTTON_TYPE_BNET,j)
-			end
-		end
-	end
-
-	-- Offline WoW friends
+	-- WoW friends offline
 	for i=1,numWoWOffline do
 		local j=i+numWoWOnline
 		if not WowSocialPlus[j] then
@@ -2592,6 +2726,7 @@ end
 		end
 	end
 
+	-- Finally, add one button per group divider
 	buttonCount=buttonCount+GroupCount
 	totalScrollHeight=totalButtonHeight+GroupCount*FRIENDS_BUTTON_HEIGHTS[FRIENDS_BUTTON_TYPE_DIVIDER]
 
@@ -2610,70 +2745,154 @@ end
 
 SocialPlus_ApplyGroupOrder()
 
+    local index=0
+    for _,group in ipairs(GroupSorted) do
+        index=index+1
+        FriendButtons[index].buttonType=FRIENDS_BUTTON_TYPE_DIVIDER
+        FriendButtons[index].text=group
 
-	local index=0
-	for _,group in ipairs(GroupSorted) do
-		index=index+1
-		FriendButtons[index].buttonType=FRIENDS_BUTTON_TYPE_DIVIDER
-		FriendButtons[index].text=group
-		if not SocialPlus_SavedVars.collapsed[group] then
-			for i=1,#FriendReqGroup do
-				if group==FriendRequestString then
-					index=index+1
-					FriendButtons[index].buttonType=FRIENDS_BUTTON_TYPE_INVITE
-					FriendButtons[index].id=i
-				end
-			end
-			for i=1,numBNetFavoriteOnline do
-				if BnetSocialPlus[i][group] then
-					index=index+1
-					FriendButtons[index].buttonType=FRIENDS_BUTTON_TYPE_BNET
-					FriendButtons[index].id=i
-				end
-			end
-			for i=numBNetFavorite+1,numBNetOnline+numBNetFavoriteOffline do
-				if BnetSocialPlus[i][group] then
-					index=index+1
-					FriendButtons[index].buttonType=FRIENDS_BUTTON_TYPE_BNET
-					FriendButtons[index].id=i
-				end
-			end
-			for i=1,numWoWOnline do
-				if WowSocialPlus[i][group] then
-					index=index+1
-					FriendButtons[index].buttonType=FRIENDS_BUTTON_TYPE_WOW
-					FriendButtons[index].id=i
-				end
-			end
-			if not SocialPlus_SavedVars.hide_offline then
-				for i=numBNetFavoriteOnline+1,numBNetFavorite do
-					if BnetSocialPlus[i][group] then
-						index=index+1
-						FriendButtons[index].buttonType=FRIENDS_BUTTON_TYPE_BNET
-						FriendButtons[index].id=i
-					end
-				end
-				for i=numBNetOnline+numBNetFavoriteOffline+1,numBNetTotal do
-					if BnetSocialPlus[i][group] then
-						index=index+1
-						FriendButtons[index].buttonType=FRIENDS_BUTTON_TYPE_BNET
-						FriendButtons[index].id=i
-					end
-				end
-				for i=numWoWOnline+1,numWoWTotal do
-					if WowSocialPlus[i][group] then
-						index=index+1
-						FriendButtons[index].buttonType=FRIENDS_BUTTON_TYPE_WOW
-						FriendButtons[index].id=i
-					end
-				end
-			end
-		end
-	end
-	FriendButtons.count=index
+        if not SocialPlus_SavedVars.collapsed[group] then
+            -- 1) Friend invites bucket (always same behavior)
+            if group==FriendRequestString then
+                for i=1,#FriendReqGroup do
+                    index=index+1
+                    FriendButtons[index].buttonType=FRIENDS_BUTTON_TYPE_INVITE
+                    FriendButtons[index].id=i
+                end
+            end
 
-	-- Reorder "General" group to put same-project players on top if setting is enabled
-	SocialPlus_ReorderGeneralForCurrentClient()
+            local usePrioritize=SocialPlus_SavedVars and SocialPlus_SavedVars.prioritize_current_client
+
+            if usePrioritize then
+                ----------------------------------------------------------------
+                -- “Prioritize MoP friends” ON:
+                -- invite-tier sorting (inviteable → region → version → other game)
+                ----------------------------------------------------------------
+                local onlineRows={}
+
+                -- BNet online
+                for i=1,numBNetTotal do
+                    if BnetSocialPlus[i] and BnetSocialPlus[i][group] and BNetOnlineStatus[i] then
+                        local tier=SocialPlus_GetInviteTier("BNET",i)
+                        onlineRows[#onlineRows+1]={
+                            tier=tier,
+                            buttonType=FRIENDS_BUTTON_TYPE_BNET,
+                            id=i
+                        }
+                    end
+                end
+
+                -- WoW online
+                for i=1,numWoWOnline do
+                    if WowSocialPlus[i] and WowSocialPlus[i][group] then
+                        local tier=SocialPlus_GetInviteTier("WOW",i)
+                        onlineRows[#onlineRows+1]={
+                            tier=tier,
+                            buttonType=FRIENDS_BUTTON_TYPE_WOW,
+                            id=i
+                        }
+                    end
+                end
+
+                -- Sort by invite tier, then WoW > BNet, then id
+                table.sort(onlineRows,function(a,b)
+                    if a.tier~=b.tier then
+                        return a.tier<b.tier
+                    end
+                    if a.buttonType~=b.buttonType then
+                        return a.buttonType==FRIENDS_BUTTON_TYPE_WOW
+                    end
+                    return (a.id or 0)<(b.id or 0)
+                end)
+
+                -- Push sorted online rows
+                for _,row in ipairs(onlineRows) do
+                    index=index+1
+                    FriendButtons[index].buttonType=row.buttonType
+                    FriendButtons[index].id=row.id
+                end
+
+                -- Offline at the bottom
+                if not SocialPlus_SavedVars.hide_offline then
+                    -- BNet offline
+                    for i=1,numBNetTotal do
+                        if BnetSocialPlus[i] and BnetSocialPlus[i][group] and BNetOnlineStatus[i]==false then
+                            index=index+1
+                            FriendButtons[index].buttonType=FRIENDS_BUTTON_TYPE_BNET
+                            FriendButtons[index].id=i
+                        end
+                    end
+
+                    -- WoW offline
+                    for i=numWoWOnline+1,numWoWTotal do
+                        if WowSocialPlus[i] and WowSocialPlus[i][group] then
+                            index=index+1
+                            FriendButtons[index].buttonType=FRIENDS_BUTTON_TYPE_WOW
+                            FriendButtons[index].id=i
+                        end
+                    end
+                end
+            else
+                ----------------------------------------------------------------
+                -- “Prioritize MoP friends” OFF:
+                -- keep Blizzard-ish default order inside each group:
+                --   1) BNet online (Blizzard index order, including favorites)
+                --   2) WoW online
+                --   3) BNet offline
+                --   4) WoW offline
+                ----------------------------------------------------------------
+
+                -- BNet online in raw Blizzard order
+                for i=1,numBNetTotal do
+                    if BnetSocialPlus[i] and BnetSocialPlus[i][group] and BNetOnlineStatus[i] then
+                        index=index+1
+                        FriendButtons[index].buttonType=FRIENDS_BUTTON_TYPE_BNET
+                        FriendButtons[index].id=i
+                    end
+                end
+
+                -- WoW online in raw Blizzard order
+                for i=1,numWoWOnline do
+                    if WowSocialPlus[i] and WowSocialPlus[i][group] then
+                        index=index+1
+                        FriendButtons[index].buttonType=FRIENDS_BUTTON_TYPE_WOW
+                        FriendButtons[index].id=i
+                    end
+                end
+
+                if not SocialPlus_SavedVars.hide_offline then
+                    -- BNet offline
+                    for i=1,numBNetTotal do
+                        if BnetSocialPlus[i] and BnetSocialPlus[i][group] and BNetOnlineStatus[i]==false then
+                            index=index+1
+                            FriendButtons[index].buttonType=FRIENDS_BUTTON_TYPE_BNET
+                            FriendButtons[index].id=i
+                        end
+                    end
+
+                    -- WoW offline
+                    for i=numWoWOnline+1,numWoWTotal do
+                        if WowSocialPlus[i] and WowSocialPlus[i][group] then
+                            index=index+1
+                            FriendButtons[index].buttonType=FRIENDS_BUTTON_TYPE_WOW
+                            FriendButtons[index].id=i
+                        end
+                    end
+                end
+            end
+        end
+    end
+    FriendButtons.count=index
+
+	    -- Recompute total height and entry count based on the final, rebuilt list
+    local finalHeight=0
+    for i=1,FriendButtons.count do
+        local bt=FriendButtons[i].buttonType or FRIENDS_BUTTON_TYPE_DIVIDER
+        finalHeight=finalHeight+(FRIENDS_BUTTON_HEIGHTS[bt] or 0)
+    end
+
+    FriendsScrollFrame.totalFriendListEntriesHeight=finalHeight
+    FriendsScrollFrame.numFriendListEntries=FriendButtons.count
 
 	local selectedFriend=0
 	if numBNetTotal+numWoWTotal>0 then

@@ -5,45 +5,54 @@
 🇬🇧 ENGLISH
 ────────────────────────────────────────
 
-SocialPlus modernizes the MoP Classic Friends List with a cleaner UI, reliable cross-realm invites, smart search, collapsible groups, drag-and-drop reordering, and a fully improved right-click menu.
+SocialPlus transforms the MoP Classic Friends List into a modern, reliable, feature-rich panel designed for today’s Battle.net ecosystem.  
+Cleaner visuals, smarter logic, full game icon support, improved sorting, and a smooth user experience.
 
 ⭐ Cross-Realm Invites (FIXED)
-The MoP client often fails to invite cross-realm friends.
-SocialPlus restores consistent cross-realm inviting and shows clear messages when grouping is not possible.
+MoP Classic often fails to invite cross-realm friends.  
+SocialPlus restores stable invite behavior and displays clear messages when grouping isn’t possible.
 
-🎯 Right-Click Menu
-• Set Note
-• View Friends List
+🎯 Enhanced Right-Click Menu
+• Set Note  
+• View Friends List  
+• Invite  
+• Whisper  
+• Copy Character Name  
 
-Interact:
-• Invite
-• Whisper
-• Copy Character Name
+Group Management:  
+• Create Group  
+• Move to Group ▶  
+• Remove from Group ▶  
 
-Group Management:
-• Create Group
-• Move to Another Group ▶
-• Remove from Group ▶
-
-Additional Options:
+Additional Options:  
 • Remove Battle.net Friend
 
-🗂️ Friend Groups
-Create, move, remove, collapse, and reorder custom groups with online/total counters.
-Includes a Collapse / Expand All button for instant folding/unfolding.
-Supports Drag & Drop for intuitive group arrangement.
+🗂️ Smart Friend Groups
+Create, move, collapse, expand, and reorder groups with online/total counters.  
+Includes a “Collapse / Expand All” button and full **drag-and-drop support** (with smooth fading during drag).
 
 🔍 Instant Search
-Fast, accent-insensitive search filtering as you type.
+Fast, accent-insensitive, real-time filtering.
 
-🎮 Clean Visuals
-Class-colored names and faction icons.
+🎮 Game & Faction Icons
+Automatically detects Battle.net apps and games (WoW, Hearthstone, Diablo II/III/IV, WC3, CoD, etc.).  
+Faction crests, class colors, clear statuses — all updated for MoP Remix.
 
-🌀 Smooth Scrolling
-Replaces Blizzard’s choppy scroll with smooth, responsive motion.
+📌 Improved Sorting Logic
+When enabled, “Prioritize MoP Friends” sorts friends by actual groupability:  
+1) MoP-compatible BNet WoW players  
+2) MoP-compatible WoW characters  
+3) Same-project but non-groupable (region/version/faction)  
+4) Other Battle.net games  
+5) Offline  
+
+🌀 Smooth Scrolling & Polished Motion
+Replaces choppy default scrolling with smooth, consistent behavior.  
+Drag fade animation tuned (baseStep adjusted from 80 → 45).
 
 💬 Feedback Welcome
-If you have suggestions or find a bug, feel free to comment on CurseForge or open an issue on GitHub — feedback helps improve the addon for everyone!
+Found a bug? Have a suggestion?  
+Drop a comment on CurseForge or open a GitHub issue — every improvement helps!
 
 
 
@@ -51,45 +60,54 @@ If you have suggestions or find a bug, feel free to comment on CurseForge or ope
 🇫🇷 FRANÇAIS
 ────────────────────────────────────────
 
-SocialPlus modernise la liste d’amis de MoP Classic avec une interface plus propre, des invitations inter-royaumes fiables, une recherche intelligente, des groupes repliables, du glisser-déposer et un menu clic-droit entièrement amélioré.
+SocialPlus modernise la liste d’amis de MoP Classic en offrant une interface propre, fiable et complète.  
+Icônes de jeux, tri intelligent, groupes personnalisés, menu amélioré et défilement fluide.
 
 ⭐ Invitations Inter-Royaumes (RÉPARÉES)
-Le client MoP échoue souvent à inviter des amis d’autres royaumes.
-SocialPlus rétablit ces invitations et affiche des messages clairs lorsque l’invitation est impossible.
+Le client MoP échoue souvent à inviter les amis d’autres royaumes.  
+SocialPlus corrige ce comportement et affiche des messages clairs si l’invitation est impossible.
 
-🎯 Menu Clic-Droit
-• Définir une note
-• Voir ses amis
+🎯 Menu Clic-Droit Amélioré
+• Définir une note  
+• Voir ses amis  
+• Inviter  
+• Chuchoter  
+• Copier le nom du personnage  
 
-Interagir :
-• Inviter
-• Chuchoter
-• Copier le nom du personnage
+Gestion des groupes :  
+• Créer un groupe  
+• Déplacer vers un groupe ▶  
+• Retirer du groupe ▶  
 
-Gestion des groupes :
-• Créer un groupe
-• Déplacer vers un autre groupe ▶
-• Retirer du groupe ▶
-
-Options supplémentaires :
+Options supplémentaires :  
 • Retirer l’ami Battle.net
 
-🗂️ Groupes d’Amis
-Créer, déplacer, retirer, réduire et réorganiser vos groupes avec compteur en ligne/total.
-Inclut un bouton Tout réduire / Tout afficher pour gérer les groupes instantanément.
-Prend en charge le Glisser-Déposer pour réorganiser visuellement les groupes.
+🗂️ Groupes Intelligents
+Créer, déplacer, réduire, réorganiser et développer vos groupes.  
+Inclut un bouton “Tout réduire / Tout afficher”.  
+Support complet du **Glisser-Déposer** (avec fondu fluide pendant le déplacement).
 
 🔍 Recherche Instantanée
-Recherche rapide, insensible aux accents, filtrant vos amis en temps réel.
+Filtrage rapide et insensible aux accents.
 
-🎮 Affichage Amélioré
-Noms colorés par classe et icônes de faction.
+🎮 Icônes de Jeux & Factions
+Détection automatique des jeux Battle.net (WoW, Hearthstone, Diablo II/III/IV, WC3, CoD, etc.).  
+Icônes de faction, couleurs de classe et statuts modernisés.
+
+📌 Tri Amélioré
+Avec l’option active, les amis sont classés selon la possibilité réelle de jouer ensemble :  
+1) Amis Battle.net jouant à MoP  
+2) Personnages WoW jouant à MoP  
+3) Même projet mais non-groupables (région/version/faction)  
+4) Autres jeux Battle.net  
+5) Hors-ligne  
 
 🌀 Défilement Fluide
-Remplace le défilement d’origine par un mouvement doux et réactif.
+Défilement modernisé et animation de fondu ajustée (baseStep 80 → 45).
 
 💬 Retour Bienvenu
-Si vous avez des suggestions ou trouvez un bug, laissez un commentaire sur CurseForge ou ouvrez un ticket sur GitHub — vos retours améliorent l’addon pour tout le monde.
+Suggestions ou bugs ?  
+Laissez un commentaire sur CurseForge ou ouvrez un ticket GitHub — votre aide améliore l’addon pour tous !
 
 
 
@@ -97,11 +115,11 @@ Si vous avez des suggestions ou trouvez un bug, laissez un commentaire sur Curse
 🏅 CREDITS
 ────────────────────────────────────────
 
-Original author : frankkkkk
-6.2 Fixes : ClassZ (GitHub)
-7.1 Fixes : Mikeprod (GitHub)
-8.2 Fixes : y368413
-8.2.5 Fixes : Mudohir (GitHub)
-8.3 New Features : Hayato2846
-9.0.5 New Feature – Searchbar : Hayato2846
+Original author : frankkkkk  
+6.2 Fixes : ClassZ (GitHub)  
+7.1 Fixes : Mikeprod (GitHub)  
+8.2 Fixes : y368413  
+8.2.5 Fixes : Mudohir (GitHub)  
+8.3 New Features : Hayato2846  
+9.0.5 New Feature – Searchbar : Hayato2846  
 10.0 Update : Hayato2846
