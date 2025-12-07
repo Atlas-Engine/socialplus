@@ -166,7 +166,7 @@ end
 -- NOTE: _G.SocialPlus_GetInviteStatus will be set after the function is defined below
 
 -- Debug helper to trace id resolution and menu actions (set FG_DEBUG = true to enable)
-local FG_DEBUG = true
+local FG_DEBUG = false
 
 local function FG_Debug(...)
 	if not FG_DEBUG then return end
@@ -1140,7 +1140,7 @@ SocialPlus_RegisterIcon(BNET_CLIENT_WC3 or "W3",-20)
 SocialPlus_RegisterIcon("W3X",-20)
 SocialPlus_RegisterIcon("WTC",-20)
 
--- Call of Duty (Remix: VIPR confirmed CoD)
+-- Call of Duty 
 SocialPlus_RegisterIcon(BNET_CLIENT_COD or "COD",-12)
 SocialPlus_RegisterIcon("VIPR",-12)
 
@@ -1413,7 +1413,7 @@ function SocialPlus_InitSmoothScroll()
 		if mag<0.25 then mag=0.25 end
 
 		-- Base step: baseline distance per "normal" tick
-		local baseStep=80
+		local baseStep=45
 
 		-- Slider 1..5 → 0.4..1.8 multiplier
 		local displayValue=(SocialPlus_SavedVars and SocialPlus_SavedVars.scrollSpeed) or 2.2
@@ -2794,16 +2794,57 @@ SocialPlus_ApplyGroupOrder()
                     end
                 end
 
+					local function SocialPlus_GetRowPriority(row)
+					local kind
+					if row.buttonType==FRIENDS_BUTTON_TYPE_BNET then
+						kind="BNET"
+					elseif row.buttonType==FRIENDS_BUTTON_TYPE_WOW then
+						kind="WOW"
+					else
+						return 999 -- just in case
+					end
+
+					local allowed,_,restriction=SocialPlus_GetInviteStatus(kind,row.id)
+
+					-- 1 = BNet WoW friend: can group, same project, same faction/region
+					if allowed and restriction==INVITE_RESTRICTION_NONE and row.buttonType==FRIENDS_BUTTON_TYPE_BNET then
+						return 1
+					end
+
+					-- 2 = WoW friend (non-BNet) that is groupable
+					if allowed and restriction==INVITE_RESTRICTION_NONE and row.buttonType==FRIENDS_BUTTON_TYPE_WOW then
+						return 2
+					end
+
+					-- 3 = same project but realm/region/project issues (still online WoW/BNet)
+					if restriction==INVITE_RESTRICTION_REALM
+					or restriction==INVITE_RESTRICTION_WOW_PROJECT_ID
+					or restriction==INVITE_RESTRICTION_WOW_PROJECT_MAINLINE
+					or restriction==INVITE_RESTRICTION_WOW_PROJECT_CLASSIC then
+						return 3
+					end
+
+					-- 4 = everything else online (Battle.net app, other games, etc.)
+					return 4
+				end
+
                 -- Sort by invite tier, then WoW > BNet, then id
-                table.sort(onlineRows,function(a,b)
-                    if a.tier~=b.tier then
-                        return a.tier<b.tier
-                    end
-                    if a.buttonType~=b.buttonType then
-                        return a.buttonType==FRIENDS_BUTTON_TYPE_WOW
-                    end
-                    return (a.id or 0)<(b.id or 0)
-                end)
+				table.sort(onlineRows,function(a,b)
+				local pa=SocialPlus_GetRowPriority(a)
+				local pb=SocialPlus_GetRowPriority(b)
+
+				if pa~=pb then
+					return pa<pb
+				end
+
+				-- stable-ish within same priority
+				if a.buttonType~=b.buttonType then
+					return a.buttonType==FRIENDS_BUTTON_TYPE_BNET
+				end
+
+				return (a.id or 0)<(b.id or 0)
+			end)
+
 
                 -- Push sorted online rows
                 for _,row in ipairs(onlineRows) do
