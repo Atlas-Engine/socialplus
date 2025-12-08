@@ -166,7 +166,7 @@ end
 -- NOTE: _G.SocialPlus_GetInviteStatus will be set after the function is defined below
 
 -- Debug helper to trace id resolution and menu actions (set FG_DEBUG = true to enable)
-local FG_DEBUG = false
+local FG_DEBUG = true
 
 local function FG_Debug(...)
 	if not FG_DEBUG then return end
@@ -1116,38 +1116,20 @@ end
 
 -- World of Warcraft + Battle.net ecosystem
 -- Use BNET_CLIENT_* if it exists, otherwise fall back to the known string token.
-SocialPlus_RegisterIcon(BNET_CLIENT_WOW or "WoW",-21)       -- World of Warcraft
-SocialPlus_RegisterIcon(BNET_CLIENT_SC2 or "S2",-16)        -- StarCraft II
-
--- Diablo II / D2R (MoP Remix: OSI = D2R)
-SocialPlus_RegisterIcon(BNET_CLIENT_D2 or "OSI",-8)         -- Diablo II / D2R
-SocialPlus_RegisterIcon("D2R",-8)                           -- extra safety alias
-
-SocialPlus_RegisterIcon(BNET_CLIENT_D3 or "D3",-14)         -- Diablo III
-SocialPlus_RegisterIcon(BNET_CLIENT_D4 or "D4",-17)         -- Diablo IV
-SocialPlus_RegisterIcon(BNET_CLIENT_WTCG or "WTCG",-11)     -- Hearthstone
-
+SocialPlus_RegisterIcon(BNET_CLIENT_WOW or "WoW",-21)        -- World of Warcraft
+SocialPlus_RegisterIcon(BNET_CLIENT_SC2 or "S2",-16)         -- StarCraft II
+SocialPlus_RegisterIcon(BNET_CLIENT_D2 or "OSI",-8)          -- Diablo II / D2R
+SocialPlus_RegisterIcon(BNET_CLIENT_D3 or "D3",-14)          -- Diablo III
+SocialPlus_RegisterIcon(BNET_CLIENT_D4 or "D4",-17)          -- Diablo IV
+SocialPlus_RegisterIcon(BNET_CLIENT_WTCG or "WTCG",-11)      -- Hearthstone
+SocialPlus_RegisterIcon(BNET_CLIENT_HEROES or "Hero",-13)    -- Heroes of the Storm
+SocialPlus_RegisterIcon(BNET_CLIENT_OVERWATCH or "Pro",-5)   -- Overwatch
+SocialPlus_RegisterIcon(BNET_CLIENT_CLNT or "CLNT",-6)       -- generic BNet client
+SocialPlus_RegisterIcon(BNET_CLIENT_COD or "COD",-12)		 -- Call of Duty Modern Warfare II / Warzone 2.0	
+SocialPlus_RegisterIcon(BNET_CLIENT_WC3 or "W3",-20)		 -- Warcraft III / W3R	
 -- Battle.net app / launcher
 SocialPlus_RegisterIcon(BNET_CLIENT_APP or "App",-6)        -- generic app
 SocialPlus_RegisterIcon("BSAp",-6)                          -- Remix launcher token
-
-SocialPlus_RegisterIcon(BNET_CLIENT_HEROES or "Hero",-13)   -- Heroes of the Storm
-SocialPlus_RegisterIcon(BNET_CLIENT_OVERWATCH or "Pro",-5)  -- Overwatch
-SocialPlus_RegisterIcon(BNET_CLIENT_CLNT or "CLNT",-6)      -- generic BNet client
-
--- Warcraft III
-SocialPlus_RegisterIcon(BNET_CLIENT_WC3 or "W3",-20)
-SocialPlus_RegisterIcon("W3X",-20)
-SocialPlus_RegisterIcon("WTC",-20)
-
--- Call of Duty 
-SocialPlus_RegisterIcon(BNET_CLIENT_COD or "COD",-12)
-SocialPlus_RegisterIcon("VIPR",-12)
-
--- Extra safety for common alternates seen in modern BNet
-SocialPlus_RegisterIcon("Pro2",-5)                          -- Overwatch 2-style token
-SocialPlus_RegisterIcon("BNet",-6)                          -- generic Battle.net
-
 
 -- Auto-sizing helper so icons follow row height (including faction crests)
 local function SocialPlus_GetAutoIconSize(button,isFaction)
