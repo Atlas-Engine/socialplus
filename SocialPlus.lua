@@ -1103,33 +1103,144 @@ local function FG_InitFactionIcon()
 	end
 end
 
--- Map BNet client programs to clean in-game icons (file IDs)
-local SOCIALPLUS_GAME_ICONS={}
-local SOCIALPLUS_DEFAULT_BNET_ICON=-6 -- generic Battle.net logo
-local SOCIALPLUS_UNKNOWN_CLIENTS={}   -- for optional debug logging
+-- Detect default icon schema based on client portal/locale
+local function SocialPlus_DetectDefaultIconSchema()
+    local schema
 
-local function SocialPlus_RegisterIcon(clientConst,fileID)
-	if clientConst and fileID then
-		SOCIALPLUS_GAME_ICONS[clientConst]=fileID
-	end
+    -- 1) Prefer launcher portal (last WoW opened wins: "us"/"eu")
+    if GetCVar then
+        local portal=GetCVar("portal")
+        if portal and portal~="" then
+            portal=portal:lower()
+            if portal:find("eu") then
+                schema="EU"
+            elseif portal:find("us") then
+                schema="NA"
+            end
+        end
+    end
+
+    -- 2) Fallback to locale if portal was useless
+    if not schema and GetLocale then
+        local loc=GetLocale()
+        if loc=="enUS" or loc=="esMX" or loc=="ptBR" then
+            schema="NA"
+        else
+            schema="EU"
+        end
+    end
+
+    return schema or "NA"
 end
 
--- World of Warcraft + Battle.net ecosystem
--- Use BNET_CLIENT_* if it exists, otherwise fall back to the known string token.
-SocialPlus_RegisterIcon(BNET_CLIENT_WOW or "WoW",-21)        -- World of Warcraft
-SocialPlus_RegisterIcon(BNET_CLIENT_SC2 or "S2",-16)         -- StarCraft II
-SocialPlus_RegisterIcon(BNET_CLIENT_D2 or "OSI",-8)          -- Diablo II / D2R
-SocialPlus_RegisterIcon(BNET_CLIENT_D3 or "D3",-14)          -- Diablo III
-SocialPlus_RegisterIcon(BNET_CLIENT_D4 or "D4",-17)          -- Diablo IV
-SocialPlus_RegisterIcon(BNET_CLIENT_WTCG or "WTCG",-11)      -- Hearthstone
-SocialPlus_RegisterIcon(BNET_CLIENT_HEROES or "Hero",-13)    -- Heroes of the Storm
-SocialPlus_RegisterIcon(BNET_CLIENT_OVERWATCH or "Pro",-5)   -- Overwatch
-SocialPlus_RegisterIcon(BNET_CLIENT_CLNT or "CLNT",-6)       -- generic BNet client
-SocialPlus_RegisterIcon(BNET_CLIENT_COD or "COD",-12)		 -- Call of Duty Modern Warfare II / Warzone 2.0	
-SocialPlus_RegisterIcon(BNET_CLIENT_WC3 or "W3",-20)		 -- Warcraft III / W3R	
--- Battle.net app / launcher
-SocialPlus_RegisterIcon(BNET_CLIENT_APP or "App",-6)        -- generic app
-SocialPlus_RegisterIcon("BSAp",-6)                          -- Remix launcher token
+
+-- Decide which icon fileIDs to use based purely on the client portal
+local function SocialPlus_GetIconSchema()
+    -- Default if everything fails
+    local schema="NA"
+
+    if GetCVar then
+        local portal=GetCVar("portal")
+        if portal and portal~="" then
+            portal=portal:lower()
+            if portal:find("eu") then
+                schema="EU"
+            elseif portal:find("us") then
+                schema="NA"
+            end
+        end
+    end
+
+    return schema
+end
+
+-- Decide which icon fileIDs to use based purely on the client portal
+local function SocialPlus_GetIconSchema()
+    local schema="NA" -- default
+
+    if GetCVar then
+        local portal=GetCVar("portal")
+        if portal and portal~="" then
+            portal=portal:lower()
+            if portal:find("eu") then
+                schema="EU"
+            elseif portal:find("us") then
+                schema="NA"
+            end
+        end
+    end
+
+    return schema
+end
+
+-- Decide which icon fileIDs to use based purely on the client portal
+local SOCIALPLUS_REGION=SocialPlus_GetIconSchema()
+
+-- Region-specific icon fileIDs
+local SOCIALPLUS_ICON_IDS_NA={
+    BNET=-6,
+    APP =-6,
+    WoW =-21,
+    SC2 =-16,
+    D2  =-8,
+    D3  =-14,
+    D4  =-17,
+    HS  =-11,
+    HOTS=-13,
+    OW  =-5,
+    COD =-12,
+    WC3 =-20,
+}
+
+local SOCIALPLUS_ICON_IDS_EU={
+    BNET=-14,
+    APP =-14,
+    WoW =-35,
+    SC2 =-28,
+    D2  =-17,
+    D3  =-10,
+    D4  =-30,
+    HS  =-16,
+    HOTS=-25,
+    OW  =-13,
+    COD =-21,
+    WC3 =-33,
+}
+
+local SOCIALPLUS_ICON_IDS=(SOCIALPLUS_REGION=="EU") and SOCIALPLUS_ICON_IDS_EU or SOCIALPLUS_ICON_IDS_NA
+
+-- Map BNet client programs to clean in-game icons (file IDs)
+local SOCIALPLUS_GAME_ICONS={}
+local SOCIALPLUS_DEFAULT_BNET_ICON=SOCIALPLUS_ICON_IDS.BNET or -6
+local SOCIALPLUS_UNKNOWN_CLIENTS={}
+
+local function SocialPlus_RegisterIcon(clientConst,fileID)
+    if clientConst and fileID then
+        SOCIALPLUS_GAME_ICONS[clientConst]=fileID
+    end
+end
+
+local function SocialPlus_PickIcon(key,defaultID)
+    local id=SOCIALPLUS_ICON_IDS[key]
+    return id or defaultID or SOCIALPLUS_DEFAULT_BNET_ICON
+end
+
+-- Use region-picked IDs
+SocialPlus_RegisterIcon(BNET_CLIENT_WOW    or "WoW" ,SocialPlus_PickIcon("WoW" ))
+SocialPlus_RegisterIcon(BNET_CLIENT_SC2    or "S2"  ,SocialPlus_PickIcon("SC2" ))
+SocialPlus_RegisterIcon(BNET_CLIENT_D2     or "OSI" ,SocialPlus_PickIcon("D2"  ))
+SocialPlus_RegisterIcon(BNET_CLIENT_D3     or "D3"  ,SocialPlus_PickIcon("D3"  ))
+SocialPlus_RegisterIcon(BNET_CLIENT_D4     or "D4"  ,SocialPlus_PickIcon("D4"  ))
+SocialPlus_RegisterIcon(BNET_CLIENT_WTCG   or "WTCG",SocialPlus_PickIcon("HS"  ))
+SocialPlus_RegisterIcon(BNET_CLIENT_HEROES or "Hero",SocialPlus_PickIcon("HOTS"))
+SocialPlus_RegisterIcon(BNET_CLIENT_OVERWATCH or "Pro",SocialPlus_PickIcon("OW"))
+SocialPlus_RegisterIcon(BNET_CLIENT_CLNT   or "CLNT",SocialPlus_PickIcon("BNET"))
+SocialPlus_RegisterIcon(BNET_CLIENT_COD    or "COD" ,SocialPlus_PickIcon("COD"))
+SocialPlus_RegisterIcon(BNET_CLIENT_WC3    or "W3"  ,SocialPlus_PickIcon("WC3"))
+
+-- Battle.net app / launcher / Remix
+SocialPlus_RegisterIcon(BNET_CLIENT_APP or "App",SocialPlus_PickIcon("APP"))
+SocialPlus_RegisterIcon("BSAp",                     SocialPlus_PickIcon("APP"))
 
 -- Auto-sizing helper so icons follow row height (including faction crests)
 local function SocialPlus_GetAutoIconSize(button,isFaction)
@@ -1914,6 +2025,7 @@ function SocialPlus_SampleGroupFriends(headerIndex,maxCount)
 	return names
 end
 
+
 -- [[ Core per-row button update ]]
 local function SocialPlus_UpdateFriendButton(button)
 	local index=button.index
@@ -1923,6 +2035,14 @@ local function SocialPlus_UpdateFriendButton(button)
 	local nameText,nameColor,infoText,broadcastText,isFavoriteFriend
 	local hasTravelPassButton=false
     local searchBlob="" -- text we will search in for this row
+
+	-- Hard reset icon so we don't see any Blizzard leftovers for a frame
+	if button.gameIcon then
+		button.gameIcon:SetAlpha(0)
+		button.gameIcon:SetTexture(nil)
+		button.gameIcon:SetSize(32,32) -- baseline, our ApplyIcon will overwrite
+	end
+
 	-- Clear per-button friend metadata (used by custom menu)
 	button.rawName=nil
 	button.accountName=nil
