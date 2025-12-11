@@ -211,20 +211,43 @@ local SocialPlus_IsRowInDraggedGroup
 -- Ensure savedvars exist and set reasonable defaults
 function SocialPlus_EnsureSavedVars()
     SocialPlus_SavedVars=SocialPlus_SavedVars or {}
-    if SocialPlus_SavedVars.hide_offline==nil then SocialPlus_SavedVars.hide_offline=false end
-    if SocialPlus_SavedVars.hide_high_level==nil then SocialPlus_SavedVars.hide_high_level=false end
-    if SocialPlus_SavedVars.colour_classes==nil then SocialPlus_SavedVars.colour_classes=true end
-    if SocialPlus_SavedVars.scrollSpeed==nil then SocialPlus_SavedVars.scrollSpeed=SCROLL_BASE end
+
+    -- Existing settings
+    if SocialPlus_SavedVars.hide_offline==nil then
+        SocialPlus_SavedVars.hide_offline=false
+    end
+    if SocialPlus_SavedVars.hide_high_level==nil then
+        SocialPlus_SavedVars.hide_high_level=false
+    end
+    if SocialPlus_SavedVars.colour_classes==nil then
+        SocialPlus_SavedVars.colour_classes=true
+    end
+    if SocialPlus_SavedVars.scrollSpeed==nil then
+        SocialPlus_SavedVars.scrollSpeed=SCROLL_BASE
+    end
+
     -- Default ON for “Prioritize MoP friends”
     if SocialPlus_SavedVars.prioritize_current_client==nil then
-   	   SocialPlus_SavedVars.prioritize_current_client=true
+        SocialPlus_SavedVars.prioritize_current_client=true
     end
-   	   SocialPlus_SavedVars.collapsed=SocialPlus_SavedVars.collapsed or {}
-       SocialPlus_SavedVars.groupOrder=SocialPlus_SavedVars.groupOrder or {}
+
+    SocialPlus_SavedVars.collapsed=SocialPlus_SavedVars.collapsed or {}
+    SocialPlus_SavedVars.groupOrder=SocialPlus_SavedVars.groupOrder or {}
+
     -- Never persist collapse state for the ungrouped "General" bucket
-	if SocialPlus_SavedVars.collapsed[""] then
-	   SocialPlus_SavedVars.collapsed[""] = nil
-	end
+    if SocialPlus_SavedVars.collapsed[""] then
+        SocialPlus_SavedVars.collapsed[""]=nil
+    end
+
+    -- NEW: ensure icon profile has a sane default, but don't override a saved value
+    if SocialPlus_GetDefaultIconProfileID and SocialPlus_SavedVars.iconProfile==nil then
+        SocialPlus_SavedVars.iconProfile=SocialPlus_GetDefaultIconProfileID()
+    end
+
+    -- NEW: rebuild icon mapping AFTER SavedVars are ready
+    if SocialPlus_RebuildGameIcons then
+        SocialPlus_RebuildGameIcons()
+    end
 end
 
 -- Group / leader helpers
@@ -653,8 +676,6 @@ SocialPlus_SetCustomGroupOrderFromMove=function(source,target)
 	end
 
 	-- Direction-aware insert:
-	-- - dragging down (originalSourceIndex < originalTargetIndex): insert AFTER target
-	-- - dragging up   (originalSourceIndex > originalTargetIndex): insert BEFORE target
 	local insertIndex
 	if originalSourceIndex<originalTargetIndex then
 		insertIndex=targetIndex+1 -- below target
@@ -1095,152 +1116,98 @@ local function FG_InitFactionIcon()
 	if not UnitFactionGroup then return end
 	playerFaction=select(1,UnitFactionGroup("player"))
 	if playerFaction=="Horde" then
-		FACTION_ICON_PATH="Interface\\TargetingFrame\\UI-PVP-Horde"
+		FACTION_ICON_PATH="Interface\\FriendsFrame\\plusmanz-horde"
 	elseif playerFaction=="Alliance" then
-		FACTION_ICON_PATH="Interface\\TargetingFrame\\UI-PVP-Alliance"
+		FACTION_ICON_PATH="Interface\\FriendsFrame\\plusmanz-alliance"
 	else
 		FACTION_ICON_PATH=nil
 	end
 end
 
--- Detect default icon schema based on client portal/locale
-local function SocialPlus_DetectDefaultIconSchema()
-    local schema
+-- --------------------------------------------------------------------
+-- Icon preset: single custom profile (built-in & shop/chat icons)
+-- --------------------------------------------------------------------
 
-    -- 1) Prefer launcher portal (last WoW opened wins: "us"/"eu")
-    if GetCVar then
-        local portal=GetCVar("portal")
-        if portal and portal~="" then
-            portal=portal:lower()
-            if portal:find("eu") then
-                schema="EU"
-            elseif portal:find("us") then
-                schema="NA"
-            end
-        end
-    end
+local SOCIALPLUS_ICON_IDS_CUSTOM={
+	APP ="Interface\\FriendsFrame\\plusmanz-battlenet",
 
-    -- 2) Fallback to locale if portal was useless
-    if not schema and GetLocale then
-        local loc=GetLocale()
-        if loc=="enUS" or loc=="esMX" or loc=="ptBR" then
-            schema="NA"
-        else
-            schema="EU"
-        end
-    end
+	-- WoW (shop atlas, cropped via texcoords)
+	WoW ="Interface\\Shop\\CatalogShopProductLogos",
 
-    return schema or "NA"
-end
-
-
--- Decide which icon fileIDs to use based purely on the client portal
-local function SocialPlus_GetIconSchema()
-    -- Default if everything fails
-    local schema="NA"
-
-    if GetCVar then
-        local portal=GetCVar("portal")
-        if portal and portal~="" then
-            portal=portal:lower()
-            if portal:find("eu") then
-                schema="EU"
-            elseif portal:find("us") then
-                schema="NA"
-            end
-        end
-    end
-
-    return schema
-end
-
--- Decide which icon fileIDs to use based purely on the client portal
-local function SocialPlus_GetIconSchema()
-    local schema="NA" -- default
-
-    if GetCVar then
-        local portal=GetCVar("portal")
-        if portal and portal~="" then
-            portal=portal:lower()
-            if portal:find("eu") then
-                schema="EU"
-            elseif portal:find("us") then
-                schema="NA"
-            end
-        end
-    end
-
-    return schema
-end
-
--- Decide which icon fileIDs to use based purely on the client portal
-local SOCIALPLUS_REGION=SocialPlus_GetIconSchema()
-
--- Region-specific icon fileIDs
-local SOCIALPLUS_ICON_IDS_NA={
-    BNET=-6,
-    APP =-6,
-    WoW =-21,
-    SC2 =-16,
-    D2  =-8,
-    D3  =-14,
-    D4  =-17,
-    HS  =-11,
-    HOTS=-13,
-    OW  =-5,
-    COD =-12,
-    WC3 =-20,
+	-- Native Blizzard chat icons
+	SC2 ="Interface\\ChatFrame\\UI-ChatIcon-SC2",
+	D2  ="Interface\\ChatFrame\\UI-ChatIcon-DiabloIIResurrected",
+	D3  ="Interface\\ChatFrame\\UI-ChatIcon-D3",
+	HS  ="Interface\\ChatFrame\\UI-ChatIcon-WTCG",
+	HOTS="Interface\\ChatFrame\\UI-ChatIcon-HOTS",
+	OW  ="Interface\\ChatFrame\\UI-ChatIcon-Overwatch",
+	COD ="Interface\\ChatFrame\\UI-ChatIcon-CallOfDutyMWIcon",
+	WC3 ="Interface\\ChatFrame\\UI-ChatIcon-Warcraft3Reforged",
+	D4  ="Interface\\ChatFrame\\UI-ChatIcon-DiabloImmortal",
 }
 
-local SOCIALPLUS_ICON_IDS_EU={
-    BNET=-14,
-    APP =-14,
-    WoW =-35,
-    SC2 =-28,
-    D2  =-17,
-    D3  =-10,
-    D4  =-30,
-    HS  =-16,
-    HOTS=-25,
-    OW  =-13,
-    COD =-21,
-    WC3 =-33,
-}
-
-local SOCIALPLUS_ICON_IDS=(SOCIALPLUS_REGION=="EU") and SOCIALPLUS_ICON_IDS_EU or SOCIALPLUS_ICON_IDS_NA
-
--- Map BNet client programs to clean in-game icons (file IDs)
-local SOCIALPLUS_GAME_ICONS={}
-local SOCIALPLUS_DEFAULT_BNET_ICON=SOCIALPLUS_ICON_IDS.BNET or -6
-local SOCIALPLUS_UNKNOWN_CLIENTS={}
+-- Core icon state (single custom profile)
+SOCIALPLUS_ICON_IDS=SOCIALPLUS_ICON_IDS_CUSTOM
+SOCIALPLUS_GAME_ICONS=SOCIALPLUS_GAME_ICONS or {}
+SOCIALPLUS_DEFAULT_BNET_ICON=(SOCIALPLUS_ICON_IDS and (SOCIALPLUS_ICON_IDS.BNET or SOCIALPLUS_ICON_IDS.APP)) or -6
+SOCIALPLUS_UNKNOWN_CLIENTS=SOCIALPLUS_UNKNOWN_CLIENTS or {}
 
 local function SocialPlus_RegisterIcon(clientConst,fileID)
-    if clientConst and fileID then
-        SOCIALPLUS_GAME_ICONS[clientConst]=fileID
-    end
+	if clientConst and fileID then
+		SOCIALPLUS_GAME_ICONS[clientConst]=fileID
+	end
 end
 
 local function SocialPlus_PickIcon(key,defaultID)
-    local id=SOCIALPLUS_ICON_IDS[key]
-    return id or defaultID or SOCIALPLUS_DEFAULT_BNET_ICON
+	local ids=SOCIALPLUS_ICON_IDS or SOCIALPLUS_ICON_IDS_CUSTOM
+	local id=ids[key]
+	return id or defaultID or SOCIALPLUS_DEFAULT_BNET_ICON
 end
 
--- Use region-picked IDs
-SocialPlus_RegisterIcon(BNET_CLIENT_WOW    or "WoW" ,SocialPlus_PickIcon("WoW" ))
-SocialPlus_RegisterIcon(BNET_CLIENT_SC2    or "S2"  ,SocialPlus_PickIcon("SC2" ))
-SocialPlus_RegisterIcon(BNET_CLIENT_D2     or "OSI" ,SocialPlus_PickIcon("D2"  ))
-SocialPlus_RegisterIcon(BNET_CLIENT_D3     or "D3"  ,SocialPlus_PickIcon("D3"  ))
-SocialPlus_RegisterIcon(BNET_CLIENT_D4     or "D4"  ,SocialPlus_PickIcon("D4"  ))
-SocialPlus_RegisterIcon(BNET_CLIENT_WTCG   or "WTCG",SocialPlus_PickIcon("HS"  ))
-SocialPlus_RegisterIcon(BNET_CLIENT_HEROES or "Hero",SocialPlus_PickIcon("HOTS"))
-SocialPlus_RegisterIcon(BNET_CLIENT_OVERWATCH or "Pro",SocialPlus_PickIcon("OW"))
-SocialPlus_RegisterIcon(BNET_CLIENT_CLNT   or "CLNT",SocialPlus_PickIcon("BNET"))
-SocialPlus_RegisterIcon(BNET_CLIENT_COD    or "COD" ,SocialPlus_PickIcon("COD"))
-SocialPlus_RegisterIcon(BNET_CLIENT_WC3    or "W3"  ,SocialPlus_PickIcon("WC3"))
+function SocialPlus_RebuildGameIcons()
+	-- Always use the custom table, no SavedVars / region logic
+	SOCIALPLUS_ICON_IDS=SOCIALPLUS_ICON_IDS_CUSTOM
+	SOCIALPLUS_DEFAULT_BNET_ICON=(SOCIALPLUS_ICON_IDS and (SOCIALPLUS_ICON_IDS.BNET or SOCIALPLUS_ICON_IDS.APP)) or -6
 
--- Battle.net app / launcher / Remix
-SocialPlus_RegisterIcon(BNET_CLIENT_APP or "App",SocialPlus_PickIcon("APP"))
-SocialPlus_RegisterIcon("BSAp",                     SocialPlus_PickIcon("APP"))
+	if wipe then wipe(SOCIALPLUS_GAME_ICONS) end
+
+	SocialPlus_RegisterIcon(BNET_CLIENT_WOW        or "WoW" ,SocialPlus_PickIcon("WoW" ))
+	SocialPlus_RegisterIcon(BNET_CLIENT_SC2        or "S2"  ,SocialPlus_PickIcon("SC2" ))
+	SocialPlus_RegisterIcon(BNET_CLIENT_D2         or "OSI" ,SocialPlus_PickIcon("D2"  ))
+	SocialPlus_RegisterIcon(BNET_CLIENT_D3         or "D3"  ,SocialPlus_PickIcon("D3"  ))
+	SocialPlus_RegisterIcon(BNET_CLIENT_D4         or "D4"  ,SocialPlus_PickIcon("D4"  ))
+	SocialPlus_RegisterIcon(BNET_CLIENT_WTCG       or "WTCG",SocialPlus_PickIcon("HS"  ))
+	SocialPlus_RegisterIcon(BNET_CLIENT_HEROES     or "Hero",SocialPlus_PickIcon("HOTS"))
+	SocialPlus_RegisterIcon(BNET_CLIENT_OVERWATCH  or "Pro" ,SocialPlus_PickIcon("OW"  ))
+	SocialPlus_RegisterIcon(BNET_CLIENT_CLNT       or "CLNT",SocialPlus_PickIcon("BNET"))
+	SocialPlus_RegisterIcon(BNET_CLIENT_COD        or "COD" ,SocialPlus_PickIcon("COD" ))
+	SocialPlus_RegisterIcon(BNET_CLIENT_WC3        or "W3"  ,SocialPlus_PickIcon("WC3" ))
+
+	-- Battle.net app / launcher / Remix
+	SocialPlus_RegisterIcon(BNET_CLIENT_APP or "App",SocialPlus_PickIcon("APP"))
+	SocialPlus_RegisterIcon("BSAp",                 SocialPlus_PickIcon("APP"))
+end
+
+-- Run once on load so icons match on login
+SocialPlus_RebuildGameIcons()
+
+-- Public API: called by the settings dropdown
+function SocialPlus_SetActiveIconProfile(profileID)
+	if not SOCIALPLUS_ICON_PROFILES[profileID] then return end
+	if not SocialPlus_SavedVars then
+		SocialPlus_SavedVars={}
+	end
+	SocialPlus_SavedVars.iconProfile=profileID
+	SocialPlus_RebuildGameIcons()
+
+	-- Soft refresh of the friends list so icons update immediately
+	if FriendsList_Update then
+		pcall(FriendsList_Update)
+	end
+end
+
+-- Initial apply on load
+SocialPlus_RebuildGameIcons()
 
 -- Auto-sizing helper so icons follow row height (including faction crests)
 local function SocialPlus_GetAutoIconSize(button,isFaction)
@@ -1256,14 +1223,32 @@ local function SocialPlus_GetAutoIconSize(button,isFaction)
         h=34 -- fallback
     end
 
+    local size
+
     -- On a ~34px row:
     --  crest ≈ 30–31px, game icons ≈ 26–27px
     if isFaction then
-        return math.floor(h*0.92+0.5)
+        size=math.floor(h*0.92+0.5)
+        local max=(SocialPlus_IconStyles and SocialPlus_IconStyles.crest and SocialPlus_IconStyles.crest.size) or 28
+        if size>max then
+            size=max
+        end
+    else
+        size=math.floor(h*0.78+0.5)
+        local max=(SocialPlus_IconStyles and SocialPlus_IconStyles.game and SocialPlus_IconStyles.game.size) or 28
+        if size>max then
+            size=max
+        end
     end
 
-    return math.floor(h*0.78+0.5)
+    return size
 end
+
+-- TexCoords for atlas-based icons in Profile 3 (custom)
+SOCIALPLUS_TEXCOORD_BY_ICONPATH={
+	-- CatalogShopProductLogos.blp: crop right logo with a bit of padding
+	["Interface\\Shop\\CatalogShopProductLogos"]={0.30, 0.60, 0.10, 0.80},
+}
 
 -- Apply a game/faction icon to a button's gameIcon texture
 -- If iconPath is nil or empty, hides the icon
@@ -1284,9 +1269,30 @@ local function FG_ApplyGameIcon(button,iconPath,size,point,relPoint,offX,offY)
 	offX=offX or -30
 	offY=offY or 0
 
+	-- Special WoW icon sizing override
+	if iconPath=="Interface\\Shop\\CatalogShopProductLogos" then
+		size = 50  -- your chosen size
+	end
+
+	-- Special WoW icon position override
+	if iconPath=="Interface\\Shop\\CatalogShopProductLogos" then
+		offX = -14
+		offY = -10
+	end
+
 	icon:SetPoint(point,button,relPoint,offX,offY)
 	icon:SetSize(size,size)
-	icon:SetTexCoord(0,1,0,1)
+
+
+
+	-- Special texcoords for atlas-based icons
+	local tc=SOCIALPLUS_TEXCOORD_BY_ICONPATH[iconPath]
+	if tc then
+		icon:SetTexCoord(tc[1],tc[2],tc[3],tc[4])
+	else
+		icon:SetTexCoord(0,1,0,1)
+	end
+
 	icon:SetTexture(iconPath)
 	icon:Show()
 end
@@ -1297,18 +1303,18 @@ end
 -- --------------------------------------------------------------------
 local SocialPlus_IconStyles={
 	game={
-		size=24,
+		size=26,
 		point="RIGHT",
 		relPoint="RIGHT",
 		offX=-24,
 		offY=0,
 	},
 	crest={
-		size=52,
+		size=24,
 		point="RIGHT",
 		relPoint="RIGHT",
-		offX=-1,
-		offY=-10,
+		offX=-23,
+		offY=0,
 	},
 }
 
@@ -2082,7 +2088,7 @@ local function SocialPlus_UpdateFriendButton(button)
 			end
 
 			if FACTION_ICON_PATH then
-				FG_ApplyGameIcon(button,FACTION_ICON_PATH,52,"RIGHT","RIGHT",-1,-10)
+				FG_ApplyGameIcon(button,FACTION_ICON_PATH,24,"RIGHT","RIGHT",-23,0)
 				button.SocialPlusIconAlpha=1   -- always full for pure WoW friends
 			elseif button.gameIcon then
 				button.gameIcon:Hide()
@@ -2214,9 +2220,9 @@ local function SocialPlus_UpdateFriendButton(button)
         -- If same-project WoW with a real realm, prefer a faction crest
         if client==BNET_CLIENT_WOW and wowProjectID==WOW_PROJECT_ID and hasRealm then
             if friendFaction=="Horde" then
-                iconPath="Interface\\TargetingFrame\\UI-PVP-Horde"
+                iconPath="Interface\\FriendsFrame\\plusmanz-horde"
             elseif friendFaction=="Alliance" then
-                iconPath="Interface\\TargetingFrame\\UI-PVP-Alliance"
+                iconPath="Interface\\FriendsFrame\\plusmanz-alliance"
             end
             if not iconPath and FACTION_ICON_PATH then
                 iconPath=FACTION_ICON_PATH
@@ -2285,14 +2291,6 @@ local function SocialPlus_UpdateFriendButton(button)
 		else
 			button.SocialPlusIconAlpha = fadeIcon and 0.4 or 1
 		end
-
-        -- Show invite button
-        hasTravelPassButton=true
-        if allowed then
-            button.travelPassButton:Enable()
-        else
-            button.travelPassButton:Disable()
-        end
 
 		-- Show invite button	
 			hasTravelPassButton=true
@@ -2504,9 +2502,6 @@ local function SocialPlus_UpdateFriends()
 	local offset=HybridScrollFrame_GetOffset(scrollFrame)
 	local buttons=scrollFrame.buttons
 	local numButtons=#buttons
-	-- BEFORE:
-	-- local numFriendButtons=FriendButtons.count
-	-- AFTER:
 	local numFriendButtons=FriendButtons.count or 0
 	local usedHeight=0
 
@@ -3728,19 +3723,19 @@ function SocialPlus_CreateSettingsPanel()
 	if SocialPlus_SettingsPanel or not FriendsFrame then return end
 
 	local f=CreateFrame("Frame","SocialPlus_SettingsPanel",FriendsFrame,"BackdropTemplate")
-	-- Slightly larger box
-	f:SetSize(340,280)
+	-- Slightly larger box to fit icon preset controls
+	f:SetSize(350,280)
 
 	-- Right side of Friends frame
 	f:SetPoint("TOPLEFT",FriendsFrame,"TOPRIGHT",8,-24)
 
 	-- Tighter insets so the background fills closer to the border
 	f:SetBackdrop({
-    bgFile="Interface\\Tooltips\\UI-Tooltip-Background",
-    edgeFile="Interface\\Tooltips\\UI-Tooltip-Border",
-    tile=true, tileSize=16, edgeSize=16,
-    insets={left=4,right=4,top=4,bottom=4}
-})
+		bgFile="Interface\\Tooltips\\UI-Tooltip-Background",
+		edgeFile="Interface\\Tooltips\\UI-Tooltip-Border",
+		tile=true,tileSize=16,edgeSize=16,
+		insets={left=4,right=4,top=4,bottom=4}
+	})
 
 	-- Dark, almost identical to the Friends panel
 	f:SetBackdropColor(0.02,0.02,0.02,0.95)    -- inner fill
@@ -3755,7 +3750,7 @@ function SocialPlus_CreateSettingsPanel()
 	f.title:SetText(L.GROUP_SETTINGS)
 
 	-- Close button (standard Blizzard X)
-	local close = CreateFrame("Button","SocialPlus_SettingsCloseButton",f,"UIPanelCloseButton")
+	local close=CreateFrame("Button","SocialPlus_SettingsCloseButton",f,"UIPanelCloseButton")
 	close:SetPoint("TOPRIGHT",f,"TOPRIGHT",-4,-4)
 	close:SetScript("OnClick",function()
 		f:Hide()
@@ -3789,22 +3784,21 @@ function SocialPlus_CreateSettingsPanel()
 		SocialPlus_Update()
 	end)
 
-	-- NEW: prioritize current-client players (MoP Classic / same project)
+	-- Prioritize current-client players (MoP Classic / same project)
 	local prioritizeCurrent=CreateFrame("CheckButton","SocialPlus_PrioritizeCurrentClientCheck",f,"UICheckButtonTemplate")
 	prioritizeCurrent:SetPoint("TOPLEFT",colourNames,"BOTTOMLEFT",0,-6)
 	_G[prioritizeCurrent:GetName().."Text"]:SetText(L.SETTING_PRIORITIZE_CURRENT)
 	prioritizeCurrent:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.prioritize_current_client)
 	prioritizeCurrent:SetScript("OnClick",function()
-		SocialPlus_SavedVars.prioritize_current_client = not SocialPlus_SavedVars.prioritize_current_client
+		SocialPlus_SavedVars.prioritize_current_client=not SocialPlus_SavedVars.prioritize_current_client
 		-- force full rebuild so ordering updates
 		SocialPlus_Update(true)
 	end)
 
-	-- Separator spanning almost full width, now below the new setting
+	-- Separator spanning almost full width, now directly below the "prioritize current client" checkbox
 	local line=f:CreateTexture(nil,"ARTWORK")
 	line:SetSize(f:GetWidth()-24,1)
 	line:SetPoint("TOPLEFT",prioritizeCurrent,"BOTTOMLEFT",0,-12)
-
 	line:SetColorTexture(0.6,0.6,0.6,0.4)
 
 	-- Slider label + description
@@ -3816,7 +3810,7 @@ function SocialPlus_CreateSettingsPanel()
 	desc:SetPoint("TOPLEFT",lbl,"BOTTOMLEFT",0,-6)
 	desc:SetText(L.SETTING_SCROLL_SPEED_DESC)
 
-	-- Slider (moved a bit UP and widened)
+	-- Slider (widened)
 	local slider=CreateFrame("Slider","SocialPlus_SettingsScrollSpeedSlider",f,"OptionsSliderTemplate")
 	slider:SetPoint("TOPLEFT",desc,"BOTTOMLEFT",0,-5)
 	slider:SetSize(f:GetWidth()-40,16)
@@ -3841,17 +3835,23 @@ function SocialPlus_CreateSettingsPanel()
 		if self.text then
 			self.text:SetText(string.format("%.1f",val))
 		end
+		if not SocialPlus_SavedVars then SocialPlus_SavedVars={} end
 		SocialPlus_SavedVars.scrollSpeed=val
 		pcall(SocialPlus_InitSmoothScroll)
 	end)
 
-	-- Sync on show
+	-- Sync on show (no more icon profile dropdown)
 	f:SetScript("OnShow",function()
 		hideOffline:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.hide_offline)
 		hideLevel:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.hide_high_level)
 		colourNames:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.colour_classes)
-	    prioritizeCurrent:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.prioritize_current_client)
-		slider:SetValue(SocialPlus_SavedVars and SocialPlus_SavedVars.scrollSpeed or 3.0)
+		prioritizeCurrent:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.prioritize_current_client)
+
+		local svSpeed=SocialPlus_SavedVars and SocialPlus_SavedVars.scrollSpeed or 3.0
+		slider:SetValue(svSpeed)
+		if slider.text then
+			slider.text:SetText(string.format("%.1f",svSpeed))
+		end
 	end)
 
 	f:Hide()
@@ -3859,7 +3859,9 @@ function SocialPlus_CreateSettingsPanel()
 
 	if FriendsFrame then
 		FriendsFrame:HookScript("OnHide",function()
-			if SocialPlus_SettingsPanel then SocialPlus_SettingsPanel:Hide() end
+			if SocialPlus_SettingsPanel then
+				SocialPlus_SettingsPanel:Hide()
+			end
 		end)
 	end
 end
