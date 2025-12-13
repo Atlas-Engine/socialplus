@@ -162,7 +162,8 @@ do
 end
 
 
--- Also expose to global to allow calls from any scope
+-- Also expose to global to allow calls from any scopegit status
+
 -- NOTE: _G.SocialPlus_GetInviteStatus will be set after the function is defined below
 
 -- Debug helper to trace id resolution and menu actions (set FG_DEBUG = true to enable)
