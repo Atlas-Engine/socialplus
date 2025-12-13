@@ -166,7 +166,7 @@ end
 -- NOTE: _G.SocialPlus_GetInviteStatus will be set after the function is defined below
 
 -- Debug helper to trace id resolution and menu actions (set FG_DEBUG = true to enable)
-local FG_DEBUG = true
+local FG_DEBUG = false
 
 local function FG_Debug(...)
 	if not FG_DEBUG then return end
