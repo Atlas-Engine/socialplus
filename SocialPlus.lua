@@ -166,7 +166,7 @@ end
 -- NOTE: _G.SocialPlus_GetInviteStatus will be set after the function is defined below
 
 -- Debug helper to trace id resolution and menu actions (set FG_DEBUG = true to enable)
-local FG_DEBUG = false
+local FG_DEBUG = true
 
 local function FG_Debug(...)
 	if not FG_DEBUG then return end
@@ -1132,7 +1132,7 @@ local SOCIALPLUS_ICON_IDS_CUSTOM={
 	APP ="Interface\\FriendsFrame\\plusmanz-battlenet",
 
 	-- WoW (shop atlas, cropped via texcoords)
-	WoW ="Interface\\Shop\\CatalogShopProductLogos",
+	WoW ="Interface\\Shop\\CatalogShopProductLogos2x",
 
 	-- Native Blizzard chat icons
 	SC2 ="Interface\\ChatFrame\\UI-ChatIcon-SC2",
@@ -1175,7 +1175,7 @@ function SocialPlus_RebuildGameIcons()
 	SocialPlus_RegisterIcon(BNET_CLIENT_SC2        or "S2"  ,SocialPlus_PickIcon("SC2" ))
 	SocialPlus_RegisterIcon(BNET_CLIENT_D2         or "OSI" ,SocialPlus_PickIcon("D2"  ))
 	SocialPlus_RegisterIcon(BNET_CLIENT_D3         or "D3"  ,SocialPlus_PickIcon("D3"  ))
-	SocialPlus_RegisterIcon(BNET_CLIENT_D4         or "D4"  ,SocialPlus_PickIcon("D4"  ))
+	SocialPlus_RegisterIcon(BNET_CLIENT_D4    	   or "Fen" ,SocialPlus_PickIcon("D4"  ))
 	SocialPlus_RegisterIcon(BNET_CLIENT_WTCG       or "WTCG",SocialPlus_PickIcon("HS"  ))
 	SocialPlus_RegisterIcon(BNET_CLIENT_HEROES     or "Hero",SocialPlus_PickIcon("HOTS"))
 	SocialPlus_RegisterIcon(BNET_CLIENT_OVERWATCH  or "Pro" ,SocialPlus_PickIcon("OW"  ))
@@ -1244,10 +1244,13 @@ local function SocialPlus_GetAutoIconSize(button,isFaction)
     return size
 end
 
--- TexCoords for atlas-based icons in Profile 3 (custom)
+-- TexCoords
 SOCIALPLUS_TEXCOORD_BY_ICONPATH={
-	-- CatalogShopProductLogos.blp: crop right logo with a bit of padding
-	["Interface\\Shop\\CatalogShopProductLogos"]={0.30, 0.60, 0.10, 0.80},
+	-- CatalogShopProductLogos.blp: crop right logo with a bit of padding (DEFAULT)
+	["Interface\\Shop\\CatalogShopProductLogos2x"]={0.26,0.65,0.10,0.90},
+
+	-- Same texture, LEFT logo (used when "different region")
+	["Interface\\Shop\\CatalogShopProductLogos2x_LEFT"]={0.00,0.39,0.10,0.90},
 }
 
 -- Apply a game/faction icon to a button's gameIcon texture
@@ -1270,14 +1273,14 @@ local function FG_ApplyGameIcon(button,iconPath,size,point,relPoint,offX,offY)
 	offY=offY or 0
 
 	-- Special WoW icon sizing override
-	if iconPath=="Interface\\Shop\\CatalogShopProductLogos" then
-		size = 50  -- your chosen size
+	if iconPath=="Interface\\Shop\\CatalogShopProductLogos2x" then
+		size = 64 -- your chosen size
 	end
 
 	-- Special WoW icon position override
-	if iconPath=="Interface\\Shop\\CatalogShopProductLogos" then
-		offX = -14
-		offY = -10
+	if iconPath=="Interface\\Shop\\CatalogShopProductLogos2x" then
+		offX = -8
+		offY = -15
 	end
 
 	icon:SetPoint(point,button,relPoint,offX,offY)
@@ -1303,17 +1306,17 @@ end
 -- --------------------------------------------------------------------
 local SocialPlus_IconStyles={
 	game={
-		size=26,
+		size=32,
 		point="RIGHT",
 		relPoint="RIGHT",
-		offX=-24,
+		offX=-21,
 		offY=0,
 	},
 	crest={
-		size=24,
+		size=30,
 		point="RIGHT",
 		relPoint="RIGHT",
-		offX=-23,
+		offX=-22,
 		offY=0,
 	},
 }
@@ -2088,8 +2091,10 @@ local function SocialPlus_UpdateFriendButton(button)
 			end
 
 			if FACTION_ICON_PATH then
-				FG_ApplyGameIcon(button,FACTION_ICON_PATH,24,"RIGHT","RIGHT",-23,0)
-				button.SocialPlusIconAlpha=1   -- always full for pure WoW friends
+				FG_ApplyGameIcon(button,FACTION_ICON_PATH,30,"RIGHT","RIGHT",-22,0)
+				-- Fade ONLY when this is a WoW/faction icon and the friend cannot be invited
+				local wowAllowed=select(1,SocialPlus_GetInviteStatus("WOW",FriendButtons[index].id))
+				button.SocialPlusIconAlpha=wowAllowed and 1 or 0.4
 			elseif button.gameIcon then
 				button.gameIcon:Hide()
 				button.SocialPlusIconAlpha=nil
@@ -2242,12 +2247,6 @@ local function SocialPlus_UpdateFriendButton(button)
             isCrest=true
         end
 
-        -- Crest alpha: ONLY opposite faction gets faded
-        local crestAlpha
-        if isCrest and friendFaction and PLAYER_FACTION then
-            crestAlpha=(friendFaction~=PLAYER_FACTION) and 0.4 or 1
-        end
-
         -- Actually place the icon
         if isCrest then
             SocialPlus_ApplyIcon(button,iconPath,"crest")
@@ -2263,35 +2262,10 @@ local function SocialPlus_UpdateFriendButton(button)
         button.travelPassButton.fgInviteAllowed=allowed
         button.travelPassButton.fgInviteReason=reason
 
-        -- Fade rules for non-crest game logos
-        local fadeIcon=false
-        if client==BNET_CLIENT_WOW then
-            if WOW_PROJECT_ID and wowProjectID and wowProjectID~=WOW_PROJECT_ID then
-                -- Different project (Retail vs Classic) → fade
-                fadeIcon=true
-            elseif not allowed and (
-                restriction==INVITE_RESTRICTION_WOW_PROJECT_ID
-                or restriction==INVITE_RESTRICTION_REALM
-                or restriction==INVITE_RESTRICTION_REGION   -- 🔥 different REGION → fade
-            ) then
-                fadeIcon=true
-            end
-        else
-            -- Non-WoW clients: always slightly faded
-            fadeIcon=true
-        end
-
-		if isCrest then
-			-- Crest still fades for opposite faction, but ALSO fades for region/project restrictions
-			if fadeIcon then
-				button.SocialPlusIconAlpha = 0.4
-			else
-				button.SocialPlusIconAlpha = crestAlpha or 1
-			end
-		else
-			button.SocialPlusIconAlpha = fadeIcon and 0.4 or 1
-		end
-
+        -- Icon fading: ONLY un-inviteable WoW/faction icons fade
+        -- (Never fade non-WoW client icons.)
+        local fadeWowIcon=(client==BNET_CLIENT_WOW and not allowed)
+        button.SocialPlusIconAlpha=fadeWowIcon and 0.4 or 1
 		-- Show invite button	
 			hasTravelPassButton=true
 
