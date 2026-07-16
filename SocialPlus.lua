@@ -4334,9 +4334,20 @@ end
 
 SocialPlus_ClickCatcher:SetScript("OnMouseDown",function(self,button)
     -- Ignore clicks still actually over the search box itself (typing,
-    -- repositioning the cursor, the clear "X" button) -- let it behave
-    -- normally.
+    -- repositioning the cursor) -- let it behave normally.
     if SocialPlus_Searchbox and SocialPlus_Searchbox:IsMouseOver() then
+        -- The clear "X" button is a child sitting on the box's own edge,
+        -- same overlap problem as the friend-row case below: this
+        -- full-screen frame is on top while shown (search box focused or a
+        -- search term active), so a click on the X never actually reaches
+        -- it -- self:Hide() alone doesn't un-swallow an already-dispatched
+        -- click. Forward it explicitly via :Click(), same fix as the row
+        -- case (confirmed live there).
+        local clearBtn=SocialPlus_Searchbox.clearButton or SocialPlus_Searchbox.ClearButton
+        if clearBtn and clearBtn:IsShown() and clearBtn:IsMouseOver() then
+            self:Hide()
+            clearBtn:Click()
+        end
         return
     end
 
