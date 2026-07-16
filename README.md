@@ -1,64 +1,56 @@
 # SocialPlus
 
-**A complete Friends List upgrade for MoP Classic and TBC Classic** — reliable cross-realm invites, custom friend groups, favorites, rich online/offline notifications, and instant search, all in the original Blizzard look and feel. Available in English, French, and Spanish.
+**The Friends List that Classic should have shipped with.** Reliable cross-realm invites, custom groups, favorites, rich clickable notifications, and instant search — all in the native Blizzard look, for both MoP Classic and TBC Classic. English, French, and Spanish.
 
 ---
 
-## Why SocialPlus?
+## The problem
 
-The Classic clients ship with a bare-bones friends list and notoriously unreliable cross-realm invites. SocialPlus fixes the invites, then rebuilds the rest of the social experience around them — with the same full feature set on both MoP Classic and TBC Classic.
+The Classic friends list is bare-bones, and cross-realm invites fail silently more often than they work. SocialPlus fixes the invites first — then rebuilds the entire social experience around them.
 
-## Features
+## What you get
 
-### 📌 Reliable Cross-Realm Invites
-Invites that work consistently — and when one isn't possible, SocialPlus tells you *why* (region, faction, or game version) instead of failing silently.
+### 📌 Invites that actually work
+Consistent cross-realm invites. And when an invite genuinely isn't possible, SocialPlus tells you **why** — wrong region, faction, or game version — instead of doing nothing.
 
-### 🗂️ Friend Groups
-Organize your friends into custom groups:
-- Create, rename, and delete groups at any time
-- Drag & drop a friend into a group, or move them through the right-click menu
-- Collapse and expand groups individually or all at once, with online/total counters
-- Right-click a group header for group-wide actions: invite everyone, rename, delete, or mute notifications
+### 🔔 Notifications worth reading
+Forget "X has come online":
+- **Class-colored, clickable name** — one click opens a whisper, faction- and cross-realm-safe
+- See class, level, game version (Retail → MoP), faction icon, and region at a glance
+- Shows the friend's group — click it to open your friends panel already filtered
+- Mute noisy groups individually, or toggle master/offline notifications in settings
 
-### ⭐ Favorites
-Pin the friends you actually play with:
-- Right-click any friend → **Add to Favorites**
-- Favorites are marked with a star and listed at the top of their group, in alphabetical order
-- Completely independent of Blizzard's own Battle.net favorites
+### 🗂️ Groups, your way
+- Create, rename, delete, and drag-to-reorder groups
+- Move friends between groups from the right-click menu
+- Collapse/expand individually or all at once, with online/total counters
+- Group-wide actions on the header: **invite everyone**, rename, delete, mute
 
-### 🔀 Smart Sorting
-Your list reads the way you'd expect:
-- Online friends first, then DND, then away
-- Friends grouped by the game or client they're playing, with Battle.net-app idlers last
-- Alphabetical within each cluster
-- Optional **Prioritize [your version] friends** — moves friends on your exact game version to the top, same-faction first
+### ⭐ Favorites that mean something
+Star the friends you actually play with. They sit at the top of their group — fully independent of Blizzard's Battle.net favorites.
 
-### 🔔 Smart Notifications
-Far more useful than Blizzard's default "X has come online":
-- **Class-colored, clickable name** — click it to open a whisper instantly, faction- and cross-realm-safe
-- Displays class, level, game version (Retail, TBC, WotLK, Cata, MoP), faction icon, and region (NA/EU)
-- Shows which of your groups the friend belongs to
-- Per-group mute, plus master and offline-notification toggles in the settings panel
-- The default **General** group (ungrouped friends) starts muted — unmute it from its group header to get notified about everyone
+### 🔀 Sorting that reads right
+Online first, then DND, then away. Grouped by game, Battle.net-app idlers last, alphabetical within each cluster. Turn on **Prioritize [your version] friends** to float your actual raid buddies to the top, same-faction first.
 
-### 🎯 Enhanced Right-Click Menu
-Everything one click away: invite, whisper, copy character name, set note, add to favorites, move or remove from groups, and remove friend.
+### 🔍 Search that keeps up
+Filters live as you type, accent-insensitive, and matches classes too — "lock" finds every Warlock you know.
 
-### 🔍 Instant Search
-Accent-insensitive and filters in real time as you type — matching both character names *and* classes ("lock" finds your Warlock friends).
+### 🎯 One right-click, everything
+Invite, whisper, copy name, set note, favorite, move, remove — no digging.
 
-### 🎨 Polished Visuals
-Class-colored names, faction crests, and consistent game icons. Friends you can't invite fade subtly, so you always see who's actually available.
+### 🎨 Looks like Blizzard, only better
+Class colors, faction crests, consistent game icons, a note indicator at a glance, and non-invitable friends subtly faded so you instantly see who's available. Inertia-based smooth scrolling keeps big lists fluid.
 
-### 🌀 Smooth Scrolling
-Inertia-based scrolling that keeps large friend lists fluid instead of choppy.
+### 🌍 Speaks your language
+English, French, and Spanish — follows your client automatically.
 
-### 🌍 Localization
-Fully translated into English, French, and Spanish — SocialPlus follows your client language automatically.
+## Settings
+Cogwheel next to your Battle.net tag: hide offline friends, class colors, scroll speed, and full notification controls (master, offline lines, same-version only).
+
+> 💡 **Tip:** the default **General** group starts muted. Unmute it from its header if you want notifications for ungrouped friends too.
 
 ## Feedback
-
-Found a bug or have a suggestion? Leave a comment on CurseForge or open an issue on GitHub — every report helps.
+Bug or idea? Comment on CurseForge or open a GitHub issue — every report helps.
 
 ## Credits
 
