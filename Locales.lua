@@ -83,6 +83,7 @@ L.INVITE_REASON_NOT_WOW     = "This friend is not currently in World of Warcraft
 L.INVITE_REASON_WRONG_PROJECT = "This friend is not on your WoW version."
 L.INVITE_REASON_NO_REALM      = "This friend is in a different region."
 L.INVITE_REASON_OPPOSITE_FACTION = "This friend is on the opposite faction."
+L.INVITE_REASON_ALREADY_GROUPED = "This friend is already in your group."
 
 L.CONFIRM_REMOVE_BNET_TEXT  = 'Are you sure you want to remove "%s"?\n\nType "YES." to confirm.'
 L.CONFIRM_REMOVE_BNET_WORD  = "YES."
@@ -180,6 +181,7 @@ if locale == "frFR" then
     L.INVITE_REASON_WRONG_PROJECT = "Cet ami n’utilise pas la même version de WoW que vous."
     L.INVITE_REASON_NO_REALM      = "Cet ami se trouve dans une autre région."
     L.INVITE_REASON_OPPOSITE_FACTION = "Cet ami appartient à la faction adverse."
+    L.INVITE_REASON_ALREADY_GROUPED = "Cet ami est déjà dans votre groupe."
 
     L.CONFIRM_REMOVE_BNET_TEXT  = 'Voulez-vous vraiment retirer "%s" ?\n\nTapez "OUI." pour confirmer.'
     L.CONFIRM_REMOVE_BNET_WORD  = "OUI."
@@ -272,6 +274,7 @@ elseif locale == "esES" or locale == "esMX" then
     L.INVITE_REASON_WRONG_PROJECT = "Este amigo no tiene tu misma versión de WoW."
     L.INVITE_REASON_NO_REALM      = "Este amigo está en otra región."
     L.INVITE_REASON_OPPOSITE_FACTION = "Este amigo pertenece a la facción contraria."
+    L.INVITE_REASON_ALREADY_GROUPED = "Este amigo ya está en tu grupo."
 
     L.CONFIRM_REMOVE_BNET_TEXT  = '¿Seguro que quieres eliminar a "%s"?\n\nEscribe "SÍ." para confirmar.'
     L.CONFIRM_REMOVE_BNET_WORD  = "SÍ."

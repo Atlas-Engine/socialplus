@@ -4528,6 +4528,41 @@ function SocialPlus_CanInviteMenuTarget()
 	return allowed and true or false
 end
 
+-- Normalize a realm name for comparison: strip spaces/hyphens (matches the
+-- same normalization SocialPlus_GetFullCharacterName already applies when
+-- building "Name-Realm" strings elsewhere in this file), and fall back to
+-- the player's own realm for a nil/empty value, since that's what an absent
+-- realm means everywhere this is called from (same-realm friend/unit).
+local function SocialPlus_NormalizeRealmForCompare(realm)
+	if not realm or realm=="" then
+		realm=(GetRealmName and GetRealmName()) or ""
+	end
+	return realm:gsub("[%s%-]","")
+end
+
+-- Is a character (by name/realm) currently in the player's own party or raid?
+-- Used to grey out inviting a friend who's already grouped with you.
+local function SocialPlus_IsFriendInMyGroup(name,realm)
+	if not name or name=="" then return false end
+	if not IsInGroup or not IsInGroup() then return false end
+
+	local normRealm=SocialPlus_NormalizeRealmForCompare(realm)
+	local isRaid=IsInRaid and IsInRaid()
+	local unitPrefix=isRaid and "raid" or "party"
+	local numMembers=(GetNumGroupMembers and GetNumGroupMembers()) or 0
+	-- GetNumGroupMembers includes the player for a raid, but party1..partyN
+	-- unit tokens never include "player" -- only go up to numMembers-1 there.
+	local maxIndex=isRaid and numMembers or math.max(numMembers-1,0)
+
+	for i=1,maxIndex do
+		local unitName,unitRealm=UnitName(unitPrefix..i)
+		if unitName and unitName==name and SocialPlus_NormalizeRealmForCompare(unitRealm)==normRealm then
+			return true
+		end
+	end
+	return false
+end
+
 -- Returns true/false, reason string, and optional invite restriction code
 -- Helper: SocialPlus_GetInviteStatus is declared at top scope
 
@@ -4546,6 +4581,11 @@ SocialPlus_GetInviteStatus=function(kind,id)
 	-- Treat explicit false as offline; nil = "unknown", don't block on that
 	if info.connected==false then
 		return false,L.INVITE_REASON_NOT_WOW,INVITE_RESTRICTION_INFO
+	end
+
+	-- Already grouped with this friend -- nothing to invite them to
+	if SocialPlus_IsFriendInMyGroup(info.name,nil) then
+		return false,L.INVITE_REASON_ALREADY_GROUPED,INVITE_RESTRICTION_INFO
 	end
 
 	-- Some WoW friend info may include factionName or faction; check if present
@@ -4570,6 +4610,12 @@ SocialPlus_GetInviteStatus=function(kind,id)
 	if client~=BNET_CLIENT_WOW then
 		return false,L.INVITE_REASON_NOT_WOW,INVITE_RESTRICTION_NO_GAME_ACCOUNTS
 	end
+
+	-- Already grouped with this friend -- nothing to invite them to
+	if SocialPlus_IsFriendInMyGroup(characterName,realmName) then
+		return false,L.INVITE_REASON_ALREADY_GROUPED,INVITE_RESTRICTION_INFO
+	end
+
 	-- BNGetFriendInfo position 16 is canSummon (boolean), not wowProjectID in MoP Classic;
 	-- only compare when we actually got a numeric project ID.
 	if WOW_PROJECT_ID and type(wowProjectID)=="number" and wowProjectID~=WOW_PROJECT_ID then
