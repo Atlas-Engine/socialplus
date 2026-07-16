@@ -4350,7 +4350,19 @@ SocialPlus_ClickCatcher:SetScript("OnMouseDown",function(self,button)
     if FriendsScrollFrame and FriendsScrollFrame.buttons then
         for _,rowButton in ipairs(FriendsScrollFrame.buttons) do
             if rowButton:IsShown() and rowButton:IsMouseOver() then
-                clickedFriendRow=rowButton
+                -- The group cogwheel is a child sitting on top of its row,
+                -- so the row itself still reads as "moused over" even when
+                -- the cursor is actually on the gear. Without this check, a
+                -- double-click on the gear (whose first click is what
+                -- opened this catcher) has its second click land here, get
+                -- misread as "a friend row was clicked", and get forwarded
+                -- to the row -- for a group header, that toggles its
+                -- collapse state (confirmed live).
+                local gear=rowButton.SocialPlusGroupGearButton
+                local overGear=gear and gear:IsShown() and gear:IsMouseOver()
+                if not overGear then
+                    clickedFriendRow=rowButton
+                end
                 break
             end
         end
