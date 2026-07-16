@@ -1,0 +1,17 @@
+## Interface: 50500, 50502, 50503, 50504, 20506
+## Title: SocialPlus
+## Author: David / Atlas-Engine
+## Version: @project-version@
+## Notes: Modern Friends List enhancement for MoP-Classic.
+## X-Curse-Project-ID: 1396027
+## X-Curse-Repository-ID: https://github.com/Atlas-Engine/socialplus
+## SavedVariables: SocialPlus_SavedVars
+
+# Libraries
+Libs\LibStub\LibStub.lua
+Libs\CallbackHandler-1.0\CallbackHandler-1.0.lua
+Libs\LibUIDropDownMenu\LibUIDropDownMenu.lua
+
+# Core Lua
+Locales.lua
+SocialPlus.lua

@@ -1,0 +1,9 @@
+package-as: SocialPlus
+
+ignore:
+  - README.md
+  - CHANGELOG.md
+  - LICENSE
+  - .git
+  - .gitignore
+  - .github
