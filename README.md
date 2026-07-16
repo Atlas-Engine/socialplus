@@ -25,7 +25,6 @@ Pin the friends you actually play with:
 - Right-click any friend → **Add to Favorites**
 - Favorites are marked with a star and listed at the top of their group, in alphabetical order
 - Completely independent of Blizzard's own Battle.net favorites
-- Stored locally, like all SocialPlus settings — see [Known Limitations](#known-limitations) if you play one Battle.net account across multiple WoW licenses
 
 ### 🔀 Smart Sorting
 Your list reads the way you'd expect:
@@ -56,18 +55,6 @@ Inertia-based scrolling that keeps large friend lists fluid instead of choppy.
 
 ### 🌍 Localization
 Fully translated into English, French, and Spanish — SocialPlus follows your client language automatically.
-
-## Known Limitations
-
-**Favorites (and groups' mute state, notification settings, etc.) don't sync across multiple WoW licenses on one Battle.net account.** Groups themselves *do* carry over, because they're stored in the friend's note — a Blizzard-synced, server-side field. Favorites have no such field to piggyback on (Blizzard's own Battle.net favorite flag can't be read or toggled by addons), so they're saved locally instead, in that license's own SavedVariables file.
-
-If you use several linked WoW licenses under the same Battle.net account and want them to share favorites, symlink the SavedVariables file between the two license folders so they read/write the same physical file:
-
-```
-mklink "C:\World of Warcraft\_classic_\WTF\Account\WOW2\SavedVariables\SocialPlus.lua" "C:\World of Warcraft\_classic_\WTF\Account\WOW1\SavedVariables\SocialPlus.lua"
-```
-
-(Run as Administrator, from the license that doesn't have the file yet — delete/rename its existing copy first. Replace the paths and `WOW1`/`WOW2` account-folder names with your own.)
 
 ## Feedback
 
