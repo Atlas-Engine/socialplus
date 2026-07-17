@@ -2787,8 +2787,11 @@ end
 -- "Favorites" label does; a non-favorited friend matches their real
 -- tags as before, never "Favorites".
 local function SocialPlus_BuildNoteSearchBlob(buttonType,id,note)
+	-- Only the "#group" tags are searchable, not the free-text part of the
+	-- note before the first "#" -- a note like "God Tank#raid" should match
+	-- a search for "raid", not "tank".
 	local groups={}
-	local baseNote=NoteAndGroups(note,groups) or ""
+	NoteAndGroups(note,groups)
 	local groupText
 	if SocialPlus_IsFavorite(buttonType,id) then
 		groupText=SocialPlus_GetFavoritesLabel()
@@ -2799,7 +2802,7 @@ local function SocialPlus_BuildNoteSearchBlob(buttonType,id,note)
 		end
 		groupText=table.concat(names," ")
 	end
-	return baseNote.." "..groupText
+	return groupText
 end
 
 local function CreateNote(note,groups)
