@@ -77,6 +77,7 @@ local SocialPlus_SetCustomGroupOrderFromMove
 local SocialPlus_IsRowInDraggedGroup
 local SocialPlus_CancelGroupDrag
 local SocialPlus_HardResetScrollRows
+local SocialPlus_ScheduleCollapseSettle
 
 local CURRENT_DB_VERSION = 2
 
@@ -1155,10 +1156,7 @@ SocialPlus_SearchGlowOuter=outer
 
 	SocialPlus_HardResetScrollRows()
 	SocialPlus_Update(true)
-	SocialPlus_Update(true)
-	C_Timer.After(0,function()
-		SocialPlus_Update(true)
-	end)
+	SocialPlus_ScheduleCollapseSettle()
 	SocialPlus_UpdateCollapseAllButtonVisual()
 end)
 
@@ -1468,6 +1466,28 @@ SocialPlus_HardResetScrollRows=function()
 			btn:Hide()
 		end
 	end
+end
+
+-- The collapse-toggle handlers below used to fire an extra synchronous
+-- SocialPlus_Update(true) plus a fresh C_Timer.After closure on every
+-- single click, to guard against the stale-row/scrollbar issue above. That
+-- meant spam-clicking collapse/expand queued up a new full list rebuild
+-- and a new timer object per click instead of coalescing them -- real,
+-- avoidable memory/CPU churn under repeated clicks (confirmed live).
+-- Debounce the safety-net settle pass the same way scroll-triggered
+-- recompute already is elsewhere in this file: cancel any pending one and
+-- schedule a single new one, so a rapid burst of clicks only pays for one
+-- extra pass total, not one per click.
+local SocialPlus_CollapseSettleTimer=nil
+SocialPlus_ScheduleCollapseSettle=function()
+	if SocialPlus_CollapseSettleTimer then
+		SocialPlus_CollapseSettleTimer:Cancel()
+	end
+	SocialPlus_CollapseSettleTimer=C_Timer.NewTimer(0.15,function()
+		SocialPlus_CollapseSettleTimer=nil
+		SocialPlus_HardResetScrollRows()
+		SocialPlus_Update(true)
+	end)
 end
 
 -- [[ Unified invite helpers (WOW + BNET) ]]
@@ -1839,7 +1859,11 @@ end
 -- [[ Scroll helpers ]]
 local function SocialPlus_GetTopButton(offset)
 	local usedHeight=0
-	for i=1,FriendButtons.count do
+	-- count can be nil right after a wipe (e.g. a search that matched
+	-- nothing wipes FriendButtons and nothing re-sets count when zero
+	-- rows get added) -- confirmed live as a hard error from the
+	-- render-end remainder re-assert.
+	for i=1,FriendButtons.count or 0 do
 		local buttonHeight=FRIENDS_BUTTON_HEIGHTS[FriendButtons[i].buttonType]
 		if usedHeight+buttonHeight>=offset then
 			return i-1,offset-usedHeight
@@ -2222,7 +2246,6 @@ local function SocialPlus_UpdateFriendButton(button)
 	local height=FRIENDS_BUTTON_HEIGHTS[button.buttonType]
 	local nameText,nameColor,infoText,isFavoriteFriend
 	local hasTravelPassButton=false
-    local searchBlob="" -- text we will search in for this row
 
 	-- Hard reset icon so we don't see any Blizzard leftovers for a frame
 	if button.gameIcon then
@@ -2310,14 +2333,6 @@ local function SocialPlus_UpdateFriendButton(button)
 
 		infoText=(info and info.mobile) and LOCATION_MOBILE_APP or (info and info.area) or infoText
 
-		-- Build a searchable blob for this row
-		searchBlob=table.concat({
-			info and info.name or "",
-			info and info.area or "",
-			tostring(nameText or ""),
-			tostring(infoText or "")
-		}," ")
-
 		-- Store raw identifiers for whisper/invite
 		if info then
 			button.rawName=info.name
@@ -2356,17 +2371,6 @@ local function SocialPlus_UpdateFriendButton(button)
 			else
 				button.status:SetTexture(FRIENDS_TEXTURE_ONLINE)
 			end
-
-			-- Build a searchable blob for this BNet row
-     	  	searchBlob=table.concat({
-			accountName or "",
-			characterName or "",
-			realmName or "",
-			zoneName or "",
-			gameText or "",
-			tostring(nameText or ""),
-			tostring(infoText or "")
-    		}," ")
 
 			if client==BNET_CLIENT_WOW and wowProjectID==WOW_PROJECT_ID then
 				if not zoneName or zoneName=="" then
@@ -2476,7 +2480,8 @@ local function SocialPlus_UpdateFriendButton(button)
 		if group=="" or not group then
 		title=L.GROUP_UNGROUPED
 		elseif group==SP_FAVORITES_GROUP then
-		title=SocialPlus_GetFavoritesLabel()
+		local star="|TInterface\\Common\\FavoritesIcon:20:20:0:-3|t"
+		title=star.." "..SocialPlus_GetFavoritesLabel().." "..star
 		else
 		title=group
 		end
@@ -2655,12 +2660,24 @@ local function SocialPlus_UpdateFriendButton(button)
 		button:Hide()
 	end
 
-	-- Tooltip handling	
+	-- Tooltip handling: keep the tooltip in sync when rows scroll under a
+	-- stationary cursor -- but ONLY when the hovered button now shows a
+	-- different friend than the tooltip does. Re-showing unconditionally
+	-- on every render meant that scroll-wheeling with the cursor over the
+	-- list rebuilt the full tooltip (all its strings and friend-info
+	-- queries) once per render -- reported live as a memory climb when
+	-- scrolling while hovering rows, absent when scrolling via the bar
+	-- with nothing hovered.
 	if FriendsTooltip.button==button then
-		if FriendsFrameTooltip_Show then
-			FriendsFrameTooltip_Show(button)
-		elseif button.OnEnter then
-			button:OnEnter()
+		if FriendsTooltip.SocialPlusShownType~=button.buttonType
+			or FriendsTooltip.SocialPlusShownID~=button.id then
+			FriendsTooltip.SocialPlusShownType=button.buttonType
+			FriendsTooltip.SocialPlusShownID=button.id
+			if FriendsFrameTooltip_Show then
+				FriendsFrameTooltip_Show(button)
+			elseif button.OnEnter then
+				button:OnEnter()
+			end
 		end
 	end
 
@@ -2668,13 +2685,24 @@ local function SocialPlus_UpdateFriendButton(button)
 end
 
 -- [[ Full friends list rebuild ]]
+local SocialPlus_InUpdateFriends=false
 local function SocialPlus_UpdateFriends()
+	-- Defensive reentrancy guard: this function calls
+	-- scrollFrame.scrollBar:SetValue() below, which could plausibly
+	-- re-enter this function synchronously via the scrollbar's own
+	-- OnValueChanged. Tested live and it did NOT stop the hover-triggered
+	-- repeat-call issue reported live (the real culprit turned out to be
+	-- the unconditional SetValue/SetMinMaxValues/HybridScrollFrame_Update
+	-- calls below, now made conditional / removed) -- kept anyway as cheap
+	-- insurance against genuine synchronous reentrancy from any source.
+	if SocialPlus_InUpdateFriends then return end
+	SocialPlus_InUpdateFriends=true
+
 	local scrollFrame=FriendsScrollFrame
 	local offset=HybridScrollFrame_GetOffset(scrollFrame)
 	local buttons=scrollFrame.buttons
 	local numButtons=#buttons
 	local numFriendButtons=FriendButtons.count or 0
-	local usedHeight=0
 
 	-- Collapsing everything (worst case: General, our biggest group) can
 	-- shrink content below the visible frame height. When that happens,
@@ -2698,48 +2726,111 @@ local function SocialPlus_UpdateFriends()
 			button.index=index
 			local height=SocialPlus_UpdateFriendButton(button)
 			button:SetHeight(height)
-			usedHeight=usedHeight+height
 		else
 			button.index=nil
 			button:Hide()
 		end
 	end
 
-	if HybridScrollFrame_Update then
-		pcall(HybridScrollFrame_Update,scrollFrame,scrollFrame.totalFriendListEntriesHeight,usedHeight)
+	-- The scroll child's height is what gives the scroll frame room to
+	-- apply the sub-row pixel offset (SetVerticalScroll with the remainder
+	-- from our dynamic/GetTopButton callback) that makes variable-height
+	-- rows scroll smoothly. Keep it at a STABLE value -- the full content
+	-- height -- updated only when content genuinely changes. A first
+	-- attempt set it to the visible rows' summed height on every render:
+	-- that fluctuates with the divider/friend row mix, and every rect
+	-- change (plus the unconditional UpdateScrollChildRect that came with
+	-- it) could reset the frame's vertical-scroll remainder to 0. During
+	-- active scrolling Blizzard re-applies the remainder every tick so
+	-- it's invisible -- but on the idle settle pass nothing follows, so
+	-- the view visibly jumped by up to a row a beat after scrolling
+	-- stopped, moving the hover highlight under a stationary cursor
+	-- (confirmed frame-by-frame from a live recording).
+	local scrollChild=scrollFrame.scrollChild or scrollFrame.ScrollChild
+	if scrollChild then
+		local h=math.floor((scrollFrame.totalFriendListEntriesHeight or 0)+0.5)
+		local minH=math.floor((scrollFrame:GetHeight() or 0)+0.5)+1
+		if h<minH then h=minH end
+		if math.floor((scrollChild:GetHeight() or 0)+0.5)~=h then
+			scrollChild:SetHeight(h)
+			scrollFrame:UpdateScrollChildRect()
+		end
 	end
 
-	-- Confirmed live: on this client, whatever HybridScrollFrame_Update does
-	-- above never produces a usable scrollbar range -- GetMinMaxValues()
-	-- comes back (0,-1) regardless of actual content height, which makes
+	-- Confirmed live: on this client, Blizzard's own HybridScrollFrame_Update
+	-- never produces a usable scrollbar range -- GetMinMaxValues() came back
+	-- (0,-1) regardless of actual content height, which made
 	-- SocialPlus_InitSmoothScroll's OnMouseWheel handler clamp every scroll
 	-- attempt to 0 (math.min(-1,target) is always -1, math.max(0,-1) is
-	-- always 0), i.e. dead scrolling. Don't depend on Blizzard's call at
-	-- all -- set the real range ourselves from our own known-accurate
-	-- content height and the frame's actual visible height.
+	-- always 0), i.e. dead scrolling. No longer calling it at all -- set the
+	-- real range ourselves from our own known-accurate content height and
+	-- the frame's actual visible height. (Also stopped calling it since,
+	-- separately, its own internal SetValue/SetMinMaxValues calls were a
+	-- suspect in the hover-triggered update cascade reported live below.)
 	if scrollFrame.scrollBar then
+		-- INTEGER-ROUND everything here, exactly like Blizzard's own
+		-- HybridScrollFrame_Update does (floor(x+0.5)) -- and for the same
+		-- reason. GetHeight() returns sub-pixel floats that can jitter
+		-- frame to frame, and the scrollbar itself quantizes values to its
+		-- own step, so an unrounded comparison sees a "change" on nearly
+		-- every render -> SetMinMaxValues/SetValue fire -> OnValueChanged
+		-- -> HybridScrollFrame_SetOffset -> .update() -> another render ->
+		-- self-sustaining churn (confirmed live via counter diagnostics
+		-- during the scroll-glitch hunt).
 		local totalHeight=scrollFrame.totalFriendListEntriesHeight or 0
 		local frameHeight=scrollFrame:GetHeight() or 0
-		local scrollRange=math.max(totalHeight-frameHeight,0)
+		local scrollRange=math.floor(math.max(totalHeight-frameHeight,0)+0.5)
 		local curValue=scrollFrame.scrollBar:GetValue() or 0
-		scrollFrame.scrollBar:SetMinMaxValues(0,scrollRange)
-		scrollFrame.scrollBar:SetValue(math.min(curValue,scrollRange))
-		if scrollRange<=0 then
-			scrollFrame.scrollBar:Hide()
-		else
-			scrollFrame.scrollBar:Show()
+		local clampedValue=math.min(curValue,scrollRange)
+
+		-- Only touch the scrollbar's min/max/value when something actually
+		-- needs to change (rounded comparisons, per the above): SetValue/
+		-- SetMinMaxValues can trigger the scrollbar's own OnValueChanged
+		-- (wired to re-run this whole update) even when set to the same
+		-- values, so calling them unconditionally fed the loop.
+		local curMin,curMax=scrollFrame.scrollBar:GetMinMaxValues()
+		if math.floor(curMin+0.5)~=0 or math.floor(curMax+0.5)~=scrollRange then
+			scrollFrame.scrollBar:SetMinMaxValues(0,scrollRange)
 		end
+		if math.floor(clampedValue+0.5)~=math.floor(curValue+0.5) then
+			scrollFrame.scrollBar:SetValue(clampedValue)
+		end
+
+		if scrollRange<=0 then
+			if scrollFrame.scrollBar:IsShown() then
+				scrollFrame.scrollBar:Hide()
+			end
+		else
+			if not scrollFrame.scrollBar:IsShown() then
+				scrollFrame.scrollBar:Show()
+			end
+		end
+	end
+
+	-- Self-healing remainder: rows above were rendered for the current
+	-- scrollbar value's top element; re-assert the matching sub-row pixel
+	-- offset unconditionally, so no scroll-child rect change (or anything
+	-- else that resets a scroll frame's vertical scroll) can leave the
+	-- view shifted by a partial row against the rendered rows. This is
+	-- the same SetVerticalScroll call Blizzard's own
+	-- HybridScrollFrame_SetOffset performs on every value change --
+	-- idempotent and cheap.
+	if scrollFrame.scrollBar then
+		local _,remainder=SocialPlus_GetTopButton(scrollFrame.scrollBar:GetValue() or 0)
+		scrollFrame:SetVerticalScroll(remainder or 0)
 	end
 
 	-- Keep global collapse/expand button state in sync
 	SocialPlus_UpdateCollapseAllButtonVisual()
 
-	-- Clean up collapsed groups that no longer exist	
+	-- Clean up collapsed groups that no longer exist
 	for key,_ in pairs(SocialPlus_SavedVars.collapsed) do
 		if not GroupTotal[key] then
 			SocialPlus_SavedVars.collapsed[key]=nil
 		end
 	end
+
+	SocialPlus_InUpdateFriends=false
 end
 
 -- [[ Group tag helpers ]]
@@ -2749,19 +2840,25 @@ local function FillGroups(groups,note,...)
 	local added=false
 	for i=1,n do
 		local v=select(i,...)
-		v=strtrim(v)
-		-- A stray "|" here would desync the |H...|h hyperlink escape
-		-- sequences group names get spliced into elsewhere (group links,
-		-- headers) -- strip it rather than trust that this addon is the
-		-- only thing that ever wrote this note (Blizzard's own "Set Note"
-		-- UI can edit it freely). Only count non-empty tags as real group
-		-- membership -- an empty segment (from "##", a trailing "#", or a
-		-- tag that was nothing but pipes) must not collide with the same
-		-- "" sentinel used for "no tags at all" below.
-		v=v:gsub("|","")
-		if v~="" then
-			groups[v]=true
-			added=true
+		-- A "#" immediately followed by whitespace ("# test") is not a
+		-- group tag -- only "#test" (no space right after the #) counts.
+		-- Checked on the raw segment, before trimming, since trimming
+		-- would otherwise make "# test" indistinguishable from "#test".
+		if not v:match("^%s") then
+			v=strtrim(v)
+			-- A stray "|" here would desync the |H...|h hyperlink escape
+			-- sequences group names get spliced into elsewhere (group links,
+			-- headers) -- strip it rather than trust that this addon is the
+			-- only thing that ever wrote this note (Blizzard's own "Set Note"
+			-- UI can edit it freely). Only count non-empty tags as real group
+			-- membership -- an empty segment (from "##", a trailing "#", or a
+			-- tag that was nothing but pipes) must not collide with the same
+			-- "" sentinel used for "no tags at all" below.
+			v=v:gsub("|","")
+			if v~="" then
+				groups[v]=true
+				added=true
+			end
 		end
 	end
 	if not added then
@@ -2803,6 +2900,36 @@ local function SocialPlus_BuildNoteSearchBlob(buttonType,id,note)
 		groupText=table.concat(names," ")
 	end
 	return groupText
+end
+
+-- Best-effort UNMASKED sort name for a BNet friend. Both the raw
+-- BNGetFriendInfo tuple's accountName AND GetFriendInfoById's can
+-- transiently be a masked "|K...|k" placeholder (confirmed live for the
+-- search path -- neither source is safe at an arbitrary point in time),
+-- and sorting on masked bytes produces a stable-looking but scrambled
+-- order that's invisible in debug prints, because the chat frame silently
+-- renders masked tokens as the real name (confirmed live: the offline
+-- block looked "randomly ordered" in-game while a debug dump printed sane
+-- names -- the sort had compared masked bytes). Fall back through
+-- sources; the battleTag ("Name#1234") is not subject to |K masking, so
+-- there's always a stable, human-sensible final key.
+local function SocialPlus_GetBNetSortName(i)
+	-- select() instead of a {tuple} wrapper: this runs once per BNet
+	-- friend per full rebuild, and the 19-slot throwaway table added up
+	-- under collapse/scroll spam (reported live as GC-churn memory peaks).
+	local rawName,battleTag=select(2,FG_BNGetFriendInfo(i))
+	if rawName and rawName~="" and not SocialPlus_IsMaskedPlaceholder(rawName) then
+		return rawName
+	end
+	local resolvedName=GetFriendInfoById(i)
+	if resolvedName and resolvedName~="" and not SocialPlus_IsMaskedPlaceholder(resolvedName) then
+		return resolvedName
+	end
+	if battleTag and battleTag~="" then
+		-- Strip the numeric discriminator so "Dusk#12735" sorts as "Dusk"
+		return battleTag:match("^([^#]+)") or battleTag
+	end
+	return rawName
 end
 
 local function CreateNote(note,groups)
@@ -2893,6 +3020,11 @@ end
 	-- >>> SIMPLE NAME-ONLY SEARCH MODE (no groups) <<<
 	if SocialPlus_SearchTerm then
 		wipe(FriendButtons)
+		-- wipe() erases the count field too -- re-set it explicitly, since
+		-- AddButtonInfo only re-sets it when at least one row matches (a
+		-- zero-match search left it nil, confirmed live as a hard error
+		-- in SocialPlus_GetTopButton).
+		FriendButtons.count=0
 		wipe(GroupTotal)
 		wipe(GroupOnline)
 		GroupCount=0
@@ -3038,9 +3170,11 @@ end
 			BnetSocialPlus[i]={}
 		end
 
-		local t={FG_BNGetFriendInfo(i)}
-		local isOnline=t[8] and true or false
-		local noteText=t[13]
+		-- Positional destructure instead of a {tuple} wrapper -- same
+		-- per-friend-per-rebuild allocation savings as
+		-- SocialPlus_GetBNetSortName (positions 8=isOnline, 13=note).
+		local _,_,_,_,_,_,_,isOnline,_,_,_,_,noteText=FG_BNGetFriendInfo(i)
+		isOnline=isOnline and true or false
 
 		BNetOnlineStatus[i]=isOnline
 		-- Note/group membership is parsed and kept as-is regardless of
@@ -3206,16 +3340,11 @@ SocialPlus_ApplyGroupOrder()
                     -- invite checks elsewhere in the addon.
                     local _,_,_,_,_,_,_,client,_,wowProjectID,_,
                         isAFK,isGameAFK,isDND,isGameBusy=GetFriendInfoById(i)
-                    -- accountName from GetFriendInfoById/C_BattleNet can
-                    -- transiently be a masked placeholder token (WoW's
-                    -- "|K...|k" escape, silently rendered as the real name
-                    -- by the chat frame but not by plain string comparison)
-                    -- before the friend's name has finished resolving --
-                    -- confirmed live: sorted "|Kj13|k" vs "|Kj53|k" instead
-                    -- of the actual names. The raw BNGetFriendInfo tuple's
-                    -- accountName (position 2) has been plain text in every
-                    -- test so far, so use that for the sort key instead.
-                    row.sortKey=select(2,FG_BNGetFriendInfo(i))
+                    -- Masked-placeholder-safe sort name -- see
+                    -- SocialPlus_GetBNetSortName for the full story (both
+                    -- name sources can transiently be "|K...|k" tokens;
+                    -- trusting the raw tuple alone here was coincidence).
+                    row.sortKey=SocialPlus_GetBNetSortName(i)
                     row.statusRank=SocialPlus_GetStatusRank(isAFK,isGameAFK,isDND,isGameBusy)
                     row.promoted=false
                     row.factionRank=1
@@ -3309,8 +3438,15 @@ SocialPlus_ApplyGroupOrder()
                 FriendButtons[index].id=row.id
             end
 
-            -- Offline at the bottom, unaffected by any of the above
+            -- Offline at the bottom, unaffected by any of the above --
+            -- but still alphabetized among themselves, same as online rows.
+            -- These used to just get pushed in raw friend-index order
+            -- (whatever order Blizzard's own friend list happens to store
+            -- them in), not sorted at all -- reported live as offline
+            -- friends not appearing A-Z.
             if not SocialPlus_SavedVars.hide_offline then
+                local offlineRows={}
+
                 -- BNet offline
                 for i=1,numBNetTotal do
                     local isOfflineMember
@@ -3321,9 +3457,11 @@ SocialPlus_ApplyGroupOrder()
                             and not SocialPlus_IsFavorite(FRIENDS_BUTTON_TYPE_BNET,i)
                     end
                     if isOfflineMember then
-                        index=index+1
-                        FriendButtons[index].buttonType=FRIENDS_BUTTON_TYPE_BNET
-                        FriendButtons[index].id=i
+                        offlineRows[#offlineRows+1]={
+                            buttonType=FRIENDS_BUTTON_TYPE_BNET,
+                            id=i,
+                            sortKey=SocialPlus_GetBNetSortName(i),
+                        }
                     end
                 end
 
@@ -3337,10 +3475,30 @@ SocialPlus_ApplyGroupOrder()
                             and not SocialPlus_IsFavorite(FRIENDS_BUTTON_TYPE_WOW,i)
                     end
                     if isWowOfflineMember then
-                        index=index+1
-                        FriendButtons[index].buttonType=FRIENDS_BUTTON_TYPE_WOW
-                        FriendButtons[index].id=i
+                        local info=FG_GetFriendInfoByIndex(i)
+                        offlineRows[#offlineRows+1]={
+                            buttonType=FRIENDS_BUTTON_TYPE_WOW,
+                            id=i,
+                            sortKey=info and info.name,
+                        }
                     end
+                end
+
+                table.sort(offlineRows,function(a,b)
+                    if a.sortKey and b.sortKey then
+                        local an,bn=SocialPlus_AsciiLower(a.sortKey),SocialPlus_AsciiLower(b.sortKey)
+                        if an~=bn then return an<bn end
+                    end
+                    if a.buttonType~=b.buttonType then
+                        return a.buttonType==FRIENDS_BUTTON_TYPE_BNET
+                    end
+                    return (a.id or 0)<(b.id or 0)
+                end)
+
+                for _,row in ipairs(offlineRows) do
+                    index=index+1
+                    FriendButtons[index].buttonType=row.buttonType
+                    FriendButtons[index].id=row.id
                 end
             end
         end
@@ -3536,7 +3694,12 @@ StaticPopupDialogs["FRIEND_SET_NOTE"]={
 		local eb=self.editBox or self.EditBox
 		if not eb then return end
 		if data and data.set then
-			local newBase=eb:GetText()
+			-- "#" is reserved for group-tag syntax -- strip any the user
+			-- typed here so this free-text box can't be used to hand-craft
+			-- a fake "#groupname" that then renders as real group
+			-- membership once CreateNote appends the friend's actual tags
+			-- below.
+			local newBase=eb:GetText():gsub("#","")
 			local finalNote=newBase
 			if data.groups then
 				data.groups[""]=nil
@@ -3795,6 +3958,20 @@ local function InviteOrGroup(clickedgroup,invite)
 	end
 end
 
+-- [[ Friend-group delete confirmation ]]
+StaticPopupDialogs["SocialPlus_CONFIRM_DELETE_GROUP"]={
+	text=L.CONFIRM_DELETE_GROUP_TEXT,
+	button1=OKAY,
+	button2=CANCEL,
+	OnAccept=function(self,clickedgroup)
+		InviteOrGroup(clickedgroup,false)
+	end,
+	timeout=0,
+	whileDead=1,
+	hideOnEscape=1,
+	preferredIndex=9
+}
+
 -- [[ Group context menu (right-click group header) ]]
 
 local SocialPlus_Menu=LibDD:Create_UIDropDownMenu("SocialPlus_Menu",UIParent)
@@ -3805,7 +3982,7 @@ local menu_items={
 		{text="",notCheckable=true,isTitle=true},
 		{text=L.GROUP_INVITE_ALL,notCheckable=true,func=function(self,menu,clickedgroup) InviteOrGroup(clickedgroup,true) end},
 		{text=L.GROUP_RENAME,notCheckable=true,func=function(self,menu,clickedgroup) StaticPopup_Show("SocialPlus_RENAME",nil,nil,clickedgroup) end},
-		{text=L.GROUP_REMOVE,notCheckable=true,func=function(self,menu,clickedgroup) InviteOrGroup(clickedgroup,false) end},
+		{text=L.GROUP_REMOVE,notCheckable=true,func=function(self,menu,clickedgroup) StaticPopup_Show("SocialPlus_CONFIRM_DELETE_GROUP",clickedgroup,nil,clickedgroup) end},
 		{text=L.GROUP_MUTE_NOTIFICATIONS,isMuteToggle=true},
 	},
 	-- Settings are now in the left-side panel. This submenu is intentionally removed.
@@ -3846,7 +4023,7 @@ SocialPlus_Menu.initialize=function(self,level)
 		if items.isMuteToggle then
 			info.notCheckable=false
 			info.isNotRadio=true
-			info.keepShownOnClick=true
+			info.keepShownOnClick=false
 			info.checked=function()
 				return SocialPlus_SavedVars and SocialPlus_SavedVars.notifications
 					and SocialPlus_SavedVars.notifications.mutedGroups[muteKey]
@@ -5112,10 +5289,7 @@ local function SocialPlus_OnClick(self,button)
 
 			SocialPlus_HardResetScrollRows()
 			SocialPlus_Update(true)
-			SocialPlus_Update(true)
-			C_Timer.After(0,function()
-				SocialPlus_Update(true)
-			end)
+			SocialPlus_ScheduleCollapseSettle()
 		end
 		return
 	end
@@ -5519,7 +5693,11 @@ StaticPopupDialogs["SOCIALPLUS_CONFIRM_REMOVE_BNET"]={
 		if eb then
 			eb:SetText("")
 			eb:SetFocus()
-			eb:SetMaxLetters(4)
+			-- Sized to the active locale's confirm word, not hardcoded --
+			-- was 4 for "YES.", now variable now that the trailing period
+			-- is gone (and locales aren't all the same length: "OUI" is 3,
+			-- "SÍ" is 2).
+			eb:SetMaxLetters(#L.CONFIRM_REMOVE_BNET_WORD)
 		end
 
 		local ok=_G[self:GetName().."Button1"]
@@ -5533,7 +5711,10 @@ StaticPopupDialogs["SOCIALPLUS_CONFIRM_REMOVE_BNET"]={
 		local ok=_G[parent:GetName().."Button1"]
 		if not ok then return end
 
-		if eb:GetText()==L.CONFIRM_REMOVE_BNET_WORD then
+		-- Accent- and case-insensitive: "si" should confirm just as well
+		-- as "SÍ" for the Spanish locale, same normalization already used
+		-- for search.
+		if SocialPlus_NormalizeText(eb:GetText())==SocialPlus_NormalizeText(L.CONFIRM_REMOVE_BNET_WORD) then
 			ok:Enable()
 		else
 			ok:Disable()
@@ -5961,7 +6142,7 @@ local function SocialPlus_BuildFriendLink(characterName,realmName,class,accountN
 	if accountName and accountName~="" and presenceID then
 		local bnetColourCode=string.format("|cFF%02x%02x%02x",
 			FRIENDS_BNET_NAME_COLOR.r*255,FRIENDS_BNET_NAME_COLOR.g*255,FRIENDS_BNET_NAME_COLOR.b*255)
-		local displayText=bnetColourCode..accountName.."|r"
+		local displayText=bnetColourCode.."["..accountName.."]|r"
 		if fullName then
 			displayText=displayText.." "..classColourCode.."("..fullName..")|r"
 		end
@@ -5974,7 +6155,7 @@ end
 
 local function SocialPlus_PrintNotification(text)
 	if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-		DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99[SocialPlus]|r "..text)
+		DEFAULT_CHAT_FRAME:AddMessage(text)
 	end
 end
 
@@ -6206,6 +6387,26 @@ frame:SetScript("OnEvent",function(self,event,...)
 			Hook("FriendsFrameTooltip_Show",SocialPlus_OnEnter,true)
 		end
 
+		-- Flush accumulated garbage when the Friends panel closes. Heavy
+		-- interaction (fast scrolling, collapse/expand spam) legitimately
+		-- allocates transient garbage that WoW's lazy incremental GC can
+		-- let sit for a long time (reported live: tens of MB parked until
+		-- some later activity happened to nudge a collection). Panel-close
+		-- is the ideal flush point: everything transient is dead by then,
+		-- and a full sweep's tiny hitch is invisible with no interaction
+		-- going on. Cooldown so open/close spam doesn't re-sweep
+		-- pointlessly.
+		if FriendsFrame and FriendsFrame.HookScript then
+			local lastSweep=0
+			FriendsFrame:HookScript("OnHide",function()
+				local now=GetTime()
+				if now-lastSweep>=10 then
+					lastSweep=now
+					collectgarbage("collect")
+				end
+			end)
+		end
+
 		FriendsScrollFrame.dynamic=SocialPlus_GetTopButton
 		-- Scrolling only re-rendered the cached FriendButtons[].id indices
 		-- from the last full update, without re-verifying they still point
@@ -6221,17 +6422,62 @@ frame:SetScript("OnEvent",function(self,event,...)
 		-- debounce the actual full recompute to run once ~150ms after
 		-- scrolling settles -- short enough that a stale row is corrected
 		-- almost immediately, without paying the full cost on every tick.
-		local SocialPlus_ScrollRecomputeTimer=nil
+		--
+		-- This used to allocate a fresh C_Timer.NewTimer on every single
+		-- scroll tick (cancelling the previous one first) -- during a fast
+		-- inertia scroll .update() fires dozens of times per second, so a
+		-- sustained fast scroll allocates and discards dozens of timer
+		-- objects a second (reported live as a memory bump during fast
+		-- scrolling, worse than the collapse-toggle case). Replaced with a
+		-- single ticker, created once and never recreated: each scroll tick
+		-- only touches two cheap upvalues (a flag and a timestamp), and the
+		-- ticker itself just polls whether scrolling has gone quiet.
+		local SocialPlus_ScrollDirty=false
+		local SocialPlus_LastScrollTick=0
+		local SocialPlus_LastScrollValue=nil
 		FriendsScrollFrame.update=function()
-			SocialPlus_UpdateFriends()
-			if SocialPlus_ScrollRecomputeTimer then
-				SocialPlus_ScrollRecomputeTimer:Cancel()
+			-- The scrollbar quantizes every SetValue to multiples of 32px
+			-- (a built-in value step), so the value our wheel handler
+			-- requests vs. what the slider stores always differ slightly
+			-- -- compare ROUNDED values, or "did it change?" checks are
+			-- unreliable (confirmed live via an event trace). Blizzard
+			-- only invokes .update() when the TOP ROW actually changes,
+			-- and it applies the new sub-row pixel offset itself,
+			-- immediately -- so every real change MUST re-render right
+			-- away. An earlier rate-throttle here skipped some of these
+			-- renders, leaving the old rows displayed shifted by the new
+			-- row's remainder until the settle pass corrected it ~200ms
+			-- later -- that delayed correction was the long-hunted
+			-- "refresh that moves things / hides a group header" glitch
+			-- (confirmed by matching an event trace against a screen
+			-- recording). Only true no-ops (rounded value unchanged)
+			-- may return early.
+			local value=FriendsScrollFrame.scrollBar and FriendsScrollFrame.scrollBar:GetValue()
+			value=value and math.floor(value+0.5)
+			if value==SocialPlus_LastScrollValue then
+				-- No-op guard: only a real value change counts as
+				-- "still scrolling" (also keeps these calls from pushing
+				-- the settle countdown back indefinitely).
+				return
 			end
-			SocialPlus_ScrollRecomputeTimer=C_Timer.NewTimer(0.15,function()
-				SocialPlus_ScrollRecomputeTimer=nil
-				SocialPlus_Update(true)
-			end)
+			SocialPlus_ScrollDirty=true
+			SocialPlus_LastScrollTick=GetTime()
+			SocialPlus_UpdateFriends()
+			-- Cache the value as it settled AFTER rendering, not the value
+			-- that triggered this call -- SocialPlus_UpdateFriends clamps
+			-- the scrollbar's value itself (the scrollbar-range fix), so
+			-- comparing against the pre-render value here would make our
+			-- own clamp look like a "real" scroll change on the very next
+			-- call. Rounded, same as the comparison above.
+			local settled=FriendsScrollFrame.scrollBar and FriendsScrollFrame.scrollBar:GetValue()
+			SocialPlus_LastScrollValue=settled and math.floor(settled+0.5)
 		end
+		C_Timer.NewTicker(0.1,function()
+			if SocialPlus_ScrollDirty and (GetTime()-SocialPlus_LastScrollTick)>=0.15 then
+				SocialPlus_ScrollDirty=false
+				SocialPlus_Update(true)
+			end
+		end)
 
 		if FriendsScrollFrame and FriendsScrollFrame.buttons and FriendsScrollFrame.buttons[1] and FRIENDS_FRAME_FRIENDS_FRIENDS_HEIGHT then
 			pcall(FriendsScrollFrame.buttons[1].SetHeight,FriendsScrollFrame.buttons[1],FRIENDS_FRAME_FRIENDS_FRIENDS_HEIGHT)

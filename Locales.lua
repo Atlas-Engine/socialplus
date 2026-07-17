@@ -45,13 +45,13 @@ L.GROUP_FAVORITES         = "Favorites"
 ----------------------------------------------------------------
 -- Group menu (header right-click)
 ----------------------------------------------------------------
-L.GROUP_INVITE_ALL        = "Invite Entire Group"
+L.GROUP_INVITE_ALL        = "Invite All"
 L.GROUP_RENAME            = "Rename Group"
 L.GROUP_REMOVE            = "Delete Group"
 L.GROUP_SETTINGS          = "SocialPlus Settings"
 L.GROUP_NO_GROUPS         = "No groups available"
 L.GROUP_NO_GROUPS_REMOVE  = "No groups to remove"
-L.GROUP_MUTE_NOTIFICATIONS = "Mute notifications"
+L.GROUP_MUTE_NOTIFICATIONS = "Mute Notifications"
 
 ----------------------------------------------------------------
 -- Settings toggles
@@ -85,10 +85,11 @@ L.INVITE_REASON_NO_REALM      = "This friend is in a different region."
 L.INVITE_REASON_OPPOSITE_FACTION = "This friend is on the opposite faction."
 L.INVITE_REASON_ALREADY_GROUPED = "This friend is already in your group."
 
-L.CONFIRM_REMOVE_BNET_TEXT  = 'Are you sure you want to remove "%s"?\n\nType "YES." to confirm.'
-L.CONFIRM_REMOVE_BNET_WORD  = "YES."
+L.CONFIRM_REMOVE_BNET_TEXT  = 'Are you sure you want to remove "%s"?\n\nType "YES" to confirm.'
+L.CONFIRM_REMOVE_BNET_WORD  = "YES"
 L.MSG_REMOVE_FRIEND_SUCCESS = 'Successfully removed %s.'
 L.INVITE_GENERIC_FAIL       = "You cannot invite this friend."
+L.CONFIRM_DELETE_GROUP_TEXT = 'Delete the group "%s"?\n\nFriends in it will become ungrouped.'
 
 ----------------------------------------------------------------
 -- Friend online/offline notifications
@@ -149,7 +150,7 @@ if locale == "frFR" then
     L.GROUP_SETTINGS          = "Paramètres SocialPlus"
     L.GROUP_NO_GROUPS         = "Aucun groupe disponible"
     L.GROUP_NO_GROUPS_REMOVE  = "Aucun groupe à retirer"
-    L.GROUP_MUTE_NOTIFICATIONS = "Rendre muettes les notifications"
+    L.GROUP_MUTE_NOTIFICATIONS = "Couper les notifications"
 
     ----------------------------------------------------------------
     -- Settings toggles (group submenu)
@@ -183,10 +184,11 @@ if locale == "frFR" then
     L.INVITE_REASON_OPPOSITE_FACTION = "Cet ami appartient à la faction adverse."
     L.INVITE_REASON_ALREADY_GROUPED = "Cet ami est déjà dans votre groupe."
 
-    L.CONFIRM_REMOVE_BNET_TEXT  = 'Voulez-vous vraiment retirer "%s" ?\n\nTapez "OUI." pour confirmer.'
-    L.CONFIRM_REMOVE_BNET_WORD  = "OUI."
+    L.CONFIRM_REMOVE_BNET_TEXT  = 'Voulez-vous vraiment retirer "%s" ?\n\nTapez "OUI" pour confirmer.'
+    L.CONFIRM_REMOVE_BNET_WORD  = "OUI"
     L.MSG_REMOVE_FRIEND_SUCCESS = 'Vous avez retiré %s avec succès.'
     L.INVITE_GENERIC_FAIL       = "Vous ne pouvez pas inviter cet ami."
+    L.CONFIRM_DELETE_GROUP_TEXT = 'Supprimer le groupe "%s" ?\n\nLes amis qu\'il contient deviendront non groupés.'
 
     ----------------------------------------------------------------
     -- Friend online/offline notifications
@@ -276,10 +278,11 @@ elseif locale == "esES" or locale == "esMX" then
     L.INVITE_REASON_OPPOSITE_FACTION = "Este amigo pertenece a la facción contraria."
     L.INVITE_REASON_ALREADY_GROUPED = "Este amigo ya está en tu grupo."
 
-    L.CONFIRM_REMOVE_BNET_TEXT  = '¿Seguro que quieres eliminar a "%s"?\n\nEscribe "SÍ." para confirmar.'
-    L.CONFIRM_REMOVE_BNET_WORD  = "SÍ."
+    L.CONFIRM_REMOVE_BNET_TEXT  = '¿Seguro que quieres eliminar a "%s"?\n\nEscribe "SÍ" para confirmar.'
+    L.CONFIRM_REMOVE_BNET_WORD  = "SÍ"
     L.MSG_REMOVE_FRIEND_SUCCESS = 'Has eliminado a %s correctamente.'
     L.INVITE_GENERIC_FAIL       = "No puedes invitar a este amigo."
+    L.CONFIRM_DELETE_GROUP_TEXT = '¿Eliminar el grupo "%s"?\n\nLos amigos en él quedarán sin grupo.'
 
     ----------------------------------------------------------------
     -- Friend online/offline notifications
