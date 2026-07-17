@@ -4425,10 +4425,20 @@ local function SocialPlus_UpdateFriendsTabVisibility()
 	local tabID=PanelTemplates_GetSelectedTab(FriendsFrame) or FriendsFrame.selectedTab
 	local isFriendsTab=(tabID==1)
 
+	-- The Friends/Ignore sub-tabs at the top are a separate tab strip
+	-- (FriendsTabHeader), independent of the bottom Friends/Who/Raid tabs.
+	-- Search only applies to the friends list, so on the Ignore sub-tab
+	-- the box stays visible but empty and disabled (greyed), instead of
+	-- filtering a list it doesn't apply to.
+	local headerTab=FriendsTabHeader
+		and ((PanelTemplates_GetSelectedTab and PanelTemplates_GetSelectedTab(FriendsTabHeader)) or FriendsTabHeader.selectedTab)
+	local searchUsable=isFriendsTab and (headerTab==nil or headerTab==1)
+
 	-- Show/hide search box
 	if SocialPlus_Searchbox then
-		-- When leaving the Friends tab: clear search completely
-		if not isFriendsTab then
+		-- Whenever search doesn't apply (other bottom tab, or the Ignore
+		-- sub-tab): clear it completely
+		if not searchUsable then
 			SocialPlus_Searchbox:SetText("")
 			SocialPlus_Searchbox:ClearFocus()
 			SocialPlus_SearchTerm=nil
@@ -4448,6 +4458,13 @@ local function SocialPlus_UpdateFriendsTabVisibility()
 		end
 
 		SocialPlus_Searchbox:SetShown(isFriendsTab)
+		if searchUsable then
+			SocialPlus_Searchbox:Enable()
+			SocialPlus_Searchbox:SetAlpha(1)
+		else
+			SocialPlus_Searchbox:Disable()
+			SocialPlus_Searchbox:SetAlpha(0.4)
+		end
 	end
 
 	-- Show/hide settings button
@@ -4473,10 +4490,18 @@ SocialPlus_UpdateFriendsTabVisibility()
 FriendsFrame:HookScript("OnShow",SocialPlus_UpdateFriendsTabVisibility)
 
 hooksecurefunc("PanelTemplates_SetTab",function(frame,tabID)
-	if frame==FriendsFrame then
+	if frame==FriendsFrame or (FriendsTabHeader and frame==FriendsTabHeader) then
 		SocialPlus_UpdateFriendsTabVisibility()
 	end
 end)
+
+-- Belt-and-suspenders for the header sub-tabs: FriendsFrame_Update is
+-- Blizzard's central updater that runs on every tab switch of either
+-- strip, so hooking it covers the Ignore sub-tab even if this client's
+-- header tabs don't route through PanelTemplates_SetTab.
+if type(FriendsFrame_Update)=="function" then
+	hooksecurefunc("FriendsFrame_Update",SocialPlus_UpdateFriendsTabVisibility)
+end
 
 -- [[ Friend (row) right-click menu state ]]
 
