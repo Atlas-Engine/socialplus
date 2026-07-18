@@ -27,7 +27,7 @@ Forget "X has come online":
 - Group-wide actions on the header: **invite everyone**, rename, delete, mute
 - In-game (character) friends automatically get their own **In-game Friends** section — tag or favorite one and they move out on their own
 
-### 📬 Friend requests, front and center
+### 📬 Friend requests
 Pending Battle.net requests show up as their own section right in the list — accept or decline with one click, no digging through toasts. And if a request is broken on Blizzard's end, SocialPlus tells you instead of ignoring the click.
 
 ### ⭐ Favorites that mean something
