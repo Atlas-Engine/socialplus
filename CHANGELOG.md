@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.3b
+
+- New: ungrouped in-game (character) friends now get their own "In-game Friends" section above General, with collapse/expand. Tagging them into a group moves them out of it automatically, same as favoriting.
+- Fixed Battle.net friend-request Accept doing nothing; the Friend Requests header also got matching icons, joins Collapse All/Expand All, and no longer offers the group menu (rename/delete/mute never applied to it). If a request is broken server-side and can't be accepted by any means, SocialPlus now says so instead of ignoring the click.
+- Smoother collapsing: toggling a group no longer scrolls the list back to the top, and the brief bounce/blank-gap when collapsing near the top or bottom of the list is gone.
+- The search box is disabled and cleared on the Ignore tab.
+- The panel-close memory flush now only runs when it's actually worth it (usage above 25 MB).
+
 ## 1.3a
 
 - Fixed a long-standing scroll glitch: the list could visibly shift a beat after scrolling stopped, sometimes hiding a group header or moving the hover highlight to a different friend on its own.
