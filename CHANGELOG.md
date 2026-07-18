@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.4a
+
+- Fixed "Copy Character Name" being blocked (ADDON_ACTION_FORBIDDEN) in chat and unit right-click menus: group-name links in notifications are now wired through the client's official link-handler registry instead of replacing a global.
+- The /who list gets a proper SocialPlus right-click menu (Invite, Whisper, Ignore, Report Player, Copy Character Name) matching the stock layout — fixing the same blocked-copy error there, which stock couldn't avoid alongside the addon.
+- Right-click menus on friends and /who results now play the same open/close sounds as Blizzard's own menus.
+
 ## 1.3b
 
 - New: ungrouped in-game (character) friends now get their own "In-game Friends" section above General, with collapse/expand. Tagging them into a group moves them out of it automatically, same as favoriting.

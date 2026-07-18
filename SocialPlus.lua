@@ -22,10 +22,19 @@ local function SocialPlus_PlayMenuCloseSound()
 	end
 end
 
--- Set true right before showing the click catcher for a cogwheel-opened
--- dropdown menu ONLY (settings button, group-header gear); left false for
--- right-click context menus and the search-box focus case, so neither
--- plays a menu-close sound.
+-- "Menu opened" sound for right-click context menus (friend rows, who
+-- rows), matching the sound Blizzard's own unit popup makes.
+local function SocialPlus_PlayMenuOpenSound()
+	if SOUNDKIT and SOUNDKIT.IG_MAINMENU_OPEN then
+		PlaySound(SOUNDKIT.IG_MAINMENU_OPEN)
+	end
+end
+
+-- Set true right before showing the click catcher for menus that should
+-- play a close sound when they go away: cogwheel-opened dropdowns
+-- (settings button, group-header gear) and the friend/who right-click
+-- context menus. Left false for the search-box focus case and the
+-- group-header right-click menu, so those stay silent.
 local SocialPlus_ClickCatcherIsForMenu = false
 
 
@@ -5488,10 +5497,12 @@ local function SocialPlus_OnClick(self,button)
 		if tabID~=1 then return end
 	end
 
-	-- No menu sound here -- that's reserved for the cogwheel buttons, not
-	-- right-click context menus.
+	-- Open/close sounds matching Blizzard's own unit popup: open sound
+	-- here, close sound via the click catcher's for-menu flag.
 	SocialPlus_SetCurrentFriend(self)
+	SocialPlus_PlayMenuOpenSound()
 	LibDD:ToggleDropDownMenu(1,nil,SocialPlus_FriendMenu,"cursor",0,0)
+	SocialPlus_ClickCatcherIsForMenu=true
 	SocialPlus_ShowClickCatcher()
 end
 
@@ -6254,35 +6265,52 @@ local function SocialPlus_BuildGroupPrefix(note,battleTag)
 end
 
 -- Clicking a group-name link (built above) opens the Friends panel and
--- searches for that group. Must be a real override (checked BEFORE calling
--- through), not hooksecurefunc -- Blizzard's own SetItemRef doesn't
--- silently ignore an unrecognized link type, it hard-errors trying to
--- SetHyperlink() it on ItemRefTooltip (confirmed live). Anything that
--- isn't our own link type still falls through to the original unchanged,
--- so other addons' SetItemRef hooks are unaffected.
-local SocialPlus_OrigSetItemRef=SetItemRef
-SetItemRef=function(link,text,button,chatFrame)
+-- searches for that group.
+local function SocialPlus_OnGroupLinkClick(link)
 	local groupName=link and link:match("^socialplus_group:(.*)$")
-	if groupName then
-		-- ShowFriendsFrame doesn't exist as a global on this client
-		-- (confirmed live -- the panel silently failed to open while the
-		-- search-text part still worked). ShowUIPanel + PanelTemplates_SetTab
-		-- are the same primitives this file already relies on elsewhere for
-		-- FriendsFrame (see the FriendsFriendsFrame ShowUIPanel call and the
-		-- PanelTemplates_SetTab hook above) -- lower-level and confirmed
-		-- present on this client.
-		if ShowUIPanel then
-			ShowUIPanel(FriendsFrame)
-		end
-		if PanelTemplates_SetTab then
-			PanelTemplates_SetTab(FriendsFrame,1)
-		end
-		if SocialPlus_Searchbox then
-			SocialPlus_Searchbox:SetText(groupName)
-		end
-		return
+	if not groupName then return end
+	-- ShowFriendsFrame doesn't exist as a global on this client
+	-- (confirmed live -- the panel silently failed to open while the
+	-- search-text part still worked). ShowUIPanel + PanelTemplates_SetTab
+	-- are the same primitives this file already relies on elsewhere for
+	-- FriendsFrame.
+	if ShowUIPanel then
+		ShowUIPanel(FriendsFrame)
 	end
-	return SocialPlus_OrigSetItemRef(link,text,button,chatFrame)
+	if PanelTemplates_SetTab then
+		PanelTemplates_SetTab(FriendsFrame,1)
+	end
+	if SocialPlus_Searchbox then
+		SocialPlus_Searchbox:SetText(groupName)
+	end
+end
+
+-- Wired through the client's official LinkUtil handler registry, NOT by
+-- replacing the global SetItemRef. The old global replacement put EVERY
+-- chat hyperlink click -- including right-clicking a player name, whose
+-- unit popup menu gets built inside that same SetItemRef call -- under
+-- insecure execution, so the menu's protected actions were blocked
+-- (confirmed live: "Copy Character Name" threw ADDON_ACTION_FORBIDDEN
+-- for CopyToClipboard, blaming SocialPlus). With a registered handler,
+-- Blizzard's own SetItemRef stays fully secure, dispatches our link type
+-- to us, and returns Handled before ever reaching its erroring
+-- ItemRefTooltip fallback; clicks on every other link type never touch
+-- addon code at all.
+if LinkUtil and LinkUtil.RegisterLinkHandler then
+	LinkUtil.RegisterLinkHandler("socialplus_group",SocialPlus_OnGroupLinkClick)
+else
+	-- Fallback for any client variant without the registry: the old
+	-- override, taint downsides and all -- better than group links doing
+	-- nothing (Blizzard's SetItemRef hard-errors on unknown link types,
+	-- so a plain posthook can't work).
+	local SocialPlus_OrigSetItemRef=SetItemRef
+	SetItemRef=function(link,text,button,chatFrame)
+		if link and link:match("^socialplus_group:") then
+			SocialPlus_OnGroupLinkClick(link)
+			return
+		end
+		return SocialPlus_OrigSetItemRef(link,text,button,chatFrame)
+	end
 end
 
 -- Class-colored, clickable friend link. Uses a real Battle.net "BNplayer" link
@@ -6528,6 +6556,146 @@ function SocialPlus_ApplyToastCVars()
 	SetCVar("showToastOffline",enabled and "0" or "1")
 end
 
+-- [[ Who-list right-click menu ]]
+-- Blizzard's own who-row context menu cannot work correctly alongside this
+-- addon: our renderer writes row-state fields (buttonType/id) on the SHARED
+-- friends-list buttons, and Blizzard's secure panel-show update reads them
+-- (FriendsFrame_ShouldShowSummonButton), tainting the execution that then
+-- populates the who list -- from there every who context menu is born
+-- tainted and its "Copy Character Name" (CopyToClipboard is blocked for
+-- addon-tainted calls) throws ADDON_ACTION_FORBIDDEN blaming us (confirmed
+-- via a full taintLog 11 trace: the who buttons' whoIndex fields are
+-- written by a SocialPlus-tainted WhoList_Update run). Rather than rename
+-- every shared field (a large refactor that would break the stock tooltip
+-- helpers we reuse), own the who menu like we already own the friends-list
+-- menus: our items need no protected calls -- Copy uses the same
+-- Ctrl+C popup as the friend menu, which exists precisely because addons
+-- can't call CopyToClipboard.
+local SocialPlus_WhoMenu=LibDD:Create_UIDropDownMenu("SocialPlus_WhoMenu",UIParent)
+SocialPlus_WhoMenu.displayMode="MENU"
+local SocialPlus_WhoMenuName=nil
+local SocialPlus_WhoMenuIndex=nil
+
+-- Mirrors the stock who menu's layout: name title, Interact
+-- (Invite/Whisper), Other Options (Ignore/Report Player/Copy Character
+-- Name). IGNORE and REPORT_PLAYER are Blizzard's own globals, localized by
+-- the client. Report uses the same PlayerLocation/ReportInfo primitives as
+-- Blizzard's who menu (CreateFromWhoIndex + Enum.ReportType.InWorld).
+SocialPlus_WhoMenu.initialize=function(self,level)
+	if level~=1 then return end
+	local name=SocialPlus_WhoMenuName
+	local whoIndex=SocialPlus_WhoMenuIndex
+	if not name then return end
+
+	local info=LibDD:UIDropDownMenu_CreateInfo()
+	info.text=name
+	info.isTitle=true
+	info.notCheckable=true
+	LibDD:UIDropDownMenu_AddButton(info,level)
+
+	-- Divider lines + Blizzard's own section-title globals, so the layout
+	-- and wording match the stock who menu exactly in every locale.
+	SocialPlus_AddSeparator(level)
+
+	info=LibDD:UIDropDownMenu_CreateInfo()
+	info.text=UNIT_FRAME_DROPDOWN_SUBSECTION_TITLE_INTERACT or L.MENU_INTERACT
+	info.isTitle=true
+	info.notCheckable=true
+	LibDD:UIDropDownMenu_AddButton(info,level)
+
+	info=LibDD:UIDropDownMenu_CreateInfo()
+	info.text=L.MENU_INVITE
+	info.notCheckable=true
+	info.func=function()
+		if C_PartyInfo and C_PartyInfo.InviteUnit then
+			C_PartyInfo.InviteUnit(name)
+		end
+	end
+	LibDD:UIDropDownMenu_AddButton(info,level)
+
+	info=LibDD:UIDropDownMenu_CreateInfo()
+	info.text=L.MENU_WHISPER
+	info.notCheckable=true
+	info.func=function()
+		if ChatFrame_OpenChat then
+			ChatFrame_OpenChat("/w "..name.." ")
+		end
+	end
+	LibDD:UIDropDownMenu_AddButton(info,level)
+
+	SocialPlus_AddSeparator(level)
+
+	info=LibDD:UIDropDownMenu_CreateInfo()
+	info.text=UNIT_FRAME_DROPDOWN_SUBSECTION_TITLE_OTHER or L.MENU_OTHER_OPTIONS
+	info.isTitle=true
+	info.notCheckable=true
+	LibDD:UIDropDownMenu_AddButton(info,level)
+
+	info=LibDD:UIDropDownMenu_CreateInfo()
+	info.text=IGNORE
+	info.notCheckable=true
+	info.func=function()
+		if C_FriendList and C_FriendList.AddIgnore then
+			C_FriendList.AddIgnore(name)
+		end
+	end
+	LibDD:UIDropDownMenu_AddButton(info,level)
+
+	info=LibDD:UIDropDownMenu_CreateInfo()
+	info.text=REPORT_PLAYER
+	info.notCheckable=true
+	info.disabled=not (whoIndex and PlayerLocation and ReportFrame and ReportInfo and Enum and Enum.ReportType)
+	info.func=function()
+		if not whoIndex then return end
+		local ok,playerLocation=pcall(PlayerLocation.CreateFromWhoIndex,PlayerLocation,whoIndex)
+		if not ok or not playerLocation then return end
+		local ok2,reportInfo=pcall(ReportInfo.CreateReportInfoFromType,ReportInfo,Enum.ReportType.InWorld)
+		if not ok2 or not reportInfo then return end
+		pcall(ReportFrame.InitiateReport,ReportFrame,reportInfo,name,playerLocation,false)
+	end
+	LibDD:UIDropDownMenu_AddButton(info,level)
+
+	info=LibDD:UIDropDownMenu_CreateInfo()
+	info.text=L.MENU_COPY_NAME
+	info.notCheckable=true
+	info.func=function()
+		StaticPopup_Show("SocialPlus_COPY_NAME",nil,nil,{name=name})
+	end
+	LibDD:UIDropDownMenu_AddButton(info,level)
+end
+
+local function SocialPlus_HookWhoButtons()
+	local i=1
+	while _G["WhoFrameButton"..i] do
+		local whoBtn=_G["WhoFrameButton"..i]
+		if not whoBtn.SocialPlusWhoHooked then
+			whoBtn.SocialPlusWhoHooked=true
+			local orig=whoBtn:GetScript("OnClick")
+			whoBtn:SetScript("OnClick",function(btn,button)
+				if button=="RightButton" then
+					local info=btn.whoIndex and C_FriendList and C_FriendList.GetWhoInfo
+						and C_FriendList.GetWhoInfo(btn.whoIndex)
+					local nameFS=_G["WhoFrameButton"..btn:GetID().."Name"]
+					local name=(info and info.fullName) or (nameFS and nameFS:GetText())
+					if name and name~="" then
+						SocialPlus_WhoMenuName=name
+						SocialPlus_WhoMenuIndex=btn.whoIndex
+						SocialPlus_PlayMenuOpenSound()
+						LibDD:ToggleDropDownMenu(1,nil,SocialPlus_WhoMenu,"cursor",0,0)
+						SocialPlus_ClickCatcherIsForMenu=true
+						SocialPlus_ShowClickCatcher()
+					end
+					return
+				end
+				if orig then
+					orig(btn,button)
+				end
+			end)
+		end
+		i=i+1
+	end
+end
+
 -- [[ Initialization on PLAYER_LOGIN ]]
 
 frame:SetScript("OnEvent",function(self,event,...)
@@ -6665,6 +6833,7 @@ frame:SetScript("OnEvent",function(self,event,...)
 		end
 
 		HookButtons()
+		SocialPlus_HookWhoButtons()
 	elseif event=="BN_FRIEND_ACCOUNT_ONLINE" then
 		local bnetIDAccount=...
 		SocialPlus_QueueNotifyCheck(bnetIDAccount)
