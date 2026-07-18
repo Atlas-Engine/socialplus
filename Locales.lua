@@ -41,6 +41,7 @@ L.MENU_REMOVE_FAVORITE    = "Remove from Favorites"
 L.SEARCH_PLACEHOLDER      = "Names/Groups/Classes"
 L.GROUP_UNGROUPED         = "General"
 L.GROUP_FAVORITES         = "Favorites"
+L.GROUP_INGAME            = "In-game Friends"
 
 ----------------------------------------------------------------
 -- Group menu (header right-click)
@@ -141,6 +142,7 @@ if locale == "frFR" then
     L.SEARCH_PLACEHOLDER      = "Noms/Groupes/Classes"
     L.GROUP_UNGROUPED         = "Général"
     L.GROUP_FAVORITES         = "Favoris"
+    L.GROUP_INGAME            = "Amis en jeu"
 
     ----------------------------------------------------------------
     -- Group menu (header right-click)
@@ -236,6 +238,7 @@ elseif locale == "esES" or locale == "esMX" then
     L.SEARCH_PLACEHOLDER      = "Nombres/Grupos/Clases"
     L.GROUP_UNGROUPED         = "General"
     L.GROUP_FAVORITES         = "Favoritos"
+    L.GROUP_INGAME            = "Amigos en el juego"
 
     ----------------------------------------------------------------
     -- Group menu (header right-click)

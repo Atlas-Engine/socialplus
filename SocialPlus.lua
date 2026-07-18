@@ -299,6 +299,14 @@ local SP_GENERAL_GROUP="\001GENERAL"   -- sentinel: hovering over an ungrouped f
 -- touches a friend's real group assignment.
 local SP_FAVORITES_GROUP="\001FAVORITES"
 
+-- Same sentinel trick for the automatic "In-game Friends" bucket: native
+-- character friends (non-Battle.net) with no group tags render here, right
+-- after General, instead of mixing into General. WoW friends the user has
+-- explicitly tagged into custom groups keep those groups. Collapse/expand
+-- only -- no cogwheel, no context menu, not draggable, never a submenu
+-- target.
+local SP_INGAME_GROUP="\001INGAME"
+
 -- Blizzard ships a global FAVORITES string (Mount/Pet Journal use it) --
 -- prefer it so the label matches the client's own language/terminology
 -- automatically; L.GROUP_FAVORITES is the fallback if that global is ever
@@ -610,7 +618,8 @@ end
 local function SocialPlus_UpdateDragInsertionLine(groupKey)
 	local line=SocialPlus_GetDragInsertLine()
 	if not SocialPlus_DragSourceGroup or not groupKey or groupKey==SocialPlus_DragSourceGroup
-		or groupKey==FriendRequestString or groupKey==SP_FAVORITES_GROUP then
+		or groupKey==FriendRequestString or groupKey==SP_FAVORITES_GROUP
+		or groupKey==SP_INGAME_GROUP then
 		line:Hide()
 		return
 	end
@@ -672,6 +681,7 @@ local function SocialPlus_ApplyGroupOrder()
 	local hasFriendReq=false
 	local hasGeneral=false
 	local hasFavorites=false
+	local hasInGame=false
 	local others={}
 
 	for groupName in pairs(GroupTotal) do
@@ -679,6 +689,8 @@ local function SocialPlus_ApplyGroupOrder()
 			hasFriendReq=true
 		elseif groupName==SP_FAVORITES_GROUP then
 			hasFavorites=true
+		elseif groupName==SP_INGAME_GROUP then
+			hasInGame=true
 		elseif groupName=="" then
 			hasGeneral=true
 		else
@@ -707,6 +719,11 @@ local function SocialPlus_ApplyGroupOrder()
 	for _,name in ipairs(others) do
 		table.insert(GroupSorted,name)
 	end
+	-- In-game Friends (ungrouped native friends) always renders right
+	-- above General, pinned like the other synthetic buckets.
+	if hasInGame then
+		table.insert(GroupSorted,SP_INGAME_GROUP)
+	end
 	if hasGeneral then
 		table.insert(GroupSorted,"")
 	end
@@ -719,9 +736,10 @@ SocialPlus_SetCustomGroupOrderFromMove=function(source,target)
 	-- don’t drag Friend Requests or the implicit General bucket
 	if source==FriendRequestString or source=="" then return end
 	if target==FriendRequestString or target=="" then return end
-	-- Favorites is synthetic and always index 0 -- never a drag source or
-	-- target, and never persisted into groupOrder.
+	-- Favorites and In-game Friends are synthetic and pinned -- never a
+	-- drag source or target, and never persisted into groupOrder.
 	if source==SP_FAVORITES_GROUP or target==SP_FAVORITES_GROUP then return end
+	if source==SP_INGAME_GROUP or target==SP_INGAME_GROUP then return end
 
 	SocialPlus_EnsureSavedVars()
 
@@ -730,7 +748,7 @@ SocialPlus_SetCustomGroupOrderFromMove=function(source,target)
 	local sourceIndex,targetIndex
 
 	for _,name in ipairs(GroupSorted or {}) do
-		if name~=FriendRequestString and name~="" then
+		if name~=FriendRequestString and name~="" and name~=SP_FAVORITES_GROUP and name~=SP_INGAME_GROUP then
 			table.insert(base,name)
 			local idx=#base
 			if name==source then sourceIndex=idx end
@@ -779,7 +797,7 @@ end
 local function SocialPlus_OnGroupDragStart(self)
 	local group=self and self.SocialPlusGroupName
 	-- don’t drag pinned buckets
-	if not group or group==FriendRequestString or group=="" or group==SP_FAVORITES_GROUP then
+	if not group or group==FriendRequestString or group=="" or group==SP_FAVORITES_GROUP or group==SP_INGAME_GROUP then
 		return
 	end
 
@@ -939,7 +957,7 @@ local function SocialPlus_OnGroupDragStop(self)
 	-- land is more likely to produce a surprise move than a useful one --
 	-- cancel instead.
 	if hoverEverSet
-		and (not target or target==source or target==FriendRequestString or target=="" or target==SP_FAVORITES_GROUP)
+		and (not target or target==source or target==FriendRequestString or target=="" or target==SP_FAVORITES_GROUP or target==SP_INGAME_GROUP)
 		and self then
 		local fallback
 		if self.buttonType==FRIENDS_BUTTON_TYPE_DIVIDER then
@@ -948,7 +966,7 @@ local function SocialPlus_OnGroupDragStop(self)
 			fallback=SocialPlus_GetGroupKeyFromRow(self)
 		end
 
-		if fallback and fallback~=source and fallback~=FriendRequestString and fallback~="" and fallback~=SP_FAVORITES_GROUP then
+		if fallback and fallback~=source and fallback~=FriendRequestString and fallback~="" and fallback~=SP_FAVORITES_GROUP and fallback~=SP_INGAME_GROUP then
 			target=fallback
 		end
 	end
@@ -965,7 +983,7 @@ local function SocialPlus_OnGroupDragStop(self)
 
     -- still no valid target, or hover never fired at all? Cancel.
     if not hoverEverSet or not target or target==source
-		or target==FriendRequestString or target=="" or target==SP_FAVORITES_GROUP then
+		or target==FriendRequestString or target=="" or target==SP_FAVORITES_GROUP or target==SP_INGAME_GROUP then
         return
     end
 	-- Perform the move
@@ -1439,20 +1457,18 @@ else
 end
 
 -- Collapsing/expanding a group can shift every row after it by a large
--- amount. Blizzard's HybridScrollFrame reuses a pool of row buttons keyed
--- to the previous scroll offset/content size, and confirmed live: a big
--- enough single-frame content change can leave that pool out of sync --
--- rows that claim to belong to a still-expanded group not actually drawn,
--- and/or the scrollbar stuck reporting no scrollable range even once
--- content grows back. Force a clean slate before rebuilding: snap the
--- scroll position back to the top and hide every pooled row so nothing
--- carries over stale state from before the collapse toggle.
+-- amount; hide every pooled row so nothing carries over stale state into
+-- the rebuild that follows. This used to ALSO snap the scrollbar to 0 --
+-- a "clean slate" workaround from before the real scroll desync causes
+-- were found (scroll child height, remainder re-assert, range clamping,
+-- all handled in SocialPlus_UpdateFriends now). With those fixed, the
+-- snap-to-top was pure leftover harm: every collapse toggle yanked the
+-- view back to the top (reported live as jarring). The render's own range
+-- clamp already pulls the position in-bounds when the shrunken content
+-- no longer reaches that far, so the scroll position is left alone here.
 SocialPlus_HardResetScrollRows=function()
 	local sf=FriendsScrollFrame
 	if not sf then return end
-	if sf.scrollBar then
-		sf.scrollBar:SetValue(0)
-	end
 	if sf.buttons then
 		for _,btn in ipairs(sf.buttons) do
 			btn.index=nil
@@ -2483,6 +2499,8 @@ local function SocialPlus_UpdateFriendButton(button)
 		-- low against the label (confirmed live).
 		local reqIcon="|TInterface\\FriendsFrame\\UI-Toast-FriendRequestIcon:14:14:0:-1|t"
 		title=reqIcon.." "..group.." "..reqIcon
+		elseif group==SP_INGAME_GROUP then
+		title=L.GROUP_INGAME
 		else
 		title=group
 		end
@@ -2530,10 +2548,11 @@ local function SocialPlus_UpdateFriendButton(button)
 
 	-- Cogwheel: same texture as the settings button, opens the same group
 	-- menu as right-clicking the header (mute notifications, rename, etc.)
-	-- Friend Requests is a pseudo-group -- none of the menu's actions
-	-- (invite all, rename, delete, mute) apply to it, so no cogwheel.
+	-- Friend Requests and In-game Friends are pseudo-groups -- none of the
+	-- menu's actions (invite all, rename, delete, mute) apply, so no
+	-- cogwheel.
 	if button.SocialPlusGroupGearButton then
-		if group==FriendRequestString then
+		if group==FriendRequestString or group==SP_INGAME_GROUP then
 			button.SocialPlusGroupGearButton:Hide()
 		else
 			button.SocialPlusGroupGearButton:Show()
@@ -2764,7 +2783,6 @@ local function SocialPlus_UpdateFriends()
 	SocialPlus_InUpdateFriends=true
 
 	local scrollFrame=FriendsScrollFrame
-	local offset=HybridScrollFrame_GetOffset(scrollFrame)
 	local buttons=scrollFrame.buttons
 	local numButtons=#buttons
 	local numFriendButtons=FriendButtons.count or 0
@@ -2799,44 +2817,6 @@ local function SocialPlus_UpdateFriends()
 	end
 	scrollFrame.PendingInvitesHeaderButton:Hide()
 
-	for i=1,numButtons do
-		local button=buttons[i]
-		local index=offset+i
-		if index<=numFriendButtons then
-			button.index=index
-			local height=SocialPlus_UpdateFriendButton(button)
-			button:SetHeight(height)
-		else
-			button.index=nil
-			button:Hide()
-		end
-	end
-
-	-- The scroll child's height is what gives the scroll frame room to
-	-- apply the sub-row pixel offset (SetVerticalScroll with the remainder
-	-- from our dynamic/GetTopButton callback) that makes variable-height
-	-- rows scroll smoothly. Keep it at a STABLE value -- the full content
-	-- height -- updated only when content genuinely changes. A first
-	-- attempt set it to the visible rows' summed height on every render:
-	-- that fluctuates with the divider/friend row mix, and every rect
-	-- change (plus the unconditional UpdateScrollChildRect that came with
-	-- it) could reset the frame's vertical-scroll remainder to 0. During
-	-- active scrolling Blizzard re-applies the remainder every tick so
-	-- it's invisible -- but on the idle settle pass nothing follows, so
-	-- the view visibly jumped by up to a row a beat after scrolling
-	-- stopped, moving the hover highlight under a stationary cursor
-	-- (confirmed frame-by-frame from a live recording).
-	local scrollChild=scrollFrame.scrollChild or scrollFrame.ScrollChild
-	if scrollChild then
-		local h=math.floor((scrollFrame.totalFriendListEntriesHeight or 0)+0.5)
-		local minH=math.floor((scrollFrame:GetHeight() or 0)+0.5)+1
-		if h<minH then h=minH end
-		if math.floor((scrollChild:GetHeight() or 0)+0.5)~=h then
-			scrollChild:SetHeight(h)
-			scrollFrame:UpdateScrollChildRect()
-		end
-	end
-
 	-- Confirmed live: on this client, Blizzard's own HybridScrollFrame_Update
 	-- never produces a usable scrollbar range -- GetMinMaxValues() came back
 	-- (0,-1) regardless of actual content height, which made
@@ -2844,9 +2824,18 @@ local function SocialPlus_UpdateFriends()
 	-- attempt to 0 (math.min(-1,target) is always -1, math.max(0,-1) is
 	-- always 0), i.e. dead scrolling. No longer calling it at all -- set the
 	-- real range ourselves from our own known-accurate content height and
-	-- the frame's actual visible height. (Also stopped calling it since,
-	-- separately, its own internal SetValue/SetMinMaxValues calls were a
-	-- suspect in the hover-triggered update cascade reported live below.)
+	-- the frame's actual visible height.
+	--
+	-- This block runs BEFORE the row render on purpose: when content
+	-- shrinks a lot (collapsing General from deep in the list), the value
+	-- clamp below fires OnValueChanged -> Blizzard's SetOffset -> .update()
+	-- -- whose re-render our reentrancy guard swallows. When the clamp ran
+	-- AFTER the rows were drawn, that swallowed re-render meant the rows
+	-- stayed laid out for the pre-clamp position until the settle pass
+	-- ~150ms later -- visible as a beat of blank space below the list that
+	-- then snapped up into place (confirmed frame-by-frame from a live
+	-- recording). Clamping first, the row loop below always renders at the
+	-- final, post-clamp position within this same pass.
 	if scrollFrame.scrollBar then
 		-- INTEGER-ROUND everything here, exactly like Blizzard's own
 		-- HybridScrollFrame_Update does (floor(x+0.5)) -- and for the same
@@ -2884,6 +2873,59 @@ local function SocialPlus_UpdateFriends()
 			if not scrollFrame.scrollBar:IsShown() then
 				scrollFrame.scrollBar:Show()
 			end
+		end
+	end
+
+	-- Captured AFTER the clamp above so the rows render at the final
+	-- position (the clamp's OnValueChanged already refreshed the cached
+	-- offset synchronously).
+	local offset=HybridScrollFrame_GetOffset(scrollFrame)
+
+	for i=1,numButtons do
+		local button=buttons[i]
+		local index=offset+i
+		if index<=numFriendButtons then
+			button.index=index
+			local height=SocialPlus_UpdateFriendButton(button)
+			button:SetHeight(height)
+		else
+			button.index=nil
+			button:Hide()
+		end
+	end
+
+	-- The scroll child's height is what gives the scroll frame room to
+	-- apply the sub-row pixel offset (SetVerticalScroll with the remainder
+	-- from our dynamic/GetTopButton callback) that makes variable-height
+	-- rows scroll smoothly. Keep it at a STABLE value -- the full content
+	-- height -- updated only when content genuinely changes. A first
+	-- attempt set it to the visible rows' summed height on every render:
+	-- that fluctuates with the divider/friend row mix, and every rect
+	-- change (plus the unconditional UpdateScrollChildRect that came with
+	-- it) could reset the frame's vertical-scroll remainder to 0. During
+	-- active scrolling Blizzard re-applies the remainder every tick so
+	-- it's invisible -- but on the idle settle pass nothing follows, so
+	-- the view visibly jumped by up to a row a beat after scrolling
+	-- stopped, moving the hover highlight under a stationary cursor
+	-- (confirmed frame-by-frame from a live recording).
+	local scrollChild=scrollFrame.scrollChild or scrollFrame.ScrollChild
+	if scrollChild then
+		local h=math.floor((scrollFrame.totalFriendListEntriesHeight or 0)+0.5)
+		local minH=math.floor((scrollFrame:GetHeight() or 0)+0.5)+1
+		if h<minH then h=minH end
+		-- HIGH-WATER MARK: only ever grow the child, never shrink it. An
+		-- oversized child is harmless (our scrollbar range, not the child
+		-- rect, bounds how far the list can scroll), but SHRINKING it on a
+		-- collapse toggle perturbs the scroll frame's rect -- and the
+		-- engine applies rect recalculation a frame later, resetting the
+		-- vertical scroll AFTER our end-of-render remainder re-assert
+		-- already ran. With a tiny scroll range (e.g. General folded) that
+		-- produced a visible ping-pong: the view bounced between remainder
+		-- 16 and 0 for several re-layouts before converging (confirmed
+		-- frame-by-frame from a live recording of toggling General).
+		if math.floor((scrollChild:GetHeight() or 0)+0.5)<h then
+			scrollChild:SetHeight(h)
+			scrollFrame:UpdateScrollChildRect()
 		end
 	end
 
@@ -3294,6 +3336,12 @@ end
 		local fi=FG_GetFriendInfoByIndex(i)
 		local note=fi and fi.notes
 		NoteAndGroups(note,WowSocialPlus[i])
+		-- Ungrouped native friends live in the In-game Friends bucket, not
+		-- General ("" is the ungrouped sentinel NoteAndGroups sets).
+		if WowSocialPlus[i][""] then
+			WowSocialPlus[i][""]=nil
+			WowSocialPlus[i][SP_INGAME_GROUP]=true
+		end
 		if SocialPlus_IsFavorite(FRIENDS_BUTTON_TYPE_WOW,i) then
 			IncrementGroup(SP_FAVORITES_GROUP,true)
 			if not SocialPlus_SavedVars.collapsed[SP_FAVORITES_GROUP] then
@@ -3320,6 +3368,11 @@ end
 		local fj=FG_GetFriendInfoByIndex(j)
 		local note=fj and fj.notes
 		NoteAndGroups(note,WowSocialPlus[j])
+		-- Same In-game Friends re-bucketing as the online loop above
+		if WowSocialPlus[j][""] then
+			WowSocialPlus[j][""]=nil
+			WowSocialPlus[j][SP_INGAME_GROUP]=true
+		end
 		if SocialPlus_IsFavorite(FRIENDS_BUTTON_TYPE_WOW,j) then
 			IncrementGroup(SP_FAVORITES_GROUP)
 			if not SocialPlus_SavedVars.collapsed[SP_FAVORITES_GROUP] and not SocialPlus_SavedVars.hide_offline then
@@ -3959,7 +4012,10 @@ StaticPopupDialogs["SocialPlus_COPY_NAME"]={
 
 local function InviteOrGroup(clickedgroup,invite)
 	-- Extra safety: never run bulk ops on the implicit [no group] bucket
-	if not clickedgroup or clickedgroup=="" then
+	-- or the synthetic In-game Friends bucket (its menu never opens, but
+	-- guard anyway -- deleting it would try to rewrite notes that hold no
+	-- such tag)
+	if not clickedgroup or clickedgroup=="" or clickedgroup==SP_INGAME_GROUP then
 		return
 	end
 
@@ -5384,10 +5440,10 @@ local function SocialPlus_OnClick(self,button)
 		local groupKey=self.SocialPlusGroupName or ""
 
 		if button=="RightButton" then
-			-- Friend Requests is a pseudo-group: none of the group menu's
-			-- actions apply, so no context menu for it (its cogwheel is
-			-- likewise hidden at render time).
-			if groupKey==FriendRequestString then
+			-- Friend Requests and In-game Friends are pseudo-groups: none
+			-- of the group menu's actions apply, so no context menu (their
+			-- cogwheels are likewise hidden at render time).
+			if groupKey==FriendRequestString or groupKey==SP_INGAME_GROUP then
 				return
 			end
 			-- Still allow the header context menu everywhere else. No menu
@@ -5939,10 +5995,11 @@ function SocialPlus_BuildGroupSubmenu(mode,level)
 
 	if mode=="ADD" then
 		for _,group in ipairs(GroupSorted or {}) do
-			-- Favorites isn't a real group a friend can be tagged into via
-			-- their note -- it's a display-time overlay driven by the
-			-- favorite flag, toggled from "Add/Remove Favorites" only.
-			if group~="" and group~=SP_FAVORITES_GROUP and not groups[group] then
+			-- Favorites and In-game Friends aren't real groups a friend can
+			-- be tagged into via their note -- both are display-time
+			-- buckets (favorite flag / ungrouped native friends).
+			if group~="" and group~=SP_FAVORITES_GROUP and group~=SP_INGAME_GROUP
+				and group~=FriendRequestString and not groups[group] then
 				table.insert(choices,group)
 			end
 		end
@@ -6513,13 +6570,13 @@ frame:SetScript("OnEvent",function(self,event,...)
 				local now=GetTime()
 				if now-lastSweep<10 then return end
 				-- Only sweep when this addon is actually holding a
-				-- meaningful amount (>40 MB): a full collect isn't free,
+				-- meaningful amount (>25 MB): a full collect isn't free,
 				-- so when there's little to reclaim, skip it. The skipped
 				-- close doesn't consume the cooldown, so a later close
 				-- that IS over the threshold still sweeps immediately.
 				if UpdateAddOnMemoryUsage and GetAddOnMemoryUsage then
 					UpdateAddOnMemoryUsage()
-					if GetAddOnMemoryUsage(ADDON_NAME)<=40*1024 then
+					if GetAddOnMemoryUsage(ADDON_NAME)<=25*1024 then
 						return
 					end
 				end
