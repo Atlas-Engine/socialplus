@@ -316,8 +316,9 @@ local SocialPlus_DragGhostFrame=nil
 -- Global collapse/expand button state
 local SocialPlus_CollapseAllButton
 
--- Returns anyCollapsed, anyExpanded for *custom* groups plus the General
--- bucket (ignores only the Friend Requests header)
+-- Returns anyCollapsed, anyExpanded across every header row -- custom
+-- groups, General, Favorites, and Friend Requests alike (they can all be
+-- collapsed individually, so Collapse All/Expand All covers all of them).
 local function SocialPlus_GetAnyGroupCollapsed()
 	local anyCollapsed=false
 	local anyExpanded=false
@@ -327,13 +328,10 @@ local function SocialPlus_GetAnyGroupCollapsed()
 	end
 
 	for _,groupName in ipairs(GroupSorted) do
-		-- Ignore only the Friend Requests header
-		if groupName~=FriendRequestString then
-			if SocialPlus_SavedVars.collapsed[groupName] then
-				anyCollapsed=true
-			else
-				anyExpanded=true
-			end
+		if SocialPlus_SavedVars.collapsed[groupName] then
+			anyCollapsed=true
+		else
+			anyExpanded=true
 		end
 	end
 
@@ -1132,24 +1130,19 @@ SocialPlus_SearchGlowOuter=outer
 
 	local anyCollapsed,anyExpanded=SocialPlus_GetAnyGroupCollapsed()
 
-	-- When there is at least one expanded group (including General), we
-	-- "collapse all". When everything is collapsed, we "expand all".
+	-- When there is at least one expanded header, we "collapse all". When
+	-- everything is collapsed, we "expand all". Covers every header row --
+	-- custom groups, General, Favorites, and Friend Requests alike.
 	if anyExpanded then
-		-- Collapse all groups, including General
 		if GroupSorted then
 			for _,groupName in ipairs(GroupSorted) do
-				if groupName~=FriendRequestString then
-					SocialPlus_SavedVars.collapsed[groupName]=true
-				end
+				SocialPlus_SavedVars.collapsed[groupName]=true
 			end
 		end
 	else
-		-- Expand all groups, including General
 		if GroupSorted then
 			for _,groupName in ipairs(GroupSorted) do
-				if groupName~=FriendRequestString then
-					SocialPlus_SavedVars.collapsed[groupName]=nil
-				end
+				SocialPlus_SavedVars.collapsed[groupName]=nil
 			end
 		end
 	end
@@ -2482,6 +2475,14 @@ local function SocialPlus_UpdateFriendButton(button)
 		elseif group==SP_FAVORITES_GROUP then
 		local star="|TInterface\\Common\\FavoritesIcon:20:20:0:-3|t"
 		title=star.." "..SocialPlus_GetFavoritesLabel().." "..star
+		elseif group==FriendRequestString then
+		-- Same flanking-icon treatment as Favorites, using the glyph
+		-- WoW's own friend-request toast uses.
+		-- 14px, not the 20px the Favorites stars use: this texture has
+		-- less internal padding, so at 20 it rendered oversized and sat
+		-- low against the label (confirmed live).
+		local reqIcon="|TInterface\\FriendsFrame\\UI-Toast-FriendRequestIcon:14:14:0:-1|t"
+		title=reqIcon.." "..group.." "..reqIcon
 		else
 		title=group
 		end
@@ -2529,8 +2530,14 @@ local function SocialPlus_UpdateFriendButton(button)
 
 	-- Cogwheel: same texture as the settings button, opens the same group
 	-- menu as right-clicking the header (mute notifications, rename, etc.)
+	-- Friend Requests is a pseudo-group -- none of the menu's actions
+	-- (invite all, rename, delete, mute) apply to it, so no cogwheel.
 	if button.SocialPlusGroupGearButton then
-		button.SocialPlusGroupGearButton:Show()
+		if group==FriendRequestString then
+			button.SocialPlusGroupGearButton:Hide()
+		else
+			button.SocialPlusGroupGearButton:Show()
+		end
 	end
 
 	elseif button.buttonType==FRIENDS_BUTTON_TYPE_INVITE_HEADER then
@@ -2551,14 +2558,51 @@ local function SocialPlus_UpdateFriendButton(button)
 	elseif button.buttonType==FRIENDS_BUTTON_TYPE_INVITE then
 		local scrollFrame=FriendsScrollFrame
 		local invite=scrollFrame.invitePool:Acquire()
-		invite:SetParent(scrollFrame.ScrollChild)
+		-- Reposition only -- keep Blizzard's own handlers and fields
+		-- untouched. This code used to mirror Blizzard's population
+		-- verbatim (writing invite.inviteID/.inviteIndex itself) and later
+		-- replaced the click handlers with direct BN API calls -- both
+		-- risk a tainted value/execution chain, and BNAcceptFriendInvite
+		-- can silently ignore insecure calls. Confirmed live that fresh
+		-- invites accept flawlessly through Blizzard's untouched secure
+		-- handler under this reposition-only rendering (and keep working
+		-- across sessions). Blizzard's own FriendsList_Update always runs
+		-- before this posthook and populates these same pool entries with
+		-- secure values -- leave every one of them alone.
+		-- (Historical note: one real invite proved unacceptable by ANY
+		-- means -- stock UI with all addons disabled and a direct /run
+		-- with the verified-correct ID both silently failed -- i.e. a
+		-- server-side ghost invite. The notice below covers that case.)
+		-- The Name text is display-only (the handler never reads it), so
+		-- setting it is safe -- and needed, since Blizzard laid the frame
+		-- out for ITS list position, not ours.
 		invite:SetAllPoints(button)
 		invite:Show()
-		local inviteID,inviteAccountName=FG_BNGetFriendInviteInfo(button.id)
-		invite.Name:SetText(inviteAccountName)
-		invite.inviteID=inviteID
-		invite.inviteIndex=button.id
+		local _,inviteAccountName=FG_BNGetFriendInviteInfo(button.id)
+		if inviteAccountName and invite.Name then
+			invite.Name:SetText(inviteAccountName)
+		end
 		nameText=nil
+
+		-- Ghost-invite fallback: non-destructive post-hook (Blizzard's
+		-- handler still runs first, untouched). Rarely, an invite can be
+		-- broken server-side and unacceptable by ANY means (confirmed
+		-- live -- see above); if the invite is demonstrably still pending
+		-- a moment after Accept was clicked, explain instead of letting
+		-- the button look like it ignores the user. Never fires when an
+		-- accept succeeds.
+		if invite.AcceptButton and not invite.SocialPlusAcceptNotice then
+			invite.SocialPlusAcceptNotice=true
+			invite.AcceptButton:HookScript("OnClick",function()
+				local before=FG_BNGetNumFriendInvites()
+				if before<=0 then return end
+				C_Timer.After(2,function()
+					if FG_BNGetNumFriendInvites()>=before then
+						print(L.MSG_INVITE_ACCEPT_BROKEN)
+					end
+				end)
+			end)
+		end
 	end
 
 
@@ -5304,7 +5348,13 @@ local function SocialPlus_OnClick(self,button)
 		local groupKey=self.SocialPlusGroupName or ""
 
 		if button=="RightButton" then
-			-- Still allow the header context menu everywhere. No menu
+			-- Friend Requests is a pseudo-group: none of the group menu's
+			-- actions apply, so no context menu for it (its cogwheel is
+			-- likewise hidden at render time).
+			if groupKey==FriendRequestString then
+				return
+			end
+			-- Still allow the header context menu everywhere else. No menu
 			-- sound here -- that's reserved for the cogwheel buttons, not
 			-- right-click context menus.
 			LibDD:ToggleDropDownMenu(1,groupKey,SocialPlus_Menu,"cursor",0,0)

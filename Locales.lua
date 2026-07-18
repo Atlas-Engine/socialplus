@@ -90,6 +90,7 @@ L.CONFIRM_REMOVE_BNET_WORD  = "YES"
 L.MSG_REMOVE_FRIEND_SUCCESS = 'Successfully removed %s.'
 L.INVITE_GENERIC_FAIL       = "You cannot invite this friend."
 L.CONFIRM_DELETE_GROUP_TEXT = 'Delete the group "%s"?\n\nFriends in it will become ungrouped.'
+L.MSG_INVITE_ACCEPT_BROKEN  = "|cffff9955SocialPlus:|r this friend request couldn't be accepted (the request itself appears broken, not SocialPlus). Try the Battle.net app, or ask the sender to cancel and send it again."
 
 ----------------------------------------------------------------
 -- Friend online/offline notifications
@@ -189,6 +190,7 @@ if locale == "frFR" then
     L.MSG_REMOVE_FRIEND_SUCCESS = 'Vous avez retiré %s avec succès.'
     L.INVITE_GENERIC_FAIL       = "Vous ne pouvez pas inviter cet ami."
     L.CONFIRM_DELETE_GROUP_TEXT = 'Supprimer le groupe "%s" ?\n\nLes amis qu\'il contient deviendront non groupés.'
+    L.MSG_INVITE_ACCEPT_BROKEN  = "|cffff9955SocialPlus :|r cette invitation d'ami n'a pas pu être acceptée (l'invitation elle-même semble corrompue, pas SocialPlus). Essayez l'application Battle.net, ou demandez à l'expéditeur de l'annuler et de la renvoyer."
 
     ----------------------------------------------------------------
     -- Friend online/offline notifications
@@ -283,6 +285,7 @@ elseif locale == "esES" or locale == "esMX" then
     L.MSG_REMOVE_FRIEND_SUCCESS = 'Has eliminado a %s correctamente.'
     L.INVITE_GENERIC_FAIL       = "No puedes invitar a este amigo."
     L.CONFIRM_DELETE_GROUP_TEXT = '¿Eliminar el grupo "%s"?\n\nLos amigos en él quedarán sin grupo.'
+    L.MSG_INVITE_ACCEPT_BROKEN  = "|cffff9955SocialPlus:|r no se pudo aceptar esta solicitud de amistad (la solicitud en sí parece dañada, no SocialPlus). Prueba la aplicación Battle.net, o pide al remitente que la cancele y la envíe de nuevo."
 
     ----------------------------------------------------------------
     -- Friend online/offline notifications
