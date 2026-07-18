@@ -11,7 +11,7 @@ The Classic friends list is bare-bones, and cross-realm invites fail silently mo
 ## What you get
 
 ### 📌 Invites that actually work
-Consistent cross-realm invites. And when an invite genuinely isn't possible, SocialPlus tells you **why** — wrong region, faction, or game version — instead of doing nothing.
+Consistent cross-realm invites. And when an invite genuinely isn't possible, SocialPlus tells you **why** — wrong region, faction, game version, or already in your group — instead of doing nothing.
 
 ### 🔔 Notifications worth reading
 Forget "X has come online":
@@ -25,9 +25,13 @@ Forget "X has come online":
 - Move friends between groups from the right-click menu
 - Collapse/expand individually or all at once, with online/total counters
 - Group-wide actions on the header: **invite everyone**, rename, delete, mute
+- In-game (character) friends automatically get their own **In-game Friends** section — tag or favorite one and they move out on their own
+
+### 📬 Friend requests, front and center
+Pending Battle.net requests show up as their own section right in the list — accept or decline with one click, no digging through toasts. And if a request is broken on Blizzard's end, SocialPlus tells you instead of ignoring the click.
 
 ### ⭐ Favorites that mean something
-Star the friends you actually play with. They sit at the top of their group — fully independent of Blizzard's Battle.net favorites.
+Star the friends you actually play with. They sit at the top of your friends list — fully independent of Blizzard's Battle.net favorites.
 
 ### 🔀 Sorting that reads right
 Online first, then DND, then away. Grouped by game, Battle.net-app idlers last, alphabetical within each cluster. Turn on **Prioritize [your version] friends** to float your actual raid buddies to the top, same-faction first.
@@ -39,7 +43,7 @@ Filters live as you type, accent-insensitive, and matches classes too — "lock"
 Invite, whisper, copy name, set note, favorite, move, remove — no digging.
 
 ### 🎨 Looks like Blizzard, only better
-Class colors, faction crests, consistent game icons, a note indicator at a glance, and non-invitable friends subtly faded so you instantly see who's available. Inertia-based smooth scrolling keeps big lists fluid.
+Class colors, faction crests, consistent game icons, a note indicator at a glance, and non-invitable friends subtly faded so you instantly see who's available. Inertia-based smooth scrolling keeps big lists fluid — and the whole addon stays lightweight, cleaning up after itself so memory usage never creeps.
 
 ### 🌍 Speaks your language
 English, French, and Spanish — follows your client automatically.
