@@ -2557,7 +2557,6 @@ local function SocialPlus_UpdateFriendButton(button)
 
 	elseif button.buttonType==FRIENDS_BUTTON_TYPE_INVITE then
 		local scrollFrame=FriendsScrollFrame
-		local invite=scrollFrame.invitePool:Acquire()
 		-- Reposition only -- keep Blizzard's own handlers and fields
 		-- untouched. This code used to mirror Blizzard's population
 		-- verbatim (writing invite.inviteID/.inviteIndex itself) and later
@@ -2567,18 +2566,40 @@ local function SocialPlus_UpdateFriendButton(button)
 		-- invites accept flawlessly through Blizzard's untouched secure
 		-- handler under this reposition-only rendering (and keep working
 		-- across sessions). Blizzard's own FriendsList_Update always runs
-		-- before this posthook and populates these same pool entries with
+		-- before this posthook and populates these pool entries with
 		-- secure values -- leave every one of them alone.
 		-- (Historical note: one real invite proved unacceptable by ANY
 		-- means -- stock UI with all addons disabled and a direct /run
 		-- with the verified-correct ID both silently failed -- i.e. a
 		-- server-side ghost invite. The notice below covers that case.)
+		--
+		-- Pick the frame whose SECURE inviteID matches this row's invite
+		-- (reading the field is harmless; only writing it was the taint
+		-- problem) -- never acquire blindly, or with 2+ pending invites
+		-- the arbitrary pool order could pair this row's display with a
+		-- frame whose Accept/Decline act on a DIFFERENT invite.
+		local wantID,inviteAccountName=FG_BNGetFriendInviteInfo(button.id)
+		local invite
+		if wantID and scrollFrame.invitePool.EnumerateActive then
+			for inviteFrame in scrollFrame.invitePool:EnumerateActive() do
+				if inviteFrame.inviteID==wantID then
+					invite=inviteFrame
+					break
+				end
+			end
+		end
+		-- Fallback (no securely-populated frame found -- shouldn't happen,
+		-- since Blizzard's update precedes ours): acquire one so the row
+		-- at least displays; its buttons may act on a stale ID until the
+		-- next Blizzard pass corrects the pairing.
+		if not invite then
+			invite=scrollFrame.invitePool:Acquire()
+		end
 		-- The Name text is display-only (the handler never reads it), so
 		-- setting it is safe -- and needed, since Blizzard laid the frame
 		-- out for ITS list position, not ours.
 		invite:SetAllPoints(button)
 		invite:Show()
-		local _,inviteAccountName=FG_BNGetFriendInviteInfo(button.id)
 		if inviteAccountName and invite.Name then
 			invite.Name:SetText(inviteAccountName)
 		end
@@ -2760,7 +2781,22 @@ local function SocialPlus_UpdateFriends()
 	scrollFrame:EnableMouseWheel(true)
 
 	scrollFrame.dividerPool:ReleaseAll()
-	scrollFrame.invitePool:ReleaseAll()
+	-- Invite frames: HIDE the active ones instead of ReleaseAll. Blizzard's
+	-- own (secure) FriendsList_Update established which pool frame carries
+	-- which invite's secure inviteID -- releasing and blindly re-acquiring
+	-- scrambles that pairing (pool acquire order is arbitrary), and since
+	-- we deliberately never write inviteID ourselves (taint safety, see the
+	-- invite render branch), with 2+ pending invites a row could end up
+	-- displaying one invite while its Accept/Decline act on another. The
+	-- render branch below re-shows and repositions exactly the frame whose
+	-- secure ID matches each row.
+	if scrollFrame.invitePool.EnumerateActive then
+		for inviteFrame in scrollFrame.invitePool:EnumerateActive() do
+			inviteFrame:Hide()
+		end
+	else
+		scrollFrame.invitePool:ReleaseAll()
+	end
 	scrollFrame.PendingInvitesHeaderButton:Hide()
 
 	for i=1,numButtons do
@@ -6475,10 +6511,20 @@ frame:SetScript("OnEvent",function(self,event,...)
 			local lastSweep=0
 			FriendsFrame:HookScript("OnHide",function()
 				local now=GetTime()
-				if now-lastSweep>=10 then
-					lastSweep=now
-					collectgarbage("collect")
+				if now-lastSweep<10 then return end
+				-- Only sweep when this addon is actually holding a
+				-- meaningful amount (>40 MB): a full collect isn't free,
+				-- so when there's little to reclaim, skip it. The skipped
+				-- close doesn't consume the cooldown, so a later close
+				-- that IS over the threshold still sweeps immediately.
+				if UpdateAddOnMemoryUsage and GetAddOnMemoryUsage then
+					UpdateAddOnMemoryUsage()
+					if GetAddOnMemoryUsage(ADDON_NAME)<=40*1024 then
+						return
+					end
 				end
+				lastSweep=now
+				collectgarbage("collect")
 			end)
 		end
 
