@@ -150,7 +150,7 @@ function SocialPlus_EnsureSavedVars()
         SocialPlus_SavedVars.notifications.enabled=true
     end
     if SocialPlus_SavedVars.notifications.offline_too==nil then
-        SocialPlus_SavedVars.notifications.offline_too=false
+        SocialPlus_SavedVars.notifications.offline_too=true
     end
     if SocialPlus_SavedVars.notifications.same_version_only==nil then
         SocialPlus_SavedVars.notifications.same_version_only=false
@@ -4399,7 +4399,7 @@ function SocialPlus_CreateSettingsPanel()
 	prioritizeCurrent:SetPoint("TOPLEFT",colourNames,"BOTTOMLEFT",0,-6)
 	local currentVersionLabel=SocialPlus_GetVersionLabelText(WOW_PROJECT_ID)
 	_G[prioritizeCurrent:GetName().."Text"]:SetText(
-		L.SETTING_PRIORITIZE_PREFIX..L.SETTING_PRIORITIZE_SUFFIX)
+		L.SETTING_PRIORITIZE_PREFIX..currentVersionLabel..L.SETTING_PRIORITIZE_SUFFIX)
 	prioritizeCurrent:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.prioritize_current_client)
 	prioritizeCurrent:SetScript("OnClick",function()
 		SocialPlus_SavedVars.prioritize_current_client=not SocialPlus_SavedVars.prioritize_current_client
