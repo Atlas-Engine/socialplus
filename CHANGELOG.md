@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.4c
+
+- Much faster online/offline notifications: typically ~1 second after the client learns of the change (was up to ~5–8 seconds), still with flap protection so a character switch produces exactly one notification.
+- The Favorites tag in notifications is now clickable like group names — opens the friends panel filtered to your favorites.
+
+## 1.4b
+
+- The "Show WoW friends first" setting is now version-aware: it reads "Show MoP friends first" on MoP Classic and "Show TBC friends first" on TBC Classic, in all languages.
+- Offline notifications ("friend went offline") are now on by default for new installs.
+
 ## 1.4a
 
 - Fixed "Copy Character Name" being blocked (ADDON_ACTION_FORBIDDEN) in chat and unit right-click menus: group-name links in notifications are now wired through the client's official link-handler registry instead of replacing a global.
