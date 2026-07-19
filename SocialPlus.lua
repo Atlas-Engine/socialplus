@@ -6240,7 +6240,11 @@ local SOCIALPLUS_GROUP_LINK_COLOR="|cff4da6ff"
 -- their real group's mute setting elsewhere.
 local function SocialPlus_BuildGroupPrefix(note,battleTag)
 	if battleTag and battleTag~="" and SocialPlus_SavedVars.favorites and SocialPlus_SavedVars.favorites["BNET:"..battleTag] then
-		return "[|TInterface\\Common\\FavoritesIcon:14:14:0:-1|t"..SocialPlus_GetFavoritesLabel().."] "
+		-- Clickable like regular group links: opens the panel with the
+		-- Favorites label in the search box (search already matches
+		-- favorited friends by that label).
+		local favLabel=SocialPlus_GetFavoritesLabel()
+		return "["..SOCIALPLUS_GROUP_LINK_COLOR.."|Hsocialplus_group:"..favLabel.."|h|TInterface\\Common\\FavoritesIcon:14:14:0:-1|t"..favLabel.."|h|r] "
 	end
 
 	local groups={}
