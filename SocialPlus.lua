@@ -5442,6 +5442,11 @@ frame:RegisterEvent("PLAYER_LOGIN")
 frame:RegisterEvent("BN_FRIEND_ACCOUNT_ONLINE")
 frame:RegisterEvent("BN_FRIEND_ACCOUNT_OFFLINE")
 frame:RegisterEvent("FRIENDLIST_UPDATE")
+-- Fires when a friend's game info changes (entering/leaving WoW, character
+-- login) WITHOUT a Battle.net connect/disconnect -- the case the 5s poll
+-- ticker existed for. With this event feeding the same coalesced scan,
+-- detection is near-instant and the ticker is just a safety net.
+frame:RegisterEvent("BN_FRIEND_INFO_CHANGED")
 
 local function SocialPlus_OnClick(self,button)
 	if self.buttonType==FRIENDS_BUTTON_TYPE_DIVIDER then
@@ -6118,7 +6123,11 @@ end
 -- instead of reacting separately to each intermediate state (confirmed
 -- live: that's exactly what produced the old "logged out" immediately
 -- followed by "came online" spam on a character switch).
-local SOCIALPLUS_NOTIFY_DEBOUNCE_WINDOW=3
+-- Trimmed from 3s to 1s for snappier notifications: the blips this bridges
+-- are sub-second, and the window restarts on every new signal anyway, so a
+-- genuinely unsettled friend still resolves only once. If switch-spam ever
+-- returns, raise this first.
+local SOCIALPLUS_NOTIFY_DEBOUNCE_WINDOW=1
 
 -- Last CONFIRMED (settled) state per bnetIDAccount. Diffed against a fresh
 -- query when a friend's debounce timer fires to decide exactly one
@@ -6541,7 +6550,7 @@ end
 local function SocialPlus_QueueFriendScan()
 	if SocialPlus_ScanPending then return end
 	SocialPlus_ScanPending=true
-	C_Timer.After(0.5,SocialPlus_ScanFriendsForWoWStateChanges)
+	C_Timer.After(0.2,SocialPlus_ScanFriendsForWoWStateChanges)
 end
 
 -- [[ Suppress Blizzard's own friend online/offline notification ]]
@@ -6847,6 +6856,8 @@ frame:SetScript("OnEvent",function(self,event,...)
 		SocialPlus_QueueNotifyCheck(bnetIDAccount)
 		SocialPlus_QueueFriendScan()
 	elseif event=="FRIENDLIST_UPDATE" then
+		SocialPlus_QueueFriendScan()
+	elseif event=="BN_FRIEND_INFO_CHANGED" then
 		SocialPlus_QueueFriendScan()
 	end
 end)
