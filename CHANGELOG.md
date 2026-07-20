@@ -4,6 +4,9 @@
 
 - Friend level tags ("L90") now match the BattleTag's blue instead of the class color, for both Battle.net and in-game friends.
 - Fixed clicking a friend sometimes showing a completely different friend's tooltip instead of the one clicked.
+- Fixed a crash when removing a friend while they were selected/highlighted.
+- Fixed Favorites status silently coming back when re-adding a friend who was previously removed.
+- Fixed the quick-invite button not working for friends on a different WoW version than you (region/faction/coop checks now match the working right-click invite).
 
 ## 1.6c
 

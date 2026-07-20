@@ -1525,6 +1525,35 @@ SocialPlus_ScheduleCollapseSettle=function()
 	end)
 end
 
+-- A single BattleTag can have multiple WoW licenses online at the same
+-- time (already established for the faction-preference fix). Returns one
+-- entry per currently-online WoW game account linked to this BNet friend
+-- (friend-list index), so the invite menu can offer a choice instead of
+-- silently inviting whichever one gets picked automatically.
+local function SocialPlus_GetOnlineWoWGameAccounts(bnetIndex)
+	local accounts={}
+	if not (C_BattleNet and C_BattleNet.GetFriendNumGameAccounts and C_BattleNet.GetFriendGameAccountInfo) then
+		return accounts
+	end
+	local num=C_BattleNet.GetFriendNumGameAccounts(bnetIndex) or 0
+	for gaIndex=1,num do
+		local ga=C_BattleNet.GetFriendGameAccountInfo(bnetIndex,gaIndex)
+		if ga and ga.isOnline and ga.clientProgram==BNET_CLIENT_WOW and ga.characterName and ga.characterName~="" then
+			table.insert(accounts,{
+				characterName=ga.characterName,
+				realmName=ga.realmName,
+				className=ga.className,
+				level=ga.characterLevel,
+				wowProjectID=ga.wowProjectID,
+				factionName=ga.factionName,
+				regionID=ga.regionID,
+				gameAccountID=ga.gameAccountID,
+			})
+		end
+	end
+	return accounts
+end
+
 -- [[ Unified invite helpers (WOW + BNET) ]]
 local function SocialPlus_PerformInvite(kind,id)
 	if not kind or not id then
@@ -1553,22 +1582,37 @@ local function SocialPlus_PerformInvite(kind,id)
 		end
 		return false,L.INVITE_GENERIC_FAIL
 	elseif kind=="BNET" then
-		-- Battle.net friend
-		if C_BattleNet and C_BattleNet.GetFriendAccountInfo and type(C_BattleNet.GetFriendAccountInfo)=="function" then
-			local accountInfo=C_BattleNet.GetFriendAccountInfo(id)
-			local game=accountInfo and accountInfo.gameAccountInfo
-			local characterName=game and game.characterName
-
-			if characterName and characterName~="" then
-				local target=characterName
-				local realmName=game.realmName
-				if realmName and realmName~="" then
-					target=characterName.."-"..realmName
+		-- Battle.net friend -- pick the first ONLINE account that actually
+		-- passes the same eligibility checks as the multi-license submenu
+		-- (project, faction, region, coop), not just whichever account
+		-- C_BattleNet.GetFriendAccountInfo(id).gameAccountInfo considers
+		-- "the" one. That single-account field is Blizzard's own pick and
+		-- isn't guaranteed to be the current-version/eligible character --
+		-- for a friend with more than one WoW license online, the quick-
+		-- invite button could show enabled (based on GetInviteStatus, which
+		-- resolves differently) yet silently target the WRONG account,
+		-- while the right-click submenu (which already iterates every
+		-- account) invited correctly (reported live: a TBC friend's quick-
+		-- invite button did nothing, but right-click Invite worked fine).
+		if not playerFaction then FG_InitFactionIcon() end
+		local playerRegionID=SocialPlus_GetClientRegionID()
+		local accounts=SocialPlus_GetOnlineWoWGameAccounts(id)
+		for _,acct in ipairs(accounts) do
+			local factionMismatch=acct.factionName and playerFaction and acct.factionName~=playerFaction
+			local projectMismatch=WOW_PROJECT_ID and acct.wowProjectID and acct.wowProjectID~=WOW_PROJECT_ID
+			local regionMismatch=acct.regionID and playerRegionID and acct.regionID~=playerRegionID
+			local coopBlocked=acct.gameAccountID and CanCooperateWithGameAccount
+				and CanCooperateWithGameAccount(acct.gameAccountID)==false
+			if not (factionMismatch or projectMismatch or regionMismatch or coopBlocked) then
+				local target=acct.characterName
+				if acct.realmName and acct.realmName~="" then
+					target=target.."-"..acct.realmName
 				end
 				if C_PartyInfo and C_PartyInfo.InviteUnit then
 					pcall(C_PartyInfo.InviteUnit,target)
 					return true
 				end
+				break
 			end
 		end
 
@@ -1584,35 +1628,6 @@ local function SocialPlus_PerformInvite(kind,id)
 	end
 
 	return false,L.INVITE_GENERIC_FAIL
-end
-
--- A single BattleTag can have multiple WoW licenses online at the same
--- time (already established for the faction-preference fix). Returns one
--- entry per currently-online WoW game account linked to this BNet friend
--- (friend-list index), so the invite menu can offer a choice instead of
--- silently inviting whichever one gets picked automatically.
-local function SocialPlus_GetOnlineWoWGameAccounts(bnetIndex)
-	local accounts={}
-	if not (C_BattleNet and C_BattleNet.GetFriendNumGameAccounts and C_BattleNet.GetFriendGameAccountInfo) then
-		return accounts
-	end
-	local num=C_BattleNet.GetFriendNumGameAccounts(bnetIndex) or 0
-	for gaIndex=1,num do
-		local ga=C_BattleNet.GetFriendGameAccountInfo(bnetIndex,gaIndex)
-		if ga and ga.isOnline and ga.clientProgram==BNET_CLIENT_WOW and ga.characterName and ga.characterName~="" then
-			table.insert(accounts,{
-				characterName=ga.characterName,
-				realmName=ga.realmName,
-				className=ga.className,
-				level=ga.characterLevel,
-				wowProjectID=ga.wowProjectID,
-				factionName=ga.factionName,
-				regionID=ga.regionID,
-				gameAccountID=ga.gameAccountID,
-			})
-		end
-	end
-	return accounts
 end
 
 function SocialPlus_PerformInviteFromButton(button)
@@ -3805,7 +3820,7 @@ SocialPlus_ApplyGroupOrder()
 		-- highlight loop's own identity check never runs for them this
 		-- pass), and their stored raw id can go stale if Blizzard reindexed
 		-- its list in the meantime.
-		local resolvedType,resolvedID=SocialPlus_SelectedRow.buttonType,SocialPlus_SelectedRow.id
+		local resolvedType,resolvedID=nil,nil
 		if SocialPlus_SelectedRow.identityKey then
 			for i=1,FriendButtons.count do
 				local bt=FriendButtons[i].buttonType
@@ -3815,21 +3830,37 @@ SocialPlus_ApplyGroupOrder()
 					break
 				end
 			end
+		else
+			resolvedType,resolvedID=SocialPlus_SelectedRow.buttonType,SocialPlus_SelectedRow.id
 		end
-		-- Self-heal our own stored index so it doesn't keep drifting from a
-		-- stale base on the next pass.
-		SocialPlus_SelectedRow.buttonType=resolvedType
-		SocialPlus_SelectedRow.id=resolvedID
-		-- CRITICAL: Send Message's actual click still runs Blizzard's own
-		-- FriendsFrameSendMessageButton_OnClick, which reads THESE fields,
-		-- not ours -- leaving them stale after the initial click meant the
-		-- button looked right (correct enabled state, correct highlighted
-		-- row) but fired on whoever the stale raw index now belonged to
-		-- after a reindex, not the friend actually highlighted (reported
-		-- live: highlighted "aymixe", message went to "breakdownx").
-		FriendsFrame.selectedFriendType=resolvedType
-		FriendsFrame.selectedFriend=resolvedID
-		FriendsFrameSendMessageButton:SetEnabled(FriendsList_CanWhisperFriend(resolvedType,resolvedID))
+
+		if not resolvedType then
+			-- The selected friend is GONE, not just reindexed -- they were
+			-- removed from the friends list entirely, so no row anywhere
+			-- matches their identity. Falling back to the stale stored
+			-- id/type here handed Blizzard's own FriendsList_CanWhisperFriend
+			-- a dangling index it couldn't resolve, hard-crashing it
+			-- (reported live: "attempt to index local 'info' (a nil value)"
+			-- right after removing a friend who'd been selected). Clear the
+			-- selection outright instead.
+			SocialPlus_SelectedRow=nil
+			FriendsFrameSendMessageButton:Disable()
+		else
+			-- Self-heal our own stored index so it doesn't keep drifting
+			-- from a stale base on the next pass.
+			SocialPlus_SelectedRow.buttonType=resolvedType
+			SocialPlus_SelectedRow.id=resolvedID
+			-- CRITICAL: Send Message's actual click still runs Blizzard's own
+			-- FriendsFrameSendMessageButton_OnClick, which reads THESE fields,
+			-- not ours -- leaving them stale after the initial click meant the
+			-- button looked right (correct enabled state, correct highlighted
+			-- row) but fired on whoever the stale raw index now belonged to
+			-- after a reindex, not the friend actually highlighted (reported
+			-- live: highlighted "aymixe", message went to "breakdownx").
+			FriendsFrame.selectedFriendType=resolvedType
+			FriendsFrame.selectedFriend=resolvedID
+			FriendsFrameSendMessageButton:SetEnabled(FriendsList_CanWhisperFriend(resolvedType,resolvedID))
+		end
 	else
 		FriendsFrameSendMessageButton:Disable()
 	end
@@ -6140,6 +6171,7 @@ local function SocialPlus_DoRemoveBNetFriend(data)
 	local bnIndex=data.bnIndex
 	local presenceID=data.presenceID
 	local accountID=data.accountID
+	local battleTag=data.battleTag
 
 	FG_Debug(
 		"BNET confirm remove",
@@ -6166,6 +6198,15 @@ local function SocialPlus_DoRemoveBNetFriend(data)
 	end
 
 	FG_Debug("BNET final remove result (confirm)",tostring(ok))
+
+	-- Same cleanup as the WOW-friend remove path -- favorite status is
+	-- stored independently of Blizzard's own friend record, keyed by
+	-- BattleTag, so it silently persisted across remove/re-add otherwise
+	-- (reported live).
+	if ok and battleTag and battleTag~="" and SocialPlus_SavedVars and SocialPlus_SavedVars.favorites then
+		SocialPlus_SavedVars.favorites["BNET:"..battleTag]=nil
+	end
+
 	pcall(SocialPlus_Update)
 end
 
@@ -6273,6 +6314,14 @@ function SocialPlus_RemoveCurrentFriend()
 			if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
 				DEFAULT_CHAT_FRAME:AddMessage("|cffffff00"..string.format(L.MSG_REMOVE_FRIEND_SUCCESS,full).."|r")
 			end
+			-- Favorite status is stored independently of Blizzard's own
+			-- friend record (SocialPlus_GetFavoriteKey, keyed by name, not
+			-- tied to their friend-list entry), so removing the friend
+			-- never cleared it on its own -- re-adding them later silently
+			-- brought the old favorite flag back (reported live).
+			if name and name~="" and SocialPlus_SavedVars and SocialPlus_SavedVars.favorites then
+				SocialPlus_SavedVars.favorites["WOW:"..name]=nil
+			end
 		end
 
 	elseif cf.buttonType==FRIENDS_BUTTON_TYPE_BNET then
@@ -6285,6 +6334,7 @@ function SocialPlus_RemoveCurrentFriend()
 		local presenceID=t[1]
 		local accountID=cf.accountID or t[1]
 		local bnetName=t[2] or cf.accountName or cf.rawName or UNKNOWN
+		local battleTag=t[3]
 
 		FG_Debug(
 			"BNET remove (prompt)",
@@ -6298,6 +6348,7 @@ function SocialPlus_RemoveCurrentFriend()
 			bnIndex=bnIndex,
 			presenceID=presenceID,
 			accountID=accountID,
+			battleTag=battleTag,
 		}
 
 		StaticPopup_Show("SOCIALPLUS_CONFIRM_REMOVE_BNET",bnetName,nil,dialogData)
