@@ -1593,6 +1593,8 @@ local function SocialPlus_GetOnlineWoWGameAccounts(bnetIndex)
 				level=ga.characterLevel,
 				wowProjectID=ga.wowProjectID,
 				factionName=ga.factionName,
+				regionID=ga.regionID,
+				gameAccountID=ga.gameAccountID,
 			})
 		end
 	end
@@ -2048,8 +2050,18 @@ end
 local function SocialPlus_GetBNetButtonNameText(accountName,client,canCoop,characterName,class,level,realmName)
 	local nameText
 
+	-- Class color, when known and enabled, applies to the WHOLE line --
+	-- the Battle.net name too, not just the "(CharacterName)" part -- so
+	-- "Color names by class" reads as one consistent color per friend
+	-- instead of a colored name tucked inside an unrelated-colored tag.
+	local classColor=(client==BNET_CLIENT_WOW) and SocialPlus_SavedVars.colour_classes and ClassColourCode(class)
+
 	if accountName and accountName~="" then
-		nameText=accountName
+		if classColor then
+			nameText=classColor..accountName..FONT_COLOR_CODE_CLOSE
+		else
+			nameText=accountName
+		end
 	else
 		nameText=UNKNOWN
 	end
@@ -2067,9 +2079,8 @@ local function SocialPlus_GetBNetButtonNameText(accountName,client,canCoop,chara
 		charLabel=charLabel..coopLabel
 
 		if client==BNET_CLIENT_WOW then
-			local nameColor=SocialPlus_SavedVars.colour_classes and ClassColourCode(class)
-			if nameColor then
-				nameText=nameText.." "..nameColor.."("..charLabel..")"..FONT_COLOR_CODE_CLOSE
+			if classColor then
+				nameText=nameText.." "..classColor.."("..charLabel..")"..FONT_COLOR_CODE_CLOSE
 			else
 				nameText=nameText.." ("..charLabel..")"
 			end
@@ -3176,10 +3187,12 @@ end
 				local battleTag=nil
 
 				-- Try to grab the real BattleTag from C_BattleNet if it exists
+				local friendRegionID=nil
 				if C_BattleNet and C_BattleNet.GetFriendAccountInfo then
 					local acct=C_BattleNet.GetFriendAccountInfo(i)
 					if acct then
 						battleTag=acct.battleTag or acct.accountName
+						friendRegionID=acct.gameAccountInfo and acct.gameAccountInfo.regionID
 					end
 				end
 
@@ -3223,7 +3236,17 @@ end
 				-- same WoW version as this client -- typing "sham" on TBC
 				-- shouldn't surface a Retail friend's Shaman just because
 				-- Blizzard still reports their class while offline/elsewhere.
-				local classMatches=isOnline and wowProjectID==WOW_PROJECT_ID and containsPlain(classNormalized,term)
+				-- Same-region required too (reported live: a same-version
+				-- friend in a different region -- EU vs NA -- still isn't
+				-- someone this player could actually play/group with, so
+				-- shouldn't surface on a class search either).
+				-- Call the accessor, not the bare module-local cache
+				-- variable of the same name (which may still be nil/
+				-- uncomputed the first time this runs) -- same pattern
+				-- every other region check in this file uses.
+				local myRegionID=SocialPlus_GetClientRegionID()
+				local sameRegion=(not friendRegionID) or (not myRegionID) or friendRegionID==myRegionID
+				local classMatches=isOnline and wowProjectID==WOW_PROJECT_ID and sameRegion and containsPlain(classNormalized,term)
 
 				if startsWith(normalized,term) or classMatches
 					or containsPlain(noteNormalized,term) or containsPlain(realNameNormalized,term) then
@@ -6150,6 +6173,7 @@ function SocialPlus_BuildInviteAccountSubmenu(level)
 	end
 
 	if not playerFaction then FG_InitFactionIcon() end
+	local playerRegionID=SocialPlus_GetClientRegionID()
 
 	local c=NORMAL_FONT_COLOR
 	local hex=string.format("|cff%02x%02x%02x",c.r*255,c.g*255,c.b*255)
@@ -6159,19 +6183,34 @@ function SocialPlus_BuildInviteAccountSubmenu(level)
 			target=target.."-"..acct.realmName
 		end
 
+		-- Class-colored, same as every other level/class detail string in
+		-- this addon (SocialPlus_BuildFriendDetailBlock etc.) -- this was
+		-- the one place still using plain text (reported live).
 		local details={}
 		if acct.level and acct.level~=0 then table.insert(details,tostring(acct.level)) end
-		if acct.className and acct.className~="" then table.insert(details,acct.className) end
+		if acct.className and acct.className~="" then
+			table.insert(details,ClassColourCode(acct.className)..acct.className.."|r")
+		end
 		local detailText=(#details>0) and (" ("..table.concat(details,", ")..")") or ""
 
-		-- Same eligibility signals used elsewhere (faction, project) --
-		-- simplified to this one candidate rather than the full
-		-- SocialPlus_GetInviteStatus chain, since that resolves against
-		-- whichever account GetFriendInfoById currently prefers, not
-		-- necessarily the specific one being listed here.
+		-- Same eligibility signals used elsewhere (faction, project,
+		-- region, canCoop) -- simplified to this one candidate rather than
+		-- the full SocialPlus_GetInviteStatus chain, since that resolves
+		-- against whichever account GetFriendInfoById currently prefers,
+		-- not necessarily the specific one being listed here. Region was
+		-- missing entirely (SocialPlus_GetOnlineWoWGameAccounts never
+		-- captured it) -- reported live: an EU account showed as
+		-- inviteable to an NA player. canCoop was also missing -- same
+		-- "this account can never group with you" catch-all the button
+		-- restriction trusts (SocialPlus_GetInviteStatus, "Trust
+		-- Blizzard's canCoop flag" below): explicitly false, not nil/
+		-- unknown, blocks.
 		local factionMismatch=acct.factionName and playerFaction and acct.factionName~=playerFaction
 		local projectMismatch=WOW_PROJECT_ID and acct.wowProjectID and acct.wowProjectID~=WOW_PROJECT_ID
-		local ineligible=factionMismatch or projectMismatch
+		local regionMismatch=acct.regionID and playerRegionID and acct.regionID~=playerRegionID
+		local coopBlocked=acct.gameAccountID and CanCooperateWithGameAccount
+			and CanCooperateWithGameAccount(acct.gameAccountID)==false
+		local ineligible=factionMismatch or projectMismatch or regionMismatch or coopBlocked
 
 		local info=LibDD:UIDropDownMenu_CreateInfo()
 		info.text="["..hex..target.."|r]"..detailText
@@ -6179,7 +6218,10 @@ function SocialPlus_BuildInviteAccountSubmenu(level)
 		info.disabled=ineligible
 		if ineligible then
 			info.tooltipTitle=target
-			info.tooltipText=factionMismatch and L.INVITE_REASON_OPPOSITE_FACTION or L.INVITE_REASON_WRONG_PROJECT
+			info.tooltipText=factionMismatch and L.INVITE_REASON_OPPOSITE_FACTION
+				or regionMismatch and L.INVITE_REASON_NO_REALM
+				or projectMismatch and L.INVITE_REASON_WRONG_PROJECT
+				or L.INVITE_GENERIC_FAIL
 		end
 		info.func=function()
 			if C_PartyInfo and C_PartyInfo.InviteUnit then

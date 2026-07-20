@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.5b
+
+- "Color names by class" now colors the whole Battle.net name line, not just the character name in parentheses.
+- The multi-license invite submenu now greys out accounts in a different region, or that otherwise can't group with you, same as the regular invite button — and the level/class text is class-colored.
+- Class-name search no longer surfaces same-version friends who are in a different region than you.
+
 ## 1.5a
 
 - New setting: "Play a sound with notifications" — reproduces Blizzard's own friend online/offline chime, on by default.
