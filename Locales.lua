@@ -58,6 +58,7 @@ L.GROUP_MUTE_NOTIFICATIONS = "Mute Notifications"
 -- Settings toggles
 ----------------------------------------------------------------
 L.SETTING_HIDE_OFFLINE       = "Hide offline friends"
+L.SETTING_SHOW_LEVEL         = "Display friends levels"
 L.SETTING_COLOR_NAMES        = "Color names by class"
 L.SETTING_PRIORITIZE_PREFIX  = "Show "
 L.SETTING_PRIORITIZE_SUFFIX  = " friends first"
@@ -160,6 +161,7 @@ if locale == "frFR" then
     -- Settings toggles (group submenu)
     ----------------------------------------------------------------
     L.SETTING_HIDE_OFFLINE       = "Masquer les amis hors ligne"
+    L.SETTING_SHOW_LEVEL         = "Afficher les niveaux des amis"
     L.SETTING_COLOR_NAMES        = "Colorer les noms selon la classe"
     L.SETTING_PRIORITIZE_PREFIX  = "Afficher les amis "
     L.SETTING_PRIORITIZE_SUFFIX  = " en premier"
@@ -257,6 +259,7 @@ elseif locale == "esES" or locale == "esMX" then
     -- Settings toggles (group submenu)
     ----------------------------------------------------------------
     L.SETTING_HIDE_OFFLINE       = "Ocultar amigos desconectados"
+    L.SETTING_SHOW_LEVEL         = "Mostrar los niveles de los amigos"
     L.SETTING_COLOR_NAMES        = "Colorear nombres según la clase"
     L.SETTING_PRIORITIZE_PREFIX  = "Mostrar primero los amigos de "
     L.SETTING_PRIORITIZE_SUFFIX  = ""

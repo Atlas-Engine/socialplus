@@ -87,6 +87,7 @@ local SocialPlus_IsRowInDraggedGroup
 local SocialPlus_CancelGroupDrag
 local SocialPlus_HardResetScrollRows
 local SocialPlus_ScheduleCollapseSettle
+local SocialPlus_GetVersionLabelText
 
 local CURRENT_DB_VERSION = 2
 
@@ -131,6 +132,9 @@ function SocialPlus_EnsureSavedVars()
     end
     if SocialPlus_SavedVars.colour_classes==nil then
         SocialPlus_SavedVars.colour_classes=true
+    end
+    if SocialPlus_SavedVars.show_level==nil then
+        SocialPlus_SavedVars.show_level=true
     end
     if type(SocialPlus_SavedVars.scrollSpeed)~="number" then
         SocialPlus_SavedVars.scrollSpeed=SCROLL_BASE
@@ -294,6 +298,16 @@ local SCROLL_BASE = 2.5
 
 -- Friend list state
 local FriendButtons={count=0}
+-- Tracked entirely ourselves, set ONLY inside our own row click handler --
+-- Blizzard's FriendsFrame.selectedFriendType/selectedFriend (and
+-- GetSelectedFriend()/BNGetSelectedFriend()) reflect client-side state
+-- that persists/gets set independent of any click in this session, and
+-- even hooking FriendsFrame_SelectFriend doesn't isolate a real user
+-- click from Blizzard's own internal calls into it (both tried, both
+-- reported live as still auto-highlighting/jumping between friends with
+-- no click). This is the only source of truth for "did the player
+-- actually pick this row."
+local SocialPlus_SelectedRow=nil
 local GroupCount=0
 local GroupTotal={}
 local GroupOnline={}
@@ -2080,14 +2094,23 @@ local function SocialPlus_GetBNetButtonNameText(accountName,client,canCoop,chara
 	-- instead of a colored name tucked inside an unrelated-colored tag.
 	local classColor=(client==BNET_CLIENT_WOW) and SocialPlus_SavedVars.colour_classes and ClassColourCode(class)
 
+	-- Level prefix ("L90"), left of the BattleTag -- LEVEL_ABBR was tried
+	-- first assuming it'd be Blizzard's own localized "L%d" global, but on
+	-- this client it's actually "Lvl %d" (reported live), not the compact
+	-- tag look wanted here, so "L" is hardcoded instead.
+	local levelPrefix=""
+	if client==BNET_CLIENT_WOW and SocialPlus_SavedVars.show_level and level and level~=0 then
+		levelPrefix=string.format("L%d",level).." "
+	end
+
 	if accountName and accountName~="" then
 		if classColor then
-			nameText=classColor..accountName..FONT_COLOR_CODE_CLOSE
+			nameText=levelPrefix..classColor..accountName..FONT_COLOR_CODE_CLOSE
 		else
-			nameText=accountName
+			nameText=levelPrefix..accountName
 		end
 	else
-		nameText=UNKNOWN
+		nameText=levelPrefix..UNKNOWN
 	end
 
 	if characterName and characterName~="" then
@@ -2434,6 +2457,18 @@ local function SocialPlus_UpdateFriendButton(button)
 				else
 					infoText=mobile and LOCATION_MOBILE_APP or zoneName
 				end
+			elseif client==BNET_CLIENT_WOW then
+				-- Different WoW version than ours -- Blizzard's own game
+				-- icon is the same generic WoW logo for every expansion
+				-- (FG_GetClientTextureSafe/SOCIALPLUS_GAME_ICONS below key
+				-- only by client, not by wowProjectID -- Blizzard doesn't
+				-- expose separate per-expansion icons here), and gameText
+				-- is just "World of Warcraft" with no version detail, so
+				-- there was no way to tell a TBC friend from a Retail one
+				-- at a glance (reported live). Same version label already
+				-- used in notifications (SocialPlus_BuildFriendDetailBlock)
+				-- shown here instead.
+				infoText=SocialPlus_GetVersionLabelText(wowProjectID)
 			else
 				infoText=gameText
 			end
@@ -2494,9 +2529,13 @@ local function SocialPlus_UpdateFriendButton(button)
         button.travelPassButton.fgInviteAllowed=allowed
         button.travelPassButton.fgInviteReason=reason
 
-        -- Icon fading: ONLY un-inviteable WoW/faction icons fade
-        -- (Never fade non-WoW client icons.)
-        local fadeWowIcon=(client==BNET_CLIENT_WOW and not allowed)
+        -- Icon fading: ONLY un-inviteable WoW icons fade (never non-WoW
+        -- client icons). Opposite-faction friends are excluded on request --
+        -- their Horde/Alliance crest (set above) stays full-strength instead
+        -- of fading along with genuinely blocked cases (region, project,
+        -- coop), since the crest itself already communicates the faction
+        -- mismatch without needing to look dimmed too.
+        local fadeWowIcon=(client==BNET_CLIENT_WOW and not allowed and restriction~=INVITE_RESTRICTION_FACTION)
         button.SocialPlusIconAlpha=fadeWowIcon and 0.4 or 1
 		-- Show invite button	
 			hasTravelPassButton=true
@@ -2720,8 +2759,19 @@ local function SocialPlus_UpdateFriendButton(button)
         button.travelPassButton:Hide()
     end
 
-    if FriendsFrame.selectedFriendType==FriendButtons[index].buttonType
-        and FriendsFrame.selectedFriend==FriendButtons[index].id then
+    -- Match by stable identity (BattleTag/GUID) when available, same as
+    -- the tooltip fix -- the raw id/buttonType pair alone can drift to a
+    -- different friend if Blizzard reorders its list while someone's
+    -- selected. Falls back to the raw pair only if an identity key
+    -- couldn't be resolved for either side.
+    local rowIdentity=SocialPlus_GetRowIdentityKey(FriendButtons[index].buttonType,FriendButtons[index].id)
+    local isSelectedRow=SocialPlus_SelectedRow and (
+        (SocialPlus_SelectedRow.identityKey and rowIdentity and SocialPlus_SelectedRow.identityKey==rowIdentity)
+        or (not SocialPlus_SelectedRow.identityKey
+            and SocialPlus_SelectedRow.buttonType==FriendButtons[index].buttonType
+            and SocialPlus_SelectedRow.id==FriendButtons[index].id)
+    )
+    if isSelectedRow then
         button:LockHighlight()
     else
         button:UnlockHighlight()
@@ -3725,22 +3775,46 @@ SocialPlus_ApplyGroupOrder()
     FriendsScrollFrame.totalFriendListEntriesHeight=finalHeight
     FriendsScrollFrame.numFriendListEntries=FriendButtons.count
 
-	local selectedFriend=0
-	if numBNetTotal+numWoWTotal>0 then
-		if FriendsFrame.selectedFriendType==FRIENDS_BUTTON_TYPE_WOW then
-			selectedFriend=FG_GetSelectedFriend()
-		elseif FriendsFrame.selectedFriendType==FRIENDS_BUTTON_TYPE_BNET then
-			selectedFriend=FG_BNGetSelectedFriend()
+	-- Driven entirely by SocialPlus_SelectedRow (see declaration above),
+	-- not Blizzard's own FriendsFrame.selectedFriend/GetSelectedFriend() --
+	-- those reflect client-side state that isn't limited to real clicks in
+	-- this session, and every attempt to force-select or gate on Blizzard's
+	-- own selection machinery still ended up highlighting (or later
+	-- jumping between) friends nobody clicked (reported live, repeatedly).
+	if SocialPlus_SelectedRow then
+		-- Re-resolve the CURRENT raw index by identity before using it --
+		-- the selected friend may be scrolled off-screen (so the per-row
+		-- highlight loop's own identity check never runs for them this
+		-- pass), and their stored raw id can go stale if Blizzard reindexed
+		-- its list in the meantime.
+		local resolvedType,resolvedID=SocialPlus_SelectedRow.buttonType,SocialPlus_SelectedRow.id
+		if SocialPlus_SelectedRow.identityKey then
+			for i=1,FriendButtons.count do
+				local bt=FriendButtons[i].buttonType
+				if (bt==FRIENDS_BUTTON_TYPE_WOW or bt==FRIENDS_BUTTON_TYPE_BNET)
+					and SocialPlus_GetRowIdentityKey(bt,FriendButtons[i].id)==SocialPlus_SelectedRow.identityKey then
+					resolvedType,resolvedID=bt,FriendButtons[i].id
+					break
+				end
+			end
 		end
-		if not selectedFriend or selectedFriend==0 then
-			FriendsFrame_SelectFriend(FriendButtons[1].buttonType,1)
-			selectedFriend=1
-		end
-		FriendsFrameSendMessageButton:SetEnabled(FriendsList_CanWhisperFriend(FriendsFrame.selectedFriendType,selectedFriend))
+		-- Self-heal our own stored index so it doesn't keep drifting from a
+		-- stale base on the next pass.
+		SocialPlus_SelectedRow.buttonType=resolvedType
+		SocialPlus_SelectedRow.id=resolvedID
+		-- CRITICAL: Send Message's actual click still runs Blizzard's own
+		-- FriendsFrameSendMessageButton_OnClick, which reads THESE fields,
+		-- not ours -- leaving them stale after the initial click meant the
+		-- button looked right (correct enabled state, correct highlighted
+		-- row) but fired on whoever the stale raw index now belonged to
+		-- after a reindex, not the friend actually highlighted (reported
+		-- live: highlighted "aymixe", message went to "breakdownx").
+		FriendsFrame.selectedFriendType=resolvedType
+		FriendsFrame.selectedFriend=resolvedID
+		FriendsFrameSendMessageButton:SetEnabled(FriendsList_CanWhisperFriend(resolvedType,resolvedID))
 	else
 		FriendsFrameSendMessageButton:Disable()
 	end
-	FriendsFrame.selectedFriend=selectedFriend
 
 	local showRIDWarning=false
 	local numInvites2=FG_BNGetNumFriendInvites()
@@ -4357,7 +4431,7 @@ end
 -- a real project ID. Declared up here (rather than closer to the notification
 -- code that also uses it) so SocialPlus_CreateSettingsPanel below can use it
 -- too -- Lua locals are only visible after their declaration in the file.
-local function SocialPlus_GetVersionLabelText(wowProjectID)
+function SocialPlus_GetVersionLabelText(wowProjectID)
 	local labels={
 		[WOW_PROJECT_MAINLINE or -1]=L.WOW_VERSION_RETAIL,
 		[WOW_PROJECT_CLASSIC or -2]=L.WOW_VERSION_CLASSIC_ERA,
@@ -4524,8 +4598,17 @@ function SocialPlus_CreateSettingsPanel()
 		SocialPlus_Update()
 	end)
 
+	local showLevel=CreateFrame("CheckButton","SocialPlus_ShowLevelCheck",f,"UICheckButtonTemplate")
+	showLevel:SetPoint("TOPLEFT",hideOffline,"BOTTOMLEFT",0,-6)
+	_G[showLevel:GetName().."Text"]:SetText(L.SETTING_SHOW_LEVEL)
+	showLevel:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.show_level)
+	showLevel:SetScript("OnClick",function()
+		SocialPlus_SavedVars.show_level=not SocialPlus_SavedVars.show_level
+		SocialPlus_Update()
+	end)
+
 	local colourNames=CreateFrame("CheckButton","SocialPlus_ColourNamesCheck",f,"UICheckButtonTemplate")
-	colourNames:SetPoint("TOPLEFT",hideOffline,"BOTTOMLEFT",0,-6)
+	colourNames:SetPoint("TOPLEFT",showLevel,"BOTTOMLEFT",0,-6)
 	_G[colourNames:GetName().."Text"]:SetText(L.SETTING_COLOR_NAMES)
 	colourNames:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.colour_classes)
 	colourNames:SetScript("OnClick",function()
@@ -4671,6 +4754,7 @@ function SocialPlus_CreateSettingsPanel()
 	-- Sync on show (no more icon profile dropdown)
 	f:SetScript("OnShow",function()
 		hideOffline:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.hide_offline)
+		showLevel:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.show_level)
 		colourNames:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.colour_classes)
 		prioritizeCurrent:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.prioritize_current_client)
 		notifyEnable:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.notifications and SocialPlus_SavedVars.notifications.enabled)
@@ -5475,6 +5559,7 @@ SocialPlus_FriendMenu.initialize=function(self,level)
 			-- BNet friends, so it covers both cases.
 			FriendsFrame.selectedFriendType=cf.buttonType
 			FriendsFrame.selectedFriend=index
+			SocialPlus_SelectedRow={buttonType=cf.buttonType,id=index,identityKey=SocialPlus_GetRowIdentityKey(cf.buttonType,index)}
 
 			FG_Debug("Whisper via FriendsFrameSendMessageButton_OnClick","buttonType="..tostring(cf.buttonType),"index="..tostring(index))
 
@@ -5646,6 +5731,11 @@ local function SocialPlus_OnClick(self,button)
 
 
 	if button~="RightButton" then
+		-- Our own record of "the player picked this row" -- see
+		-- SocialPlus_SelectedRow above.
+		if self.buttonType==FRIENDS_BUTTON_TYPE_WOW or self.buttonType==FRIENDS_BUTTON_TYPE_BNET then
+			SocialPlus_SelectedRow={buttonType=self.buttonType,id=self.id,identityKey=SocialPlus_GetRowIdentityKey(self.buttonType,self.id)}
+		end
 		if self.SocialPlus_OrigOnClick then
 			return self.SocialPlus_OrigOnClick(self,button)
 		end
@@ -6241,9 +6331,30 @@ function SocialPlus_BuildInviteAccountSubmenu(level)
 	if not playerFaction then FG_InitFactionIcon() end
 	local playerRegionID=SocialPlus_GetClientRegionID()
 
+	-- Group by WoW version with a header per group ("TBC", "MoP", ...) --
+	-- with several linked accounts online at once, nothing on the row
+	-- itself said which client each one was actually on (reported live:
+	-- couldn't tell a TBC character from a MoP one at a glance). Stable
+	-- sort keeps each version's accounts in their original relative order.
+	local sorted={}
+	for i,acct in ipairs(accounts) do sorted[i]=acct end
+	table.sort(sorted,function(a,b) return (a.wowProjectID or 0)<(b.wowProjectID or 0) end)
+
 	local c=NORMAL_FONT_COLOR
 	local hex=string.format("|cff%02x%02x%02x",c.r*255,c.g*255,c.b*255)
-	for _,acct in ipairs(accounts) do
+	local lastProjectID
+	for _,acct in ipairs(sorted) do
+		if acct.wowProjectID~=lastProjectID then
+			lastProjectID=acct.wowProjectID
+			local header=LibDD:UIDropDownMenu_CreateInfo()
+			header.text="["..SocialPlus_GetVersionLabelText(acct.wowProjectID).."]"
+			header.isTitle=true
+			header.notCheckable=true
+			header.disabled=true
+			header.justifyH="CENTER"
+			LibDD:UIDropDownMenu_AddButton(header,level)
+		end
+
 		local target=acct.characterName
 		if acct.realmName and acct.realmName~="" then
 			target=target.."-"..acct.realmName

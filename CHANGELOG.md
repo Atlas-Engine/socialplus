@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.6b
+
+- Battle.net friends on a different WoW version than you now show that version (TBC, MoP, Retail, etc.) where their zone would normally appear, instead of a generic "World of Warcraft" label.
+- The opposite-faction crest icon no longer fades along with genuinely blocked invites — it already shows the faction mismatch on its own.
+- New setting: "Display friends levels" — shows each Battle.net friend's level (e.g. "L63") to the left of their BattleTag, on by default.
+- The multi-license invite submenu now groups accounts under a header for their WoW version (e.g. "[TBC]").
+- Fixed a friend randomly appearing highlighted on opening the Friends List, sometimes even jumping to a different friend, without any click.
+- Fixed Send Message occasionally sending to the wrong friend after scrolling while someone was selected.
+
 ## 1.6a
 
 - Actually fixed the Settings panel version text not showing on real releases: the packager was substituting our own placeholder-check string along with the .toc, silently defeating it every time.
