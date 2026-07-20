@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.6c
+
+- Fixed clicking to select a friend sometimes showing a different friend's tooltip.
+
 ## 1.6b
 
 - Battle.net friends on a different WoW version than you now show that version (TBC, MoP, Retail, etc.) where their zone would normally appear, instead of a generic "World of Warcraft" label.

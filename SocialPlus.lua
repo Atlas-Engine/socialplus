@@ -5735,6 +5735,24 @@ local function SocialPlus_OnClick(self,button)
 		-- SocialPlus_SelectedRow above.
 		if self.buttonType==FRIENDS_BUTTON_TYPE_WOW or self.buttonType==FRIENDS_BUTTON_TYPE_BNET then
 			SocialPlus_SelectedRow={buttonType=self.buttonType,id=self.id,identityKey=SocialPlus_GetRowIdentityKey(self.buttonType,self.id)}
+
+			-- Selecting a friend triggers Blizzard's own list refresh, which
+			-- can reassign which physical row widget represents which
+			-- friend across the rebuild -- if the tooltip's owner widget
+			-- gets reused for someone else in that reshuffle, our resync
+			-- check (keyed on the tooltip still being anchored to a widget
+			-- that's actually still on screen) never gets a chance to catch
+			-- it, leaving stale content up (reported live: clicking to
+			-- select a friend showed a completely different friend's
+			-- tooltip). Clear it outright -- a real mouse move re-triggers
+			-- OnEnter and shows the correct one fresh.
+			if FriendsTooltip then
+				FriendsTooltip:Hide()
+				FriendsTooltip.button=nil
+				FriendsTooltip.SocialPlusShownType=nil
+				FriendsTooltip.SocialPlusShownID=nil
+				FriendsTooltip.SocialPlusShownKey=nil
+			end
 		end
 		if self.SocialPlus_OrigOnClick then
 			return self.SocialPlus_OrigOnClick(self,button)
