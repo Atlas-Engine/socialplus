@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.5a
+
+- New setting: "Play a sound with notifications" — reproduces Blizzard's own friend online/offline chime, on by default.
+- The Settings panel background is now solid instead of see-through, matching the same look as the right-click menus, and the notification checkboxes all line up at the same indent.
+- The Settings panel now shows the addon's version in the top-right corner, always matching what's actually installed.
+
 ## 1.4c
 
 - Much faster online/offline notifications: typically ~1 second after the client learns of the change (was up to ~5–8 seconds), still with flap protection so a character switch produces exactly one notification.

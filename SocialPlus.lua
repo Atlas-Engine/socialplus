@@ -155,6 +155,9 @@ function SocialPlus_EnsureSavedVars()
     if SocialPlus_SavedVars.notifications.same_version_only==nil then
         SocialPlus_SavedVars.notifications.same_version_only=false
     end
+    if SocialPlus_SavedVars.notifications.sound==nil then
+        SocialPlus_SavedVars.notifications.sound=true
+    end
     local notifyFirstRun=(type(SocialPlus_SavedVars.notifications.mutedGroups)~="table")
     SocialPlus_SavedVars.notifications.mutedGroups=notifyFirstRun and {} or SocialPlus_SavedVars.notifications.mutedGroups
     if notifyFirstRun then
@@ -4315,28 +4318,56 @@ function SocialPlus_CreateSettingsPanel()
 	-- List behavior doesn't rely on parentage either -- see the explicit
 	-- FriendsFrame:HookScript("OnHide", ...) further down.
 	local f=CreateFrame("Frame","SocialPlus_SettingsPanel",UIParent,"BackdropTemplate")
-	-- Slightly larger box to fit icon preset controls
-	f:SetSize(350,354)
+	-- Slightly larger box to fit icon preset controls (+26 for the new
+	-- "play sound" notification checkbox)
+	f:SetSize(350,380)
 
 	-- Right side of Friends frame
 	f:SetPoint("TOPLEFT",FriendsFrame,"TOPRIGHT",8,-24)
 
-	-- Same backdrop shape LibUIDropDownMenu uses for its "MENU" display
-	-- mode (see Libs\LibUIDropDownMenu\LibUIDropDownMenu.lua's
-	-- BACKDROP_TOOLTIP_16_16_5555) -- matching the group-header cogwheel
-	-- menu's appearance exactly, since that's the reference look requested.
+	-- Reported live: a single tooltip-style backdrop reads as too
+	-- transparent even at near-opaque alpha, compared to our own
+	-- right-click menus. Traced it to LibUIDropDownMenu's "MENU" display
+	-- mode actually layering TWO backdrops (Libs\LibUIDropDownMenu\
+	-- LibUIDropDownMenu.lua, creatre_DropDownList): a dark dialog-box
+	-- background underneath (BACKDROP_DIALOG_DARK), with the tooltip-tint
+	-- backdrop on top of THAT -- not the tooltip backdrop alone. Replicate
+	-- both layers, in the same order, for a visually identical result.
 	f:SetBackdrop({
+		bgFile="Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
+		edgeFile="Interface\\DialogFrame\\UI-DialogBox-Border",
+		tile=true,tileEdge=true,tileSize=32,edgeSize=32,
+		insets={left=11,right=12,top=12,bottom=11}
+	})
+	f:SetBackdropColor(0,0,0,1)
+	f:SetBackdropBorderColor(1,1,1,1)
+
+	-- Second layer: the tooltip-tint backdrop this panel had on its own
+	-- before, now on top of the dark dialog background instead of replacing
+	-- it -- same BACKDROP_TOOLTIP_16_16_5555 shape/insets as the library.
+	local fTint=CreateFrame("Frame",nil,f,"BackdropTemplate")
+	fTint:SetAllPoints()
+	-- CRITICAL: a new child FRAME defaults to one level above its parent,
+	-- which put fTint's whole backdrop (even its BACKGROUND-layer texture)
+	-- above everything f owns DIRECTLY as FontStrings -- title, version
+	-- text, the "Notifications" header, the scroll-speed label/description
+	-- -- since those live at f's own level, not a child frame's level.
+	-- (The checkboxes were unaffected only because they're separate child
+	-- frames created AFTER fTint, so they already sit above it too.)
+	-- Pinning fTint to f's own level restores normal same-level draw-layer
+	-- ordering (BACKGROUND behind OVERLAY), so it sits behind ALL of f's
+	-- content as originally intended (reported live: several labels read
+	-- as washed out/barely visible -- this was the actual cause, not their
+	-- text color).
+	fTint:SetFrameLevel(f:GetFrameLevel())
+	fTint:SetBackdrop({
 		bgFile="Interface\\Tooltips\\UI-Tooltip-Background",
 		edgeFile="Interface\\Tooltips\\UI-Tooltip-Border",
 		tile=true,tileEdge=true,tileSize=16,edgeSize=16,
 		insets={left=5,right=5,top=5,bottom=5}
 	})
-
-	-- Blizzard's own tooltip colors, set with no alpha argument (defaults
-	-- to fully opaque) -- exactly how LibUIDropDownMenu colors its "MENU"
-	-- backdrop, which is what looked solid/non-transparent by comparison.
-	f:SetBackdropColor(TOOLTIP_DEFAULT_BACKGROUND_COLOR.r,TOOLTIP_DEFAULT_BACKGROUND_COLOR.g,TOOLTIP_DEFAULT_BACKGROUND_COLOR.b)
-	f:SetBackdropBorderColor(TOOLTIP_DEFAULT_COLOR.r,TOOLTIP_DEFAULT_COLOR.g,TOOLTIP_DEFAULT_COLOR.b)
+	fTint:SetBackdropColor(TOOLTIP_DEFAULT_BACKGROUND_COLOR.r,TOOLTIP_DEFAULT_BACKGROUND_COLOR.g,TOOLTIP_DEFAULT_BACKGROUND_COLOR.b)
+	fTint:SetBackdropBorderColor(TOOLTIP_DEFAULT_COLOR.r,TOOLTIP_DEFAULT_COLOR.g,TOOLTIP_DEFAULT_COLOR.b)
 
 	f:EnableMouse(true)
 	f:SetToplevel(true)
@@ -4354,6 +4385,7 @@ function SocialPlus_CreateSettingsPanel()
 	f:SetScript("OnKeyDown",function(self,key)
 		if key=="ESCAPE" then
 			self:SetPropagateKeyboardInput(false)
+			SocialPlus_PlayMenuCloseSound()
 			self:Hide()
 		else
 			self:SetPropagateKeyboardInput(true)
@@ -4370,8 +4402,43 @@ function SocialPlus_CreateSettingsPanel()
 	local close=CreateFrame("Button","SocialPlus_SettingsCloseButton",f,"UIPanelCloseButton")
 	close:SetPoint("TOPRIGHT",f,"TOPRIGHT",0,0)
 	close:SetScript("OnClick",function()
+		SocialPlus_PlayMenuCloseSound()
 		f:Hide()
 	end)
+
+	-- Version, read from the .toc at load time so it always matches
+	-- whatever's actually packaged (the packager substitutes
+	-- "@project-version@" with the real release tag) -- never hardcoded,
+	-- so this can't drift out of date on a new release. Right-aligned on
+	-- the same axis as the title, just left of the close button.
+	-- Try the modern C_AddOns namespace first -- this client's version of
+	-- GetAddOnMetadata may be a no-op/absent global (confirmed pattern
+	-- elsewhere in this file for other moved/renamed APIs), in which case
+	-- the old "GetAddOnMetadata and GetAddOnMetadata(...)" guard silently
+	-- skips with no error, exactly matching the text just not appearing.
+	local addonVersion
+	if C_AddOns and C_AddOns.GetAddOnMetadata then
+		addonVersion=C_AddOns.GetAddOnMetadata(ADDON_NAME,"Version")
+	elseif GetAddOnMetadata then
+		addonVersion=GetAddOnMetadata(ADDON_NAME,"Version")
+	end
+	if addonVersion and addonVersion~="" and addonVersion~="@project-version@" then
+		-- GameFontDisableSmall (WoW's "grayed out" style) carries its own
+		-- dim alpha baked into the font object itself -- SetTextColor's RGB
+		-- was correct but that baked-in alpha kept it faded regardless
+		-- (reported live: still washed out even at full gold RGB).
+		-- GameFontNormalSmall has no such override, so our color actually
+		-- shows at full strength.
+		f.versionText=f:CreateFontString(nil,"OVERLAY","GameFontNormalSmall")
+		-- Anchored to the panel's own TOPRIGHT (same y as the title, -10)
+		-- rather than relative to the close button's center -- that anchor
+		-- put it too high and left too much of a gap next to the X
+		-- (reported live).
+		f.versionText:SetPoint("TOPRIGHT",f,"TOPRIGHT",-30,-10)
+		f.versionText:SetJustifyH("RIGHT")
+		f.versionText:SetText("v"..addonVersion)
+		f.versionText:SetTextColor(1,0.82,0,1)
+	end
 
 	-- Checkboxes
 	local hideOffline=CreateFrame("CheckButton","SocialPlus_HideOfflineCheck",f,"UICheckButtonTemplate")
@@ -4425,11 +4492,23 @@ function SocialPlus_CreateSettingsPanel()
 	notifyEnable:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.notifications and SocialPlus_SavedVars.notifications.enabled)
 
 	local notifyOffline=CreateFrame("CheckButton","SocialPlus_NotifyOfflineCheck",f,"UICheckButtonTemplate")
-	notifyOffline:SetPoint("TOPLEFT",notifyEnable,"BOTTOMLEFT",16,-6)
+	notifyOffline:SetPoint("TOPLEFT",notifyEnable,"BOTTOMLEFT",0,-6)
 	_G[notifyOffline:GetName().."Text"]:SetText(L.SETTING_NOTIFY_OFFLINE)
 	notifyOffline:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.notifications and SocialPlus_SavedVars.notifications.offline_too)
 	notifyOffline:SetScript("OnClick",function()
 		SocialPlus_SavedVars.notifications.offline_too=not SocialPlus_SavedVars.notifications.offline_too
+	end)
+
+	-- Reproduces Blizzard's own friend online/offline chime
+	-- (SOUNDKIT.UI_BNET_TOAST), which this addon's chat-message
+	-- notification doesn't otherwise come with -- the toast CVars this
+	-- addon flips off only silence Blizzard's visual popup, not this.
+	local notifySound=CreateFrame("CheckButton","SocialPlus_NotifySoundCheck",f,"UICheckButtonTemplate")
+	notifySound:SetPoint("TOPLEFT",notifyOffline,"BOTTOMLEFT",0,-6)
+	_G[notifySound:GetName().."Text"]:SetText(L.SETTING_NOTIFY_SOUND)
+	notifySound:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.notifications and SocialPlus_SavedVars.notifications.sound)
+	notifySound:SetScript("OnClick",function()
+		SocialPlus_SavedVars.notifications.sound=not SocialPlus_SavedVars.notifications.sound
 	end)
 
 	-- Only notify friends on this exact WoW version -- labelled dynamically
@@ -4438,7 +4517,7 @@ function SocialPlus_CreateSettingsPanel()
 	-- this is an opt-in filter for people who specifically don't want
 	-- cross-version noise.
 	local notifySameVersion=CreateFrame("CheckButton","SocialPlus_NotifySameVersionCheck",f,"UICheckButtonTemplate")
-	notifySameVersion:SetPoint("TOPLEFT",notifyOffline,"BOTTOMLEFT",0,-6)
+	notifySameVersion:SetPoint("TOPLEFT",notifySound,"BOTTOMLEFT",0,-6)
 	_G[notifySameVersion:GetName().."Text"]:SetText(
 		L.SETTING_NOTIFY_SAME_VERSION_PREFIX..currentVersionLabel..L.SETTING_NOTIFY_SAME_VERSION_SUFFIX)
 	notifySameVersion:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.notifications and SocialPlus_SavedVars.notifications.same_version_only)
@@ -4452,7 +4531,7 @@ function SocialPlus_CreateSettingsPanel()
 	-- re-enabling the parent restores exactly what the user had before.
 	local function SocialPlus_UpdateNotifyChildState()
 		local enabled=SocialPlus_SavedVars and SocialPlus_SavedVars.notifications and SocialPlus_SavedVars.notifications.enabled
-		for _,child in ipairs({notifyOffline,notifySameVersion}) do
+		for _,child in ipairs({notifyOffline,notifySameVersion,notifySound}) do
 			if enabled then
 				child:Enable()
 				_G[child:GetName().."Text"]:SetTextColor(NORMAL_FONT_COLOR:GetRGB())
@@ -4523,6 +4602,7 @@ function SocialPlus_CreateSettingsPanel()
 		notifyEnable:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.notifications and SocialPlus_SavedVars.notifications.enabled)
 		notifyOffline:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.notifications and SocialPlus_SavedVars.notifications.offline_too)
 		notifySameVersion:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.notifications and SocialPlus_SavedVars.notifications.same_version_only)
+		notifySound:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.notifications and SocialPlus_SavedVars.notifications.sound)
 		SocialPlus_UpdateNotifyChildState()
 
 		local svSpeed=SocialPlus_SavedVars and SocialPlus_SavedVars.scrollSpeed or SCROLL_BASE
@@ -6365,6 +6445,20 @@ end
 local function SocialPlus_PrintNotification(text)
 	if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
 		DEFAULT_CHAT_FRAME:AddMessage(text)
+	end
+	-- Blizzard's own friend online/offline chime -- SOUNDKIT.UI_BNET_TOAST
+	-- (sound kit 18019, same ID across Vanilla/TBC/Wrath's FrameXML source,
+	-- so it's not version-specific). Not gated behind the toast CVars this
+	-- addon already flips off (SocialPlus_ApplyToastCVars) -- those only
+	-- suppress Blizzard's visual toast, not this sound, so playing it here
+	-- reproduces what the default chat message is normally paired with,
+	-- independent of the (disabled) toast popup.
+	if SocialPlus_SavedVars and SocialPlus_SavedVars.notifications and SocialPlus_SavedVars.notifications.sound then
+		if SOUNDKIT and SOUNDKIT.UI_BNET_TOAST then
+			PlaySound(SOUNDKIT.UI_BNET_TOAST)
+		else
+			PlaySound(18019)
+		end
 	end
 end
 

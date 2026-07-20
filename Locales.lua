@@ -68,6 +68,7 @@ L.SETTING_NOTIFY_ENABLE      = "Notify when friends come online"
 L.SETTING_NOTIFY_OFFLINE     = "Notify when friends go offline"
 L.SETTING_NOTIFY_SAME_VERSION_PREFIX = "Only notify for "
 L.SETTING_NOTIFY_SAME_VERSION_SUFFIX = " friends"
+L.SETTING_NOTIFY_SOUND       = "Play a sound with notifications"
 
 ----------------------------------------------------------------
 -- Popup titles
@@ -169,6 +170,7 @@ if locale == "frFR" then
     L.SETTING_NOTIFY_OFFLINE     = "Notifier quand un ami se déconnecte"
     L.SETTING_NOTIFY_SAME_VERSION_PREFIX = "Notifier uniquement pour les amis "
     L.SETTING_NOTIFY_SAME_VERSION_SUFFIX = ""
+    L.SETTING_NOTIFY_SOUND       = "Jouer un son avec les notifications"
 
     ----------------------------------------------------------------
     -- Popup titles
@@ -265,6 +267,7 @@ elseif locale == "esES" or locale == "esMX" then
     L.SETTING_NOTIFY_OFFLINE     = "Notificar cuando un amigo se desconecta"
     L.SETTING_NOTIFY_SAME_VERSION_PREFIX = "Notificar solo a los amigos de "
     L.SETTING_NOTIFY_SAME_VERSION_SUFFIX = ""
+    L.SETTING_NOTIFY_SOUND       = "Reproducir sonido con las notificaciones"
 
     ----------------------------------------------------------------
     -- Popup titles
