@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.5c
+
+- Fixed the Accept button on Battle.net friend requests sometimes not responding to clicks.
+
 ## 1.5b
 
 - "Color names by class" now colors the whole Battle.net name line, not just the character name in parentheses.

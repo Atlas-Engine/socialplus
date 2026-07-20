@@ -2665,6 +2665,15 @@ local function SocialPlus_UpdateFriendButton(button)
 		-- setting it is safe -- and needed, since Blizzard laid the frame
 		-- out for ITS list position, not ours.
 		invite:SetAllPoints(button)
+		-- Above button's own click surface (and its gear child, which sits
+		-- at button level+2) -- otherwise our row button, which every row
+		-- gets an OnClick handler on regardless of type, intercepts clicks
+		-- meant for invite.AcceptButton/DeclineButton since it fully
+		-- overlaps them and WoW hit-tests by topmost frame level, not by
+		-- which specific child widget is visually under the cursor
+		-- (reported live: friend saw the request but Accept did nothing
+		-- when clicked).
+		invite:SetFrameLevel(button:GetFrameLevel()+10)
 		invite:Show()
 		if inviteAccountName and invite.Name then
 			invite.Name:SetText(inviteAccountName)
