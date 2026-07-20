@@ -5,6 +5,8 @@
 - "Color names by class" now colors the whole Battle.net name line, not just the character name in parentheses.
 - The multi-license invite submenu now greys out accounts in a different region, or that otherwise can't group with you, same as the regular invite button — and the level/class text is class-colored.
 - Class-name search no longer surfaces same-version friends who are in a different region than you.
+- The Settings panel now lines up flush with the top of the Friends List panel.
+- Fixed a rare case where a friend's tooltip could briefly show a different friend's info while hovering the same row without moving the mouse.
 
 ## 1.5a
 

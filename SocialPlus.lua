@@ -292,7 +292,7 @@ local ONE_YEAR=12*ONE_MONTH
 -- Scroll speed base: slider value will be divided by this value to get the internal multiplier
 local SCROLL_BASE = 2.5
 
--- Friend list state	
+-- Friend list state
 local FriendButtons={count=0}
 local GroupCount=0
 local GroupTotal={}
@@ -1698,6 +1698,30 @@ function FG_GetFriendInfoByIndex(index)
 	return nil
 end
 
+-- Blizzard's friend-list index is positional, not a stable identity -- the
+-- SAME friend can shift from index 6 to index 15 (or anywhere else) if
+-- Blizzard reorders its internal list between two of our own refreshes,
+-- which happens more often now that online/offline rescans are faster
+-- (see afb1bff). Row-identity comparisons that trust the raw index (like
+-- deciding whether the tooltip still matches what's under the cursor) need
+-- something that survives that reorder instead -- BattleTag for BNet
+-- friends, character GUID for WoW friends (reported live: a tooltip
+-- briefly flashed a different friend's info while hovering the same row,
+-- with the row's own name never changing -- traced to this).
+local function SocialPlus_GetRowIdentityKey(buttonType,id)
+	if not id then return nil end
+	if buttonType==FRIENDS_BUTTON_TYPE_BNET then
+		if C_BattleNet and C_BattleNet.GetFriendAccountInfo then
+			local acct=C_BattleNet.GetFriendAccountInfo(id)
+			return acct and (acct.bnetAccountID or acct.battleTag)
+		end
+	elseif buttonType==FRIENDS_BUTTON_TYPE_WOW then
+		local info=FG_GetFriendInfoByIndex(id)
+		return info and (info.guid or info.name)
+	end
+	return nil
+end
+
 local function FG_GetSelectedFriend()
 	if C_FriendList and C_FriendList.GetSelectedFriend then
 		return C_FriendList.GetSelectedFriend()
@@ -2776,8 +2800,17 @@ local function SocialPlus_UpdateFriendButton(button)
 	-- scrolling while hovering rows, absent when scrolling via the bar
 	-- with nothing hovered.
 	if FriendsTooltip.button==button then
-		if FriendsTooltip.SocialPlusShownType~=button.buttonType
-			or FriendsTooltip.SocialPlusShownID~=button.id then
+		-- Compare by stable identity (BattleTag/GUID), not the raw
+		-- positional id/buttonType -- Blizzard can reorder its own
+		-- friend list between refreshes, which reassigns the same real
+		-- friend a different index without them actually being a
+		-- different person (see SocialPlus_GetRowIdentityKey). Trusting
+		-- the raw id here caused a live-observed bug: the tooltip briefly
+		-- flashed a different friend's info while hovering a row whose
+		-- own displayed name never changed.
+		local identityKey=SocialPlus_GetRowIdentityKey(button.buttonType,button.id)
+		if FriendsTooltip.SocialPlusShownKey~=identityKey then
+			FriendsTooltip.SocialPlusShownKey=identityKey
 			FriendsTooltip.SocialPlusShownType=button.buttonType
 			FriendsTooltip.SocialPlusShownID=button.id
 			if FriendsFrameTooltip_Show then
@@ -4346,7 +4379,7 @@ function SocialPlus_CreateSettingsPanel()
 	f:SetSize(350,380)
 
 	-- Right side of Friends frame
-	f:SetPoint("TOPLEFT",FriendsFrame,"TOPRIGHT",8,-24)
+	f:SetPoint("TOPLEFT",FriendsFrame,"TOPRIGHT",8,0)
 
 	-- Reported live: a single tooltip-style backdrop reads as too
 	-- transparent even at near-opaque alpha, compared to our own
@@ -4652,6 +4685,21 @@ function SocialPlus_CreateSettingsPanel()
 			-- so closing the panel (e.g. via Escape) doesn't automatically
 			-- close them, leaving an orphaned menu on screen. Close explicitly.
 			LibDD:CloseDropDownMenus()
+
+			-- Blizzard never hides FriendsTooltip just because the panel
+			-- closed, and WoW only fires OnEnter on actual mouse movement --
+			-- so reopening the panel with the cursor sitting still leaves the
+			-- stale tooltip from whoever was hovered before showing, even
+			-- though the row under the cursor may now be a different friend
+			-- (list order can change while the panel's closed) (reported
+			-- live). Clear it out on close so nothing stale can linger.
+			if FriendsTooltip then
+				FriendsTooltip:Hide()
+				FriendsTooltip.button=nil
+				FriendsTooltip.SocialPlusShownType=nil
+				FriendsTooltip.SocialPlusShownID=nil
+				FriendsTooltip.SocialPlusShownKey=nil
+			end
 
 			if SocialPlus_SettingsPanel then
 				SocialPlus_SettingsPanel:Hide()

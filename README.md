@@ -11,13 +11,14 @@ The Classic friends list is bare-bones, and cross-realm invites fail silently mo
 ## What you get
 
 ### 📌 Invites that actually work
-Consistent cross-realm invites. And when an invite genuinely isn't possible, SocialPlus tells you **why** — wrong region, faction, game version, or already in your group — instead of doing nothing.
+Consistent cross-realm invites. And when an invite genuinely isn't possible, SocialPlus tells you **why** — wrong region, faction, game version, or already in your group — instead of doing nothing. Friend playing on multiple linked WoW accounts under the same Battle.net? Pick exactly which one to invite from a submenu, with ineligible accounts greyed out and their level/class shown.
 
 ### 🔔 Notifications worth reading
 Forget "X has come online":
 - **Class-colored, clickable name** — one click opens a whisper, faction- and cross-realm-safe
 - See class, level, game version (Retail → MoP), faction icon, and region at a glance
 - Shows the friend's group — click it to open your friends panel already filtered
+- Optional notification sound, matching Blizzard's own friend online/offline chime
 - Mute noisy groups individually, or toggle master/offline notifications in settings
 
 ### 🗂️ Groups, your way
@@ -49,7 +50,7 @@ Class colors, faction crests, consistent game icons, a note indicator at a glanc
 English, French, and Spanish — follows your client automatically.
 
 ## Settings
-Cogwheel next to your Battle.net tag: hide offline friends, class colors, scroll speed, and full notification controls (master, offline lines, same-version only).
+Cogwheel next to your Battle.net tag: hide offline friends, class colors, scroll speed, and full notification controls (master, offline lines, same-version only, notification sound). Shows the installed version in the corner.
 
 > 💡 **Tip:** the default **General** group starts muted. Unmute it from its header if you want notifications for ungrouped friends too.
 
