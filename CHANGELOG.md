@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.7a
+
+- Friend level tags ("L90") now match the BattleTag's blue instead of the class color, for both Battle.net and in-game friends.
+- Fixed clicking a friend sometimes showing a completely different friend's tooltip instead of the one clicked.
+
 ## 1.6c
 
 - Fixed clicking to select a friend sometimes showing a different friend's tooltip.

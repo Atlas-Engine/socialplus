@@ -2097,10 +2097,16 @@ local function SocialPlus_GetBNetButtonNameText(accountName,client,canCoop,chara
 	-- Level prefix ("L90"), left of the BattleTag -- LEVEL_ABBR was tried
 	-- first assuming it'd be Blizzard's own localized "L%d" global, but on
 	-- this client it's actually "Lvl %d" (reported live), not the compact
-	-- tag look wanted here, so "L" is hardcoded instead.
+	-- tag look wanted here, so "L" is hardcoded instead. Colored to match
+	-- the BattleTag's own blue (FRIENDS_BNET_NAME_COLOR, read live so it
+	-- always matches Blizzard's actual color exactly), not the class color
+	-- -- kept as its own self-contained code (closed before the name
+	-- starts) so it stays outside whatever color wraps the rest of the line.
 	local levelPrefix=""
 	if client==BNET_CLIENT_WOW and SocialPlus_SavedVars.show_level and level and level~=0 then
-		levelPrefix=string.format("L%d",level).." "
+		local bnetHex=string.format("|cFF%02x%02x%02x",
+			FRIENDS_BNET_NAME_COLOR.r*255,FRIENDS_BNET_NAME_COLOR.g*255,FRIENDS_BNET_NAME_COLOR.b*255)
+		levelPrefix=bnetHex..string.format("L%d",level).."|r "
 	end
 
 	if accountName and accountName~="" then
@@ -2364,7 +2370,24 @@ local function SocialPlus_UpdateFriendButton(button)
 
 			nameColor=SocialPlus_SavedVars.colour_classes and ClassColourCode(info.className,true) or FRIENDS_WOW_NAME_COLOR
 
-			nameText=info.name..", "..format(FRIENDS_LEVEL_TEMPLATE,info.level,info.className)
+			-- "L90 Rannzz (Death Knight)" -- matches the BNet row format
+			-- (level prefix, name, class in parentheses) instead of
+			-- Blizzard's own "Name, Level 90 Death Knight" (reported live).
+			-- Name portion wrapped in an explicit color code covering the
+			-- whole rest of the string (not just relying on the
+			-- SetTextColor call below, which didn't reliably color the
+			-- prefix). Level prefix matches the BattleTag blue
+			-- (FRIENDS_BNET_NAME_COLOR) instead of the class color, same as
+			-- the BNet row, for a consistent look across both row types --
+			-- its own self-contained code, kept outside the name's color wrap.
+			local levelPrefix=""
+			if SocialPlus_SavedVars.show_level and info.level and info.level~=0 then
+				local bnetHex=string.format("|cFF%02x%02x%02x",
+					FRIENDS_BNET_NAME_COLOR.r*255,FRIENDS_BNET_NAME_COLOR.g*255,FRIENDS_BNET_NAME_COLOR.b*255)
+				levelPrefix=bnetHex..string.format("L%d",info.level).."|r "
+			end
+			local nameColorHex=string.format("|cFF%02x%02x%02x",nameColor.r*255,nameColor.g*255,nameColor.b*255)
+			nameText=levelPrefix..nameColorHex..info.name.." ("..info.className..")".."|r"
 
 			local wowAllowed,wowReason=SocialPlus_GetInviteStatus("WOW",FriendButtons[index].id)
 
@@ -2850,33 +2873,28 @@ local function SocialPlus_UpdateFriendButton(button)
 		button:Hide()
 	end
 
-	-- Tooltip handling: keep the tooltip in sync when rows scroll under a
-	-- stationary cursor -- but ONLY when the hovered button now shows a
-	-- different friend than the tooltip does. Re-showing unconditionally
-	-- on every render meant that scroll-wheeling with the cursor over the
-	-- list rebuilt the full tooltip (all its strings and friend-info
-	-- queries) once per render -- reported live as a memory climb when
-	-- scrolling while hovering rows, absent when scrolling via the bar
-	-- with nothing hovered.
+	-- Tooltip handling: if the widget currently holding the tooltip gets
+	-- reassigned to a different friend by a rebuild (list reorder, online/
+	-- offline rescan), we can't tell from here whether the mouse is even
+	-- still over that widget's current screen position -- a rebuild can
+	-- shift row order/heights out from under a stationary cursor. Trying
+	-- to re-show fresh content for "whoever this widget represents now"
+	-- repeatedly showed the WRONG friend's tooltip while the player hadn't
+	-- moved the mouse or clicked anything at all (reported live, multiple
+	-- times, different friend pairs each time). Hiding it instead is the
+	-- only way to guarantee nothing wrong ever displays -- a genuine mouse
+	-- movement re-triggers OnEnter and shows the correct one fresh.
 	if FriendsTooltip.button==button then
-		-- Compare by stable identity (BattleTag/GUID), not the raw
-		-- positional id/buttonType -- Blizzard can reorder its own
-		-- friend list between refreshes, which reassigns the same real
-		-- friend a different index without them actually being a
-		-- different person (see SocialPlus_GetRowIdentityKey). Trusting
-		-- the raw id here caused a live-observed bug: the tooltip briefly
-		-- flashed a different friend's info while hovering a row whose
-		-- own displayed name never changed.
 		local identityKey=SocialPlus_GetRowIdentityKey(button.buttonType,button.id)
-		if FriendsTooltip.SocialPlusShownKey~=identityKey then
-			FriendsTooltip.SocialPlusShownKey=identityKey
-			FriendsTooltip.SocialPlusShownType=button.buttonType
-			FriendsTooltip.SocialPlusShownID=button.id
-			if FriendsFrameTooltip_Show then
-				FriendsFrameTooltip_Show(button)
-			elseif button.OnEnter then
-				button:OnEnter()
-			end
+		-- A nil identityKey (lookup momentarily failed) must NOT be treated
+		-- as "unchanged": nil==nil would wrongly count as still matching.
+		local sameFriend=identityKey and FriendsTooltip.SocialPlusShownKey==identityKey
+		if not sameFriend then
+			FriendsTooltip:Hide()
+			FriendsTooltip.button=nil
+			FriendsTooltip.SocialPlusShownType=nil
+			FriendsTooltip.SocialPlusShownID=nil
+			FriendsTooltip.SocialPlusShownKey=nil
 		end
 	end
 
@@ -4803,6 +4821,11 @@ function SocialPlus_CreateSettingsPanel()
 				FriendsTooltip.SocialPlusShownKey=nil
 			end
 
+			-- Clear the highlighted friend on close too, so reopening the
+			-- panel starts fresh with nobody selected instead of whoever
+			-- was picked last time.
+			SocialPlus_SelectedRow=nil
+
 			if SocialPlus_SettingsPanel then
 				SocialPlus_SettingsPanel:Hide()
 			end
@@ -5733,31 +5756,40 @@ local function SocialPlus_OnClick(self,button)
 	if button~="RightButton" then
 		-- Our own record of "the player picked this row" -- see
 		-- SocialPlus_SelectedRow above.
-		if self.buttonType==FRIENDS_BUTTON_TYPE_WOW or self.buttonType==FRIENDS_BUTTON_TYPE_BNET then
+		local isFriendRow=self.buttonType==FRIENDS_BUTTON_TYPE_WOW or self.buttonType==FRIENDS_BUTTON_TYPE_BNET
+		if isFriendRow then
 			SocialPlus_SelectedRow={buttonType=self.buttonType,id=self.id,identityKey=SocialPlus_GetRowIdentityKey(self.buttonType,self.id)}
+		end
 
+		-- Let Blizzard's own click handler run FIRST -- it's what actually
+		-- updates FriendsFrame.selectedFriend/selectedFriendType, and
+		-- FriendsFrameTooltip_Show reads THAT internal state, not just the
+		-- `self` argument. Calling it before this ran meant the tooltip
+		-- was built from whoever was selected/shown PREVIOUSLY, not the
+		-- friend actually just clicked (reported live: clicked Owies, got
+		-- Ostionne's tooltip).
+		local origResult
+		if self.SocialPlus_OrigOnClick then
+			origResult=self.SocialPlus_OrigOnClick(self,button)
+		end
+
+		if isFriendRow and FriendsTooltip then
 			-- Selecting a friend triggers Blizzard's own list refresh, which
 			-- can reassign which physical row widget represents which
-			-- friend across the rebuild -- if the tooltip's owner widget
-			-- gets reused for someone else in that reshuffle, our resync
-			-- check (keyed on the tooltip still being anchored to a widget
-			-- that's actually still on screen) never gets a chance to catch
-			-- it, leaving stale content up (reported live: clicking to
-			-- select a friend showed a completely different friend's
-			-- tooltip). Clear it outright -- a real mouse move re-triggers
-			-- OnEnter and shows the correct one fresh.
-			if FriendsTooltip then
-				FriendsTooltip:Hide()
-				FriendsTooltip.button=nil
-				FriendsTooltip.SocialPlusShownType=nil
-				FriendsTooltip.SocialPlusShownID=nil
-				FriendsTooltip.SocialPlusShownKey=nil
+			-- friend across the rebuild -- leaving stale tooltip content up.
+			-- We know EXACTLY which widget was actually clicked (self,
+			-- right here, unambiguous -- you can't click a button without
+			-- hovering it), so force a fresh, correct show for it directly.
+			FriendsTooltip.button=self
+			FriendsTooltip.SocialPlusShownType=self.buttonType
+			FriendsTooltip.SocialPlusShownID=self.id
+			FriendsTooltip.SocialPlusShownKey=SocialPlus_SelectedRow and SocialPlus_SelectedRow.identityKey
+			if FriendsFrameTooltip_Show then
+				FriendsFrameTooltip_Show(self)
 			end
 		end
-		if self.SocialPlus_OrigOnClick then
-			return self.SocialPlus_OrigOnClick(self,button)
-		end
-		return
+
+		return origResult
 	end
 
 	-- Only open our context menu for recognised friend row types.
