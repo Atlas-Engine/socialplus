@@ -4487,7 +4487,16 @@ function SocialPlus_CreateSettingsPanel()
 	elseif GetAddOnMetadata then
 		addonVersion=GetAddOnMetadata(ADDON_NAME,"Version")
 	end
-	if addonVersion and addonVersion~="" and addonVersion~="@project-version@" then
+	-- Built from pieces, not the literal token: CurseForge's packager does
+	-- a plain-text find-and-replace of "@project-version@" across EVERY
+	-- packaged file, not just the .toc -- so writing the literal string
+	-- here got substituted too, turning this into "~=1.5c" on an actual
+	-- 1.5c release and silently skipping the whole block (confirmed live:
+	-- the .toc correctly showed "1.5c", GetAddOnMetadata correctly
+	-- returned "1.5c", yet the text never appeared -- this self-defeating
+	-- check was why).
+	local unpackagedToken="@".."project-version".."@"
+	if addonVersion and addonVersion~="" and addonVersion~=unpackagedToken then
 		-- GameFontDisableSmall (WoW's "grayed out" style) carries its own
 		-- dim alpha baked into the font object itself -- SetTextColor's RGB
 		-- was correct but that baked-in alpha kept it faded regardless

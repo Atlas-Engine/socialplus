@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.6a
+
+- Actually fixed the Settings panel version text not showing on real releases: the packager was substituting our own placeholder-check string along with the .toc, silently defeating it every time.
+
 ## 1.5c
 
 - Fixed the Accept button on Battle.net friend requests sometimes not responding to clicks.
