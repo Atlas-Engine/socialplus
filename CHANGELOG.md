@@ -9,7 +9,7 @@
 - Friend Requests now shows above Favorites instead of below it.
 - Fixed removing a friend from a group not actually working in some cases (and, separately, could silently drop their other group tags).
 - Fixed erasing a Battle.net friend's note not saving.
-- The invite icon no longer fades just because that friend is already in your party/raid.
+- The faction icon no longer fades just because that friend is already in your party/raid.
 - Tooltip position nudged so it doesn't overlap the scrollbar.
 
 ## 1.7a
