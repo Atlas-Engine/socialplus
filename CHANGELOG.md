@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.8c
+
+- Fixed the friend right-click menu's Whisper (and View Friends List) sometimes acting on a different friend than the one actually clicked, if the list reindexed while the menu was open (e.g. after scrolling).
+
 ## 1.8b
 
 - Fixed a newly created (or never drag-reordered) group's real header not showing when searching its exact name.

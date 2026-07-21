@@ -5811,11 +5811,11 @@ SocialPlus_FriendMenu.initialize=function(self,level)
 		end
 
 		info.func=function()
-			local cf=SocialPlus_CurrentFriend
-			if not cf or cf.buttonType~=FRIENDS_BUTTON_TYPE_BNET then return end
-
-			local index=cf.bnetIndex or cf.id
-			if not index or not BNGetFriendInfo then return end
+			-- Re-resolve by presenceID, same reasoning as every other item
+			-- here -- the raw index captured when the menu opened can go
+			-- stale if the list reindexes before this item is clicked.
+			local kind,index=SocialPlus_GetDropdownFriend()
+			if kind~="BNET" or not index or not BNGetFriendInfo then return end
 
 			-- MoP-style BNGetFriendInfo:
 			-- presenceID = t[1], bnetIDAccount = last value
@@ -5916,11 +5916,18 @@ SocialPlus_FriendMenu.initialize=function(self,level)
 		info.text=L.MENU_WHISPER
 		info.notCheckable=true
 		info.func=function()
-			local cf=SocialPlus_CurrentFriend
-			if not cf then return end
-
-			local index=cf.bnetIndex or cf.id
-			if not index then return end
+			-- Re-resolve by stable identity (BNet presenceID / WoW character
+			-- name), same as the Invite item above -- NOT the raw index
+			-- captured when the menu was opened. The friends list can
+			-- reindex between opening this menu and clicking an item in it
+			-- (e.g. a FriendsList_Update from scrolling, or someone else's
+			-- online status changing), which silently repoints a stale raw
+			-- index at a completely different friend (reported live: right-
+			-- clicking one friend and choosing Whisper messaged a different
+			-- one entirely).
+			local kind,id=SocialPlus_GetDropdownFriend()
+			if not kind or not id then return end
+			local resolvedType=(kind=="BNET") and FRIENDS_BUTTON_TYPE_BNET or FRIENDS_BUTTON_TYPE_WOW
 
 			-- Don't touch the chat edit box or its attributes ourselves -- that's
 			-- what was tainting the shared Menu system and blocking unrelated
@@ -5929,11 +5936,11 @@ SocialPlus_FriendMenu.initialize=function(self,level)
 			-- then let Blizzard's own button handler do all the actual work.
 			-- This is the same handler the default UI calls for both WoW and
 			-- BNet friends, so it covers both cases.
-			FriendsFrame.selectedFriendType=cf.buttonType
-			FriendsFrame.selectedFriend=index
-			SocialPlus_SelectedRow={buttonType=cf.buttonType,id=index,identityKey=SocialPlus_GetRowIdentityKey(cf.buttonType,index)}
+			FriendsFrame.selectedFriendType=resolvedType
+			FriendsFrame.selectedFriend=id
+			SocialPlus_SelectedRow={buttonType=resolvedType,id=id,identityKey=SocialPlus_GetRowIdentityKey(resolvedType,id)}
 
-			FG_Debug("Whisper via FriendsFrameSendMessageButton_OnClick","buttonType="..tostring(cf.buttonType),"index="..tostring(index))
+			FG_Debug("Whisper via FriendsFrameSendMessageButton_OnClick","buttonType="..tostring(resolvedType),"index="..tostring(id))
 
 			if FriendsFrameSendMessageButton_OnClick then
 				pcall(FriendsFrameSendMessageButton_OnClick,FriendsFrameSendMessageButton)
