@@ -4,7 +4,11 @@
 
 - Fixed the wrong faction icon showing on the friends-list row and invite button/menu for a friend with multiple WoW licenses online at once (was picking a different account than the one actually being shown/invited).
 - The multi-license invite submenu now shows a faction crest next to each name, and opposite-faction entries render fully gray.
-- Fixed the tooltip sometimes vanishing and not updating while hovering a friend.
+- Friends list tooltips are now fully custom-built instead of relying on Blizzard's own tooltip system, fixing several long-standing cases of showing the wrong friend or getting stuck.
+- Faster friend-list updates for large friend lists (400+): note/group parsing is now cached and only redone when a friend's note actually changes.
+- Friend Requests now shows above Favorites instead of below it.
+- Fixed removing a friend from a group not actually working in some cases (and, separately, could silently drop their other group tags).
+- Fixed erasing a Battle.net friend's note not saving.
 
 ## 1.7a
 

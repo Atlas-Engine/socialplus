@@ -88,6 +88,8 @@ local SocialPlus_CancelGroupDrag
 local SocialPlus_HardResetScrollRows
 local SocialPlus_ScheduleCollapseSettle
 local SocialPlus_GetVersionLabelText
+local SocialPlus_ShowRowTooltip
+local SocialPlus_HideRowTooltip
 
 local CURRENT_DB_VERSION = 2
 
@@ -298,6 +300,17 @@ local SCROLL_BASE = 2.5
 
 -- Friend list state
 local FriendButtons={count=0}
+-- Per-friend note-group parse cache, persistent across rebuilds -- keyed
+-- by a STABLE identity (BNet presenceID / WoW character name), never by
+-- list index (established repeatedly this session: Blizzard's positional
+-- index isn't stable across rebuilds, so caching by index could reuse a
+-- DIFFERENT friend's parsed groups after a reorder). NoteAndGroups
+-- (string-split + table build) ran for every friend on EVERY single
+-- rebuild regardless of whether their note actually changed -- on a large
+-- friend list (400+), reported live as a real cost. Skipped when the raw
+-- note string matches what's cached.
+local SocialPlus_BNetNoteCache={}
+local SocialPlus_WoWNoteCache={}
 -- Tracked entirely ourselves, set ONLY inside our own row click handler --
 -- Blizzard's FriendsFrame.selectedFriendType/selectedFriend (and
 -- GetSelectedFriend()/BNGetSelectedFriend()) reflect client-side state
@@ -733,14 +746,15 @@ local function SocialPlus_ApplyGroupOrder()
 		return a<b            -- fallback: alphabetical
 	end)
 
-	-- Favorites is always index 0 -- pinned above everything, including
-	-- Friend Requests -- and never enters the user-reorderable "others"
-	-- list, so it can't be dragged or persisted into groupOrder.
-	if hasFavorites then
-		table.insert(GroupSorted,SP_FAVORITES_GROUP)
-	end
+	-- Friend Requests is always index 0 -- pinned above everything,
+	-- including Favorites, on request -- and neither it nor Favorites ever
+	-- enters the user-reorderable "others" list, so neither can be dragged
+	-- or persisted into groupOrder.
 	if hasFriendReq then
 		table.insert(GroupSorted,FriendRequestString)
+	end
+	if hasFavorites then
+		table.insert(GroupSorted,SP_FAVORITES_GROUP)
 	end
 	for _,name in ipairs(others) do
 		table.insert(GroupSorted,name)
@@ -1867,6 +1881,14 @@ local function FG_SetBNetFriendNote(index,note)
 		return
 	end
 
+	-- REVERTED: passing nil for an empty note (instead of "") was a
+	-- speculative fix for a note-not-clearing report that turned out to
+	-- have a different cause (SocialPlus_ModifyGroupFromDropdown's own
+	-- group-tag bug, fixed separately). nil confirmed live to make
+	-- BNSetFriendNote silently no-op instead -- a friend whose note became
+	-- fully empty after removing their only group tag stayed stuck in
+	-- that group, while one with leftover free text (never hitting this
+	-- path) removed fine. Empty string is what actually works.
 	pcall(BNSetFriendNote,presenceID,note)
 end
 
@@ -2906,32 +2928,19 @@ local function SocialPlus_UpdateFriendButton(button)
 	end
 
 	-- Tooltip handling: check whether THIS row is the one the mouse is
-	-- actually over right now (GetMouseFocus()), rather than checking
-	-- whether it's the widget FriendsTooltip.button happens to still
-	-- reference. A rebuild (list reorder, online/offline rescan) can
-	-- reassign which widget-to-friend mapping sits under a stationary
-	-- cursor -- comparing against the STALE FriendsTooltip.button meant a
-	-- newly-reassigned widget that's genuinely under the mouse right now
-	-- never got its own chance to refresh, since the check only ever ran
-	-- for whichever OLD widget the tooltip used to belong to (reported
-	-- live: hovering a friend showed their tooltip, then it just vanished
-	-- with no further update -- the correct widget's own pass never
-	-- resynced it because this comparison was backwards). Checking "is the
-	-- cursor over ME" per-row instead means whichever widget is actually
-	-- hovered always gets evaluated on its own render pass, regardless of
-	-- what the tooltip was last attached to.
+	-- actually over right now (GetMouseFocus()) and, if our own custom
+	-- tooltip (see SocialPlus_ShowRowTooltip) isn't already showing THIS
+	-- friend's identity, refresh it. A rebuild (list reorder, online/
+	-- offline rescan) can reassign which widget-to-friend mapping sits
+	-- under a stationary cursor, so this is what keeps the tooltip in sync
+	-- without needing a real mouse movement.
 	if GetMouseFocus and GetMouseFocus()==button then
 		local identityKey=SocialPlus_GetRowIdentityKey(button.buttonType,button.id)
 		-- A nil identityKey (lookup momentarily failed) must NOT be treated
 		-- as "unchanged": nil==nil would wrongly count as still matching.
-		local sameFriend=identityKey and FriendsTooltip.SocialPlusShownKey==identityKey and FriendsTooltip:IsShown()
+		local sameFriend=identityKey and GameTooltip and GameTooltip.SocialPlusShownKey==identityKey and GameTooltip:IsShown()
 		if not sameFriend then
-			FriendsTooltip.SocialPlusShownKey=identityKey
-			FriendsTooltip.SocialPlusShownType=button.buttonType
-			FriendsTooltip.SocialPlusShownID=button.id
-			if FriendsFrameTooltip_Show then
-				FriendsFrameTooltip_Show(button)
-			end
+			SocialPlus_ShowRowTooltip(button)
 		end
 	end
 
@@ -3470,21 +3479,30 @@ end
 
 	-- BNet friends (all)
 	for i=1,numBNetTotal do
-		if not BnetSocialPlus[i] then
-			BnetSocialPlus[i]={}
-		end
-
 		-- Positional destructure instead of a {tuple} wrapper -- same
 		-- per-friend-per-rebuild allocation savings as
-		-- SocialPlus_GetBNetSortName (positions 8=isOnline, 13=note).
-		local _,_,_,_,_,_,_,isOnline,_,_,_,_,noteText=FG_BNGetFriendInfo(i)
+		-- SocialPlus_GetBNetSortName (positions 1=presenceID, 8=isOnline,
+		-- 13=note).
+		local presenceID,_,_,_,_,_,_,isOnline,_,_,_,_,noteText=FG_BNGetFriendInfo(i)
 		isOnline=isOnline and true or false
 
 		BNetOnlineStatus[i]=isOnline
 		-- Note/group membership is parsed and kept as-is regardless of
 		-- favorite status -- favoriting only changes where the friend
-		-- renders below, never their stored group assignment.
-		NoteAndGroups(noteText,BnetSocialPlus[i])
+		-- renders below, never their stored group assignment. Reuse the
+		-- cached parse when this friend's raw note hasn't changed since
+		-- last time (see SocialPlus_BNetNoteCache above) instead of
+		-- re-parsing every single rebuild.
+		local cached=presenceID and SocialPlus_BNetNoteCache[presenceID]
+		if cached and cached.rawNote==noteText then
+			BnetSocialPlus[i]=cached.groups
+		else
+			BnetSocialPlus[i]={}
+			NoteAndGroups(noteText,BnetSocialPlus[i])
+			if presenceID then
+				SocialPlus_BNetNoteCache[presenceID]={rawNote=noteText,groups=BnetSocialPlus[i]}
+			end
+		end
 
 		-- A favorited friend renders ONLY under the virtual Favorites
 		-- group, not also under their real group(s) -- move semantics,
@@ -3512,17 +3530,26 @@ end
 
 	-- WoW friends online
 	for i=1,numWoWOnline do
-		if not WowSocialPlus[i] then
-			WowSocialPlus[i]={}
-		end
 		local fi=FG_GetFriendInfoByIndex(i)
 		local note=fi and fi.notes
-		NoteAndGroups(note,WowSocialPlus[i])
-		-- Ungrouped native friends live in the In-game Friends bucket, not
-		-- General ("" is the ungrouped sentinel NoteAndGroups sets).
-		if WowSocialPlus[i][""] then
-			WowSocialPlus[i][""]=nil
-			WowSocialPlus[i][SP_INGAME_GROUP]=true
+		local wowName=fi and fi.name
+		-- Same cache-by-stable-identity approach as the BNet loop above --
+		-- character name, not list index.
+		local cached=wowName and SocialPlus_WoWNoteCache[wowName]
+		if cached and cached.rawNote==note then
+			WowSocialPlus[i]=cached.groups
+		else
+			WowSocialPlus[i]={}
+			NoteAndGroups(note,WowSocialPlus[i])
+			-- Ungrouped native friends live in the In-game Friends bucket,
+			-- not General ("" is the ungrouped sentinel NoteAndGroups sets).
+			if WowSocialPlus[i][""] then
+				WowSocialPlus[i][""]=nil
+				WowSocialPlus[i][SP_INGAME_GROUP]=true
+			end
+			if wowName then
+				SocialPlus_WoWNoteCache[wowName]={rawNote=note,groups=WowSocialPlus[i]}
+			end
 		end
 		if SocialPlus_IsFavorite(FRIENDS_BUTTON_TYPE_WOW,i) then
 			IncrementGroup(SP_FAVORITES_GROUP,true)
@@ -3544,16 +3571,23 @@ end
 	-- WoW friends offline
 	for i=1,numWoWOffline do
 		local j=i+numWoWOnline
-		if not WowSocialPlus[j] then
-			WowSocialPlus[j]={}
-		end
 		local fj=FG_GetFriendInfoByIndex(j)
 		local note=fj and fj.notes
-		NoteAndGroups(note,WowSocialPlus[j])
-		-- Same In-game Friends re-bucketing as the online loop above
-		if WowSocialPlus[j][""] then
-			WowSocialPlus[j][""]=nil
-			WowSocialPlus[j][SP_INGAME_GROUP]=true
+		local wowName=fj and fj.name
+		local cached=wowName and SocialPlus_WoWNoteCache[wowName]
+		if cached and cached.rawNote==note then
+			WowSocialPlus[j]=cached.groups
+		else
+			WowSocialPlus[j]={}
+			NoteAndGroups(note,WowSocialPlus[j])
+			-- Same In-game Friends re-bucketing as the online loop above
+			if WowSocialPlus[j][""] then
+				WowSocialPlus[j][""]=nil
+				WowSocialPlus[j][SP_INGAME_GROUP]=true
+			end
+			if wowName then
+				SocialPlus_WoWNoteCache[wowName]={rawNote=note,groups=WowSocialPlus[j]}
+			end
 		end
 		if SocialPlus_IsFavorite(FRIENDS_BUTTON_TYPE_WOW,j) then
 			IncrementGroup(SP_FAVORITES_GROUP)
@@ -4859,20 +4893,13 @@ function SocialPlus_CreateSettingsPanel()
 			-- close them, leaving an orphaned menu on screen. Close explicitly.
 			LibDD:CloseDropDownMenus()
 
-			-- Blizzard never hides FriendsTooltip just because the panel
-			-- closed, and WoW only fires OnEnter on actual mouse movement --
-			-- so reopening the panel with the cursor sitting still leaves the
+			-- WoW only fires OnEnter on actual mouse movement -- so
+			-- reopening the panel with the cursor sitting still leaves the
 			-- stale tooltip from whoever was hovered before showing, even
 			-- though the row under the cursor may now be a different friend
 			-- (list order can change while the panel's closed) (reported
 			-- live). Clear it out on close so nothing stale can linger.
-			if FriendsTooltip then
-				FriendsTooltip:Hide()
-				FriendsTooltip.button=nil
-				FriendsTooltip.SocialPlusShownType=nil
-				FriendsTooltip.SocialPlusShownID=nil
-				FriendsTooltip.SocialPlusShownKey=nil
-			end
+			SocialPlus_HideRowTooltip()
 
 			-- Clear the highlighted friend on close too, so reopening the
 			-- panel starts fresh with nobody selected instead of whoever
@@ -5829,32 +5856,20 @@ local function SocialPlus_OnClick(self,button)
 			SocialPlus_SelectedRow={buttonType=self.buttonType,id=self.id,identityKey=SocialPlus_GetRowIdentityKey(self.buttonType,self.id)}
 		end
 
-		-- Let Blizzard's own click handler run FIRST -- it's what actually
-		-- updates FriendsFrame.selectedFriend/selectedFriendType, and
-		-- FriendsFrameTooltip_Show reads THAT internal state, not just the
-		-- `self` argument. Calling it before this ran meant the tooltip
-		-- was built from whoever was selected/shown PREVIOUSLY, not the
-		-- friend actually just clicked (reported live: clicked Owies, got
-		-- Ostionne's tooltip).
 		local origResult
 		if self.SocialPlus_OrigOnClick then
 			origResult=self.SocialPlus_OrigOnClick(self,button)
 		end
 
-		if isFriendRow and FriendsTooltip then
-			-- Selecting a friend triggers Blizzard's own list refresh, which
-			-- can reassign which physical row widget represents which
-			-- friend across the rebuild -- leaving stale tooltip content up.
+		if isFriendRow then
 			-- We know EXACTLY which widget was actually clicked (self,
 			-- right here, unambiguous -- you can't click a button without
 			-- hovering it), so force a fresh, correct show for it directly.
-			FriendsTooltip.button=self
-			FriendsTooltip.SocialPlusShownType=self.buttonType
-			FriendsTooltip.SocialPlusShownID=self.id
-			FriendsTooltip.SocialPlusShownKey=SocialPlus_SelectedRow and SocialPlus_SelectedRow.identityKey
-			if FriendsFrameTooltip_Show then
-				FriendsFrameTooltip_Show(self)
-			end
+			-- Our own tooltip builds its content straight from self,
+			-- independent of any Blizzard internal selection state, so
+			-- there's no ordering dependency on Blizzard's click handler
+			-- above (unlike the old FriendsFrameTooltip_Show-based version).
+			SocialPlus_ShowRowTooltip(self)
 		end
 
 		return origResult
@@ -5888,38 +5903,124 @@ local function SocialPlus_OnClick(self,button)
 	SocialPlus_ShowClickCatcher()
 end
 
--- Blizzard's FriendsFrameTooltip_Show prints the raw note verbatim into a
--- dedicated "FriendsTooltipNoteText" FontString (with a "FriendsTooltipNoteIcon"
--- texture next to it), which includes our "#Group" tags (e.g. "test#Friends").
--- Strip everything from the first "#" onward, and hide both the text and
--- its icon entirely if nothing but tags was there -- leaving the same gap
--- Blizzard already shows for any friend with no note at all, rather than a
--- placeholder line (tried "Right-click to add a note", but it could
--- overflow the tooltip's width for short names, and repositioning it to
--- avoid the icon-width indent broke the layout twice -- not worth it).
-local function SocialPlus_StripNoteGroupTagFromTooltip(button)
-	if not (button and FriendsTooltip and FriendsTooltip:IsShown() and FriendsTooltip.button==button) then
+-- Strips our own "#Group" tags from a raw note (e.g. "test#Friends" ->
+-- "test"), same convention as everywhere else notes get displayed.
+local function SocialPlus_StripNoteTags(note)
+	if not note then return nil end
+	return strtrim(note:match("^([^#]*)") or "")
+end
+
+-- Matches Blizzard's own note styling in the (now-suppressed) native
+-- tooltip: a small note icon inline with the text, in gold rather than
+-- plain white -- requested on request after the custom tooltip's first
+-- pass looked visually plainer.
+local function SocialPlus_AddNoteLine(rawNote)
+	local note=SocialPlus_StripNoteTags(rawNote)
+	if note and note~="" then
+		GameTooltip:AddLine("|TInterface\\Buttons\\UI-GuildButton-PublicNote-Up:14:14:0:0|t "..note,1,0.82,0,true)
+	end
+end
+
+-- [[ Fully custom row tooltip ]]
+-- Built and shown entirely under our own control via GameTooltip -- a
+-- completely separate frame from Blizzard's "FriendsTooltip"/
+-- FriendsFrameTooltip_Show, which this addon used to hook and react to.
+-- Confirmed live via diagnostic that something in Blizzard's own update
+-- path calls FriendsFrameTooltip_Show repeatedly for rows the mouse isn't
+-- even over, for reasons never fully identified despite several targeted
+-- fixes (resync-by-identity, GetMouseFocus gating, hide-after-the-fact).
+-- Owning the whole pipeline ourselves -- Blizzard's FriendsFrame code never
+-- touches GameTooltip -- sidesteps that entire class of bug instead of
+-- continuing to patch around it.
+function SocialPlus_ShowRowTooltip(button)
+	if not (button and GameTooltip) then return end
+	if button.buttonType~=FRIENDS_BUTTON_TYPE_WOW and button.buttonType~=FRIENDS_BUTTON_TYPE_BNET then
+		GameTooltip:Hide()
 		return
 	end
 
-	local noteFontString=_G.FriendsTooltipNoteText
-	if not noteFontString then return end
+	-- ANCHOR_RIGHT on a pooled HybridScrollFrame row anchored the tooltip
+	-- near the top of the screen instead of next to the actual row
+	-- (reported live) -- these buttons don't always report reliable
+	-- coordinates for Blizzard's built-in anchor math right after being
+	-- repositioned. Explicit SetPoint against the row's own corner sidesteps
+	-- that entirely.
+	GameTooltip:SetOwner(button,"ANCHOR_NONE")
+	GameTooltip:ClearAllPoints()
+	GameTooltip:SetPoint("TOPLEFT",button,"TOPRIGHT",12,0)
+	GameTooltip.SocialPlusShownKey=SocialPlus_GetRowIdentityKey(button.buttonType,button.id)
 
-	local text=noteFontString:GetText()
-	if not text or not text:find("#") then return end
-
-	local noteIcon=_G.FriendsTooltipNoteIcon
-	local baseNote=strtrim(text:match("^([^#]*)") or "")
-	if baseNote=="" then
-		if noteIcon then noteIcon:Hide() end
-		noteFontString:SetText("—")
-		noteFontString:SetTextColor(0.5,0.5,0.5)
-		noteFontString:Show()
+	if button.buttonType==FRIENDS_BUTTON_TYPE_WOW then
+		local info=FG_GetFriendInfoByIndex(button.id)
+		if not info then GameTooltip:Hide() return end
+		local classColor=ClassColourCode(info.className)
+		GameTooltip:SetText(classColor..(info.name or UNKNOWN).."|r",1,1,1)
+		if info.connected then
+			if info.level and info.level~=0 then
+				GameTooltip:AddLine(format(FRIENDS_LEVEL_TEMPLATE,info.level,info.className or ""),0.8,0.8,0.8)
+			end
+			if info.area and info.area~="" then
+				GameTooltip:AddLine(info.area,0.6,0.6,0.6)
+			end
+		else
+			GameTooltip:AddLine(FRIENDS_LIST_OFFLINE,0.6,0.6,0.6)
+		end
+		SocialPlus_AddNoteLine(info.notes)
 	else
-		noteFontString:SetText(baseNote)
-		noteFontString:SetTextColor(1,1,1)
-		if noteIcon then noteIcon:Show() end
+		local accountName,characterName,class,level,_,isOnline,_,client,canCoop,wowProjectID,lastOnline,
+			isAFK,isGameAFK,isDND,isGameBusy,mobile,zoneName,gameText,realmName=GetFriendInfoById(button.id)
+		local noteText=select(13,FG_BNGetFriendInfo(button.id))
+
+		-- Title (BattleTag) in the same blue as the "L90" level prefix
+		-- (FRIENDS_BNET_NAME_COLOR) rather than the class color -- on
+		-- request, to match that existing element instead of the
+		-- class-colored character line below it.
+		GameTooltip:SetText(accountName or UNKNOWN,FRIENDS_BNET_NAME_COLOR.r,FRIENDS_BNET_NAME_COLOR.g,FRIENDS_BNET_NAME_COLOR.b)
+		if isOnline then
+			if client==BNET_CLIENT_WOW and characterName and characterName~="" then
+				local classColor=ClassColourCode(class)
+				local charLabel=characterName
+				if realmName and realmName~="" then charLabel=charLabel.."-"..realmName end
+				GameTooltip:AddLine(classColor..charLabel.."|r",1,1,1)
+				if wowProjectID==WOW_PROJECT_ID then
+					if level and level~=0 then
+						GameTooltip:AddLine(format(FRIENDS_LEVEL_TEMPLATE,level,class or ""),0.8,0.8,0.8)
+					end
+					if zoneName and zoneName~="" then
+						GameTooltip:AddLine(mobile and LOCATION_MOBILE_APP or zoneName,0.6,0.6,0.6)
+					end
+				else
+					GameTooltip:AddLine(SocialPlus_GetVersionLabelText(wowProjectID),0.6,0.6,0.6)
+				end
+			else
+				GameTooltip:AddLine(gameText or "",0.8,0.8,0.8)
+			end
+		else
+			GameTooltip:AddLine(FRIENDS_LIST_OFFLINE,0.6,0.6,0.6)
+		end
+
+		SocialPlus_AddNoteLine(noteText)
 	end
+
+	GameTooltip:Show()
+end
+
+function SocialPlus_HideRowTooltip()
+	if GameTooltip then
+		GameTooltip:Hide()
+		GameTooltip.SocialPlusShownKey=nil
+	end
+end
+
+-- Blizzard's own FriendsTooltip can still get shown from somewhere in its
+-- own update path independent of any row's OnEnter (confirmed live: it
+-- kept appearing even after taking over every row's OnEnter/OnLeave
+-- directly). Rather than chase whatever internal call triggers it,
+-- suppress it unconditionally at the frame level -- hook its own OnShow to
+-- immediately hide it again, so nothing can make it appear regardless of
+-- what's calling in.
+if FriendsTooltip then
+	FriendsTooltip:HookScript("OnShow",function(self) self:Hide() end)
 end
 
 local function SocialPlus_OnEnter(self)
@@ -5930,15 +6031,13 @@ local function SocialPlus_OnEnter(self)
 		if tabID and tabID~=1 then return end
 	end
 
-	-- Don’t show standard tooltip on group headers -- or on any row while a
+	-- Don’t show a tooltip on group headers -- or on any row while a
 	-- group-header drag is active (confirmed live: the tooltip was still
 	-- popping up over friend rows mid-drag, cluttering the drag feedback).
 	if self.buttonType==FRIENDS_BUTTON_TYPE_DIVIDER or SocialPlus_DragSourceGroup then
-		if FriendsTooltip:IsShown() then
-			FriendsTooltip:Hide()
-		end
+		SocialPlus_HideRowTooltip()
 	else
-		SocialPlus_StripNoteGroupTagFromTooltip(self)
+		SocialPlus_ShowRowTooltip(self)
 	end
 
 	-- While a group-header drag is active, track which group the cursor is over
@@ -6017,7 +6116,16 @@ local function HookButtons()
 			end
 
 			btn:SetScript("OnClick",SocialPlus_OnClick)
-			btn:HookScript("OnEnter",SocialPlus_OnEnter)
+			-- SetScript (replacing), not HookScript (adding on top of) --
+			-- Blizzard's own native OnEnter is what called
+			-- FriendsFrameTooltip_Show in the first place; fully taking
+			-- over here means that path (and its live-reported bugs) never
+			-- runs at all anymore, not just reacting to it afterward.
+			if not btn.SocialPlus_OrigOnEnter then
+				btn.SocialPlus_OrigOnEnter=btn:GetScript("OnEnter")
+			end
+			btn:SetScript("OnEnter",SocialPlus_OnEnter)
+			btn:SetScript("OnLeave",SocialPlus_HideRowTooltip)
 
 			if not btn.SocialPlus_OrigOnMouseUp then
 				btn.SocialPlus_OrigOnMouseUp=btn:GetScript("OnMouseUp")
@@ -6180,8 +6288,21 @@ function SocialPlus_ModifyGroupFromDropdown(group,mode)
 		end
 		newNote=AddGroup(baseNote,group)
 	else
-		-- Pure remove: just strip the selected group tag.
-		newNote=RemoveGroup(baseNote,group)
+		-- Pure remove: strip just the selected tag, keep any others.
+		-- RemoveGroup(baseNote,group) looked right but wasn't -- baseNote
+		-- has ALREADY had every tag stripped out of it by the
+		-- NoteAndGroups call above, so RemoveGroup's own internal
+		-- re-parse of baseNote never finds ANY tags (including the one
+		-- being "removed"), making the whole call a no-op -- or, for a
+		-- friend in multiple groups, silently dropping every other tag
+		-- too, since none of them survive being fed through baseNote in
+		-- the first place (reported live: removing a friend from one
+		-- group left them stuck in it). `groups` above is already the
+		-- correctly-parsed table with every current tag -- just remove
+		-- the target one from THAT instead of re-parsing a stripped string.
+		groups[""]=nil
+		groups[group]=nil
+		newNote=CreateNote(baseNote,groups)
 	end
 
 	setter(id,newNote)
@@ -7198,8 +7319,22 @@ frame:SetScript("OnEvent",function(self,event,...)
 
 		Hook("FriendsList_Update",SocialPlus_Update,true)
 
-		if FriendsFrameTooltip_Show then
-			Hook("FriendsFrameTooltip_Show",SocialPlus_OnEnter,true)
+		-- Force a real render on every panel open, in isolation this time
+		-- (no debounce/dirty-check machinery to race against -- both fully
+		-- reverted). If the friend list data hasn't changed since it was
+		-- last open, Blizzard's own FriendsList_Update may not fire at all
+		-- on reopen, so our own render pass (which is what keeps the
+		-- tooltip in sync -- see the GetMouseFocus() check above) never
+		-- ran, and whatever tooltip showed came from Blizzard's own stale
+		-- internal state instead (reported live: closed while hovering one
+		-- friend, reopened without moving the mouse, got a completely
+		-- unrelated friend's tooltip).
+		if FriendsFrame and FriendsFrame.HookScript then
+			FriendsFrame:HookScript("OnShow",function()
+				SocialPlus_HardResetScrollRows()
+				SocialPlus_Update(true)
+				SocialPlus_ScheduleCollapseSettle()
+			end)
 		end
 
 		-- Flush accumulated garbage when the Friends panel closes. Heavy
@@ -7209,25 +7344,22 @@ frame:SetScript("OnEvent",function(self,event,...)
 		-- some later activity happened to nudge a collection). Panel-close
 		-- is the ideal flush point: everything transient is dead by then,
 		-- and a full sweep's tiny hitch is invisible with no interaction
-		-- going on. Cooldown so open/close spam doesn't re-sweep
-		-- pointlessly.
+		-- going on. No cooldown, on request -- the >25 MB threshold below
+		-- already prevents pointless sweeps on its own (a close that
+		-- didn't actually accumulate much just skips), so a separate timer
+		-- gating WHEN it's even allowed to check wasn't needed on top of
+		-- that.
 		if FriendsFrame and FriendsFrame.HookScript then
-			local lastSweep=0
 			FriendsFrame:HookScript("OnHide",function()
-				local now=GetTime()
-				if now-lastSweep<10 then return end
 				-- Only sweep when this addon is actually holding a
 				-- meaningful amount (>25 MB): a full collect isn't free,
-				-- so when there's little to reclaim, skip it. The skipped
-				-- close doesn't consume the cooldown, so a later close
-				-- that IS over the threshold still sweeps immediately.
+				-- so when there's little to reclaim, skip it.
 				if UpdateAddOnMemoryUsage and GetAddOnMemoryUsage then
 					UpdateAddOnMemoryUsage()
 					if GetAddOnMemoryUsage(ADDON_NAME)<=25*1024 then
 						return
 					end
 				end
-				lastSweep=now
 				collectgarbage("collect")
 			end)
 		end
@@ -7285,6 +7417,16 @@ frame:SetScript("OnEvent",function(self,event,...)
 				-- the settle countdown back indefinitely).
 				return
 			end
+			-- Hide outright rather than trust the per-row resync to catch
+			-- it here -- GetMouseFocus() can misreport during/right after a
+			-- mouse-wheel scroll event (focus can transiently shift to the
+			-- scroll frame itself), so the resync's "is the cursor over ME"
+			-- check silently failed to match ANY row and the tooltip just
+			-- stayed at its old position/content (reported live: scrolling
+			-- without moving the mouse left the tooltip stuck in place).
+			-- The resync logic still recovers it correctly on the next
+			-- genuine hover.
+			SocialPlus_HideRowTooltip()
 			SocialPlus_ScrollDirty=true
 			SocialPlus_LastScrollTick=GetTime()
 			SocialPlus_UpdateFriends()
