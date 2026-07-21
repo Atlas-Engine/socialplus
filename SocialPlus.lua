@@ -318,6 +318,13 @@ local FriendButtons={count=0}
 -- note string matches what's cached.
 local SocialPlus_BNetNoteCache={}
 local SocialPlus_WoWNoteCache={}
+-- Set on each rebuild when the search text matches an existing group name
+-- (see the "focus" search mode below) -- module-level rather than local to
+-- SocialPlus_Update so the divider row's arrow-icon rendering
+-- (SocialPlus_UpdateFriendButton, a different function) can also show the
+-- correct expand/collapse state during focus mode, not just member
+-- visibility.
+local SocialPlus_SearchFocusGroup=nil
 -- Tracked entirely ourselves, set ONLY inside our own row click handler --
 -- Blizzard's FriendsFrame.selectedFriendType/selectedFriend (and
 -- GetSelectedFriend()/BNGetSelectedFriend()) reflect client-side state
@@ -2694,7 +2701,13 @@ local function SocialPlus_UpdateFriendButton(button)
 		end
 		nameColor=SocialPlus_NAME_COLOR
 
-		if SocialPlus_SavedVars.collapsed[group] then
+		-- Same focus-mode override as the member-visibility check in
+		-- SocialPlus_Update -- otherwise the arrow could show "+" (collapsed)
+		-- on the one group whose members ARE actually showing during a
+		-- group-name search.
+		local isCollapsedNow=SocialPlus_SearchFocusGroup and group~=SocialPlus_SearchFocusGroup
+			or (not SocialPlus_SearchFocusGroup and SocialPlus_SavedVars.collapsed[group])
+		if isCollapsedNow then
 			button.status:SetTexture("Interface\\Buttons\\UI-PlusButton-UP")
 		else
 			button.status:SetTexture("Interface\\Buttons\\UI-MinusButton-UP")
@@ -2840,6 +2853,20 @@ local function SocialPlus_UpdateFriendButton(button)
                 SocialPlus_PerformInviteFromButton(button)
             end
         end)
+    end
+
+    -- Explicitly above the row's own level on EVERY render, not just once --
+    -- confirmed live (diagnostic: OnClick never even fired, row highlighted
+    -- instead) this is the same class of bug as the Friend Request Accept
+    -- button fixed earlier: a row that's been reused/recycled for something
+    -- else (e.g. as a group header, where sibling elements get explicitly
+    -- leveled above it) can leave the travel-pass button sitting at or below
+    -- the row's own level, so the row's full-area click surface swallows
+    -- clicks meant for this child instead of passing them through. Search
+    -- results in particular tend to reuse buttons that previously served
+    -- other roles more than the normal steady-state view does.
+    if button.travelPassButton then
+        button.travelPassButton:SetFrameLevel(button:GetFrameLevel()+5)
     end
 
     -- Show/hide travel pass button
@@ -3333,8 +3360,32 @@ end
 		totalButtonHeight=totalButtonHeight+FRIENDS_BUTTON_HEIGHTS[buttonType]
 	end
 
+	-- If the search text exactly matches an existing custom group name,
+	-- show that group's real header (cogwheel, collapse/expand) with only
+	-- its members instead of the flat name-only list below -- on request.
+	-- Falls through to the normal grouped-mode path further down instead
+	-- of the simple search path, with every OTHER group treated as
+	-- collapsed for DISPLAY ONLY (SocialPlus_SavedVars.collapsed itself is
+	-- never touched, so this doesn't disturb the user's real collapse
+	-- state).
+	SocialPlus_SearchFocusGroup=nil
+	if SocialPlus_SearchTerm and SocialPlus_SavedVars and SocialPlus_SavedVars.groupOrder then
+		for _,g in ipairs(SocialPlus_SavedVars.groupOrder) do
+			if SocialPlus_NormalizeText(g)==SocialPlus_SearchTerm then
+				SocialPlus_SearchFocusGroup=g
+				break
+			end
+		end
+	end
+	local function SocialPlus_IsCollapsedForDisplay(group)
+		if SocialPlus_SearchFocusGroup then
+			return group~=SocialPlus_SearchFocusGroup
+		end
+		return SocialPlus_SavedVars.collapsed[group]
+	end
+
 	-- >>> SIMPLE NAME-ONLY SEARCH MODE (no groups) <<<
-	if SocialPlus_SearchTerm then
+	if SocialPlus_SearchTerm and not SocialPlus_SearchFocusGroup then
 		wipe(FriendButtons)
 		-- wipe() erases the count field too -- re-set it explicitly, since
 		-- AddButtonInfo only re-sets it when at least one row matches (a
@@ -3349,10 +3400,35 @@ end
 
 		local term=SocialPlus_SearchTerm
 
+		-- Friends who show up BOTH as a Battle.net friend (their BattleTag)
+		-- and as a plain WoW/character friend (added separately) are the
+		-- same real person -- collected below while walking BNet friends
+		-- so the WoW-friend pass further down can skip them, otherwise a
+		-- search matched both rows and showed that person twice (reported
+		-- live: class-name search). Keyed by name+realm rather than just
+		-- name -- a WoW-friend name for a connected-but-different realm has
+		-- that realm baked in as a "-Realm" suffix (e.g. "Bukowsky-Pagle"),
+		-- while the Battle.net API returns characterName/realmName as
+		-- separate fields, so both sides normalize through the same
+		-- name|realm key below.
+		local bnetActiveWowChars={}
+		local function SocialPlus_DedupeRealmKey(realm)
+			if not realm or realm=="" then
+				realm=(GetRealmName and GetRealmName()) or ""
+			end
+			return SocialPlus_NormalizeText((realm:gsub("[%s%-]","")))
+		end
+
 		-- BNet friends: try BattleTag first, then accountName, then character name
 		for i=1,numBNetTotal do
-			local accountName,characterName,class,_,_,isOnline,_,_,_,wowProjectID=
+			local accountName,characterName,class,_,_,isOnline,_,client,_,wowProjectID,_,_,_,_,_,_,_,_,realmName=
 				GetFriendInfoById(i)
+
+			if isOnline and client==BNET_CLIENT_WOW and wowProjectID==WOW_PROJECT_ID
+				and characterName and characterName~="" then
+				local key=SocialPlus_NormalizeText(characterName).."|"..SocialPlus_DedupeRealmKey(realmName)
+				bnetActiveWowChars[key]=true
+			end
 
 			if not(SocialPlus_SavedVars and SocialPlus_SavedVars.hide_offline and not isOnline) then
 				local battleTag=nil
@@ -3432,8 +3508,21 @@ end
 			local name=fi and fi.name or nil
 			local connected=fi and fi.connected or false
 
+			local dedupeKey=nil
+			if name and name~="" then
+				local baseName,suffixRealm=name:match("^(.-)%-([^%-]+)$")
+				if baseName and suffixRealm then
+					dedupeKey=SocialPlus_NormalizeText(baseName).."|"..SocialPlus_DedupeRealmKey(suffixRealm)
+				else
+					dedupeKey=SocialPlus_NormalizeText(name).."|"..SocialPlus_DedupeRealmKey(nil)
+				end
+			end
+
 			if SocialPlus_SavedVars and SocialPlus_SavedVars.hide_offline and not connected then
 				-- skip offline if setting says so
+			elseif dedupeKey and bnetActiveWowChars[dedupeKey] then
+				-- Same person already surfaced above via their Battle.net
+				-- friend row -- skip the redundant WoW-friend duplicate.
 			elseif name and name~="" then
 				local searchName=SocialPlus_NormalizeText(firstWord(name))
 				local classNormalized=SocialPlus_NormalizeText(SocialPlus_BuildClassSearchBlob(fi and fi.className))
@@ -3485,7 +3574,7 @@ end
 			end
 			IncrementGroup(FriendRequestString,true)
 			NoteAndGroups(nil,FriendReqGroup[i])
-			if not SocialPlus_SavedVars.collapsed[FriendRequestString] then
+			if not SocialPlus_IsCollapsedForDisplay(FriendRequestString) then
 				buttonCount=buttonCount+1
 				AddButtonInfo(FRIENDS_BUTTON_TYPE_INVITE,i)
 			end
@@ -3524,7 +3613,7 @@ end
 		-- not a copy.
 		if SocialPlus_IsFavorite(FRIENDS_BUTTON_TYPE_BNET,i) then
 			IncrementGroup(SP_FAVORITES_GROUP,isOnline)
-			if not SocialPlus_SavedVars.collapsed[SP_FAVORITES_GROUP] then
+			if not SocialPlus_IsCollapsedForDisplay(SP_FAVORITES_GROUP) then
 				if isOnline or not(SocialPlus_SavedVars.hide_offline) then
 					buttonCount=buttonCount+1
 					AddButtonInfo(FRIENDS_BUTTON_TYPE_BNET,i)
@@ -3533,7 +3622,7 @@ end
 		else
 			for group in pairs(BnetSocialPlus[i]) do
 				IncrementGroup(group,isOnline)
-				if not SocialPlus_SavedVars.collapsed[group] then
+				if not SocialPlus_IsCollapsedForDisplay(group) then
 					if isOnline or not(SocialPlus_SavedVars.hide_offline) then
 						buttonCount=buttonCount+1
 						AddButtonInfo(FRIENDS_BUTTON_TYPE_BNET,i)
@@ -3568,14 +3657,14 @@ end
 		end
 		if SocialPlus_IsFavorite(FRIENDS_BUTTON_TYPE_WOW,i) then
 			IncrementGroup(SP_FAVORITES_GROUP,true)
-			if not SocialPlus_SavedVars.collapsed[SP_FAVORITES_GROUP] then
+			if not SocialPlus_IsCollapsedForDisplay(SP_FAVORITES_GROUP) then
 				buttonCount=buttonCount+1
 				AddButtonInfo(FRIENDS_BUTTON_TYPE_WOW,i)
 			end
 		else
 			for group in pairs(WowSocialPlus[i]) do
 				IncrementGroup(group,true)
-				if not SocialPlus_SavedVars.collapsed[group] then
+				if not SocialPlus_IsCollapsedForDisplay(group) then
 					buttonCount=buttonCount+1
 					AddButtonInfo(FRIENDS_BUTTON_TYPE_WOW,i)
 				end
@@ -3606,14 +3695,14 @@ end
 		end
 		if SocialPlus_IsFavorite(FRIENDS_BUTTON_TYPE_WOW,j) then
 			IncrementGroup(SP_FAVORITES_GROUP)
-			if not SocialPlus_SavedVars.collapsed[SP_FAVORITES_GROUP] and not SocialPlus_SavedVars.hide_offline then
+			if not SocialPlus_IsCollapsedForDisplay(SP_FAVORITES_GROUP) and not SocialPlus_SavedVars.hide_offline then
 				buttonCount=buttonCount+1
 				AddButtonInfo(FRIENDS_BUTTON_TYPE_WOW,j)
 			end
 		else
 			for group in pairs(WowSocialPlus[j]) do
 				IncrementGroup(group)
-				if not SocialPlus_SavedVars.collapsed[group] and not SocialPlus_SavedVars.hide_offline then
+				if not SocialPlus_IsCollapsedForDisplay(group) and not SocialPlus_SavedVars.hide_offline then
 					buttonCount=buttonCount+1
 					AddButtonInfo(FRIENDS_BUTTON_TYPE_WOW,j)
 				end
@@ -3638,11 +3727,16 @@ SocialPlus_ApplyGroupOrder()
 
     local index=0
     for _,group in ipairs(GroupSorted) do
+        -- During a group-name search focus, skip the header ROW entirely
+        -- for every other group instead of just collapsing it -- on
+        -- request, so only the matched group shows at all.
+        local showGroup=not (SocialPlus_SearchFocusGroup and group~=SocialPlus_SearchFocusGroup)
+        if showGroup then
         index=index+1
         FriendButtons[index].buttonType=FRIENDS_BUTTON_TYPE_DIVIDER
         FriendButtons[index].text=group
 
-        if not SocialPlus_SavedVars.collapsed[group] then
+        if not SocialPlus_IsCollapsedForDisplay(group) then
             -- 1) Friend invites bucket (always same behavior)
             if group==FriendRequestString then
                 for i=1,#FriendReqGroup do
@@ -3865,6 +3959,7 @@ SocialPlus_ApplyGroupOrder()
                     FriendButtons[index].id=row.id
                 end
             end
+        end
         end
     end
     FriendButtons.count=index
@@ -5079,6 +5174,8 @@ SocialPlus_ClickCatcher:SetScript("OnMouseDown",function(self,button)
     -- a friend row previously needed two clicks (confirmed live). Forward
     -- it explicitly via :Click() so one click is enough.
     local clickedFriendRow=nil
+    local clickedGear=nil
+    local clickedTravelPass=nil
     if FriendsScrollFrame and FriendsScrollFrame.buttons then
         for _,rowButton in ipairs(FriendsScrollFrame.buttons) do
             if rowButton:IsShown() and rowButton:IsMouseOver() then
@@ -5092,7 +5189,18 @@ SocialPlus_ClickCatcher:SetScript("OnMouseDown",function(self,button)
                 -- collapse state (confirmed live).
                 local gear=rowButton.SocialPlusGroupGearButton
                 local overGear=gear and gear:IsShown() and gear:IsMouseOver()
-                if not overGear then
+                -- Same problem for the travel-pass/invite button -- also a
+                -- child sitting on the row, also read as "moused over the
+                -- row" -- without this, a click on it got misforwarded to
+                -- the ROW instead (confirmed live: looked like nothing
+                -- happened except the row highlighting).
+                local travel=rowButton.travelPassButton
+                local overTravel=travel and travel:IsShown() and travel:IsMouseOver()
+                if overGear then
+                    clickedGear=gear
+                elseif overTravel then
+                    clickedTravelPass=travel
+                else
                     clickedFriendRow=rowButton
                 end
                 break
@@ -5122,10 +5230,32 @@ SocialPlus_ClickCatcher:SetScript("OnMouseDown",function(self,button)
         return
     end
 
-    -- Anything else -- a group header, the cogwheel, blank panel space,
-    -- or truly outside the Friends List entirely -- clears an active
-    -- search and drops focus, matching Escape. Only a friend row (above)
-    -- is exempt.
+    if clickedTravelPass then
+        -- Same forwarding as a friend row, and the same reasoning for
+        -- staying armed afterward -- an invite click shouldn't cancel an
+        -- active search either.
+        self:Hide()
+        clickedTravelPass:Click(button)
+        if SocialPlus_SearchTerm then
+            SocialPlus_ShowClickCatcher()
+        end
+        return
+    end
+
+    if clickedGear then
+        -- The gear's own OnClick already opens its dropdown -- just get out
+        -- of its way without touching the search, on request (clicking the
+        -- cogwheel to manage a group you just searched for used to cancel
+        -- the search entirely).
+        self:Hide()
+        clickedGear:Click()
+        return
+    end
+
+    -- Anything else -- a group header itself, blank panel space, or truly
+    -- outside the Friends List entirely -- clears an active search and
+    -- drops focus, matching Escape. Only a friend row/travel-pass/gear
+    -- click (above) is exempt.
     LibDD:CloseDropDownMenus()
     if SocialPlus_SearchTerm then
         SocialPlus_ClearSearchFromOutsideClick()
@@ -5136,7 +5266,24 @@ SocialPlus_ClickCatcher:SetScript("OnMouseDown",function(self,button)
     self:Hide()
 end)
 
+-- Hover-forward target is kept as a field on the frame itself, and the
+-- setter below is nested inside this one OnUpdate closure (not a
+-- top-level local) -- this file is already right at Lua's 200-local
+-- per-chunk ceiling for its main chunk.
 SocialPlus_ClickCatcher:SetScript("OnUpdate",function(self)
+    local function SetHover(target)
+        if target==self.hoverButton then return end
+        if self.hoverButton then
+            local onLeave=self.hoverButton:GetScript("OnLeave")
+            if onLeave then onLeave(self.hoverButton) end
+        end
+        if target then
+            local onEnter=target:GetScript("OnEnter")
+            if onEnter then onEnter(target) end
+        end
+        self.hoverButton=target
+    end
+
     local dropOpen=SocialPlus_IsAnyDropDownOpen()
     local searchFocused=SocialPlus_Searchbox and SocialPlus_Searchbox:HasFocus()
     -- Also stay shown while a search term is still active (even without
@@ -5145,7 +5292,47 @@ SocialPlus_ClickCatcher:SetScript("OnUpdate",function(self)
     -- otherwise this immediately re-hid the catcher we just explicitly
     -- re-showed for exactly that purpose (confirmed live).
     local searchActive=SocialPlus_SearchTerm~=nil
-    if not dropOpen and not searchFocused and not searchActive then self:Hide() end
+    if not dropOpen and not searchFocused and not searchActive then
+        SetHover(nil)
+        self:Hide()
+        return
+    end
+
+    -- While a menu is open, the mouse can easily be hovering a menu entry
+    -- that visually sits on top of a row/gear/travel-pass button
+    -- underneath -- forwarding hover in that case popped up that button's
+    -- tooltip (e.g. "not on your WoW version") floating behind/alongside
+    -- the open menu, on request. Only forward hover for a plain search
+    -- interaction, never while a menu is up.
+    if dropOpen then
+        SetHover(nil)
+        return
+    end
+
+    -- Being a full-screen frame sitting above everything else while shown,
+    -- this catcher also blocks normal OnEnter/OnLeave hover events from
+    -- ever reaching the row/gear/travel-pass button underneath -- so
+    -- tooltips silently stopped showing during an active search (confirmed
+    -- live: invite button tooltip). Manually detect and forward hover, the
+    -- same way OnMouseDown above already forwards clicks.
+    local hoverTarget=nil
+    if FriendsScrollFrame and FriendsScrollFrame.buttons then
+        for _,rowButton in ipairs(FriendsScrollFrame.buttons) do
+            if rowButton:IsShown() and rowButton:IsMouseOver() then
+                local gear=rowButton.SocialPlusGroupGearButton
+                local travel=rowButton.travelPassButton
+                if gear and gear:IsShown() and gear:IsMouseOver() then
+                    hoverTarget=gear
+                elseif travel and travel:IsShown() and travel:IsMouseOver() then
+                    hoverTarget=travel
+                else
+                    hoverTarget=rowButton
+                end
+                break
+            end
+        end
+    end
+    SetHover(hoverTarget)
 end)
 
 -- Escape should close an open menu first, not the whole Friends panel --
@@ -5170,11 +5357,20 @@ function SocialPlus_ShowClickCatcher()
     SocialPlus_ClickCatcher:Show()
 end
 
-SocialPlus_ClickCatcher:HookScript("OnHide",function()
+SocialPlus_ClickCatcher:HookScript("OnHide",function(self)
     if SocialPlus_ClickCatcherIsForMenu then
         SocialPlus_PlayMenuCloseSound()
     end
     SocialPlus_ClickCatcherIsForMenu=false
+    -- The click branches above hide the catcher directly (not just via
+    -- OnUpdate), which would otherwise skip the OnUpdate closure's hover
+    -- setter and leave a stale tooltip on screen with nothing left to
+    -- clear it -- so clear it directly here too.
+    if self.hoverButton then
+        local onLeave=self.hoverButton:GetScript("OnLeave")
+        if onLeave then onLeave(self.hoverButton) end
+        self.hoverButton=nil
+    end
 end)
 
 local function SocialPlus_SetCurrentFriend(button)
@@ -5289,6 +5485,20 @@ end
 local function SocialPlus_IsFriendInMyGroup(name,realm)
 	if not name or name=="" then return false end
 	if not IsInGroup or not IsInGroup() then return false end
+
+	-- A WoW friend on a different (but connected) realm than the player has
+	-- that realm baked directly into the name as "Name-Realm" (e.g.
+	-- "Bukowsky-Pagle"), unlike UnitName() which always returns just the
+	-- bare character name plus a SEPARATE realm string -- comparing them
+	-- directly always failed for exactly the friends most likely to need
+	-- this check (reported live: an already-grouped WoW friend still showed
+	-- an enabled Invite button).
+	if not realm or realm=="" then
+		local base,suffixRealm=name:match("^(.-)%-([^%-]+)$")
+		if base and suffixRealm then
+			name,realm=base,suffixRealm
+		end
+	end
 
 	local normRealm=SocialPlus_NormalizeRealmForCompare(realm)
 	local isRaid=IsInRaid and IsInRaid()

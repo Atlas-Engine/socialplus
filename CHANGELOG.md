@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.8a
+
+- Searching (or clicking a group tag) for an exact group name now shows that group's real header (cogwheel, mute/rename/delete, collapse arrow) with everything else hidden, instead of just a flat filtered list.
+- Fixed the group cogwheel and the Invite/travel-pass button not responding to clicks while a search is active; clicking the cogwheel to manage a group no longer cancels the search.
+- Fixed tooltips (including the Invite button's) not showing on mouseover while a search is active, and made sure none pop up from underneath while a right-click/group menu is open.
+- Fixed the Invite button not greying out as "already grouped" for a friend on a different (but connected) realm than you.
+- Fixed a friend who's both a Battle.net friend and a separately-added character friend showing up twice in search results.
+
 ## 1.7c
 
 - Battle.net friends' tooltip now also shows their Battle.net broadcast message, with its own icon, below the note.
