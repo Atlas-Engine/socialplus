@@ -232,6 +232,13 @@ local INVITE_RESTRICTION_WOW_PROJECT_MAINLINE=6
 local INVITE_RESTRICTION_WOW_PROJECT_CLASSIC=7
 local INVITE_RESTRICTION_NONE=8
 local INVITE_RESTRICTION_MOBILE=9
+-- Own code (not a Blizzard restriction ID), split out from the generic
+-- INVITE_RESTRICTION_INFO catch-all so icon-fade logic can exclude JUST
+-- this reason -- being already in the player's own party/raid isn't
+-- really "wrong" with the friend, unlike being offline or otherwise
+-- ineligible (reported live: the icon shouldn't dim just because they're
+-- already grouped).
+local INVITE_RESTRICTION_ALREADY_GROUPED=10
 
 -- Online-status tier for sorting: plain online ranks above DND, which
 -- ranks above away/AFK. Matches the same isAFK/isGameAFK/isDND/isGameBusy
@@ -2426,11 +2433,12 @@ local function SocialPlus_UpdateFriendButton(button)
 			local nameColorHex=string.format("|cFF%02x%02x%02x",nameColor.r*255,nameColor.g*255,nameColor.b*255)
 			nameText=levelPrefix..nameColorHex..info.name.." ("..info.className..")".."|r"
 
-			local wowAllowed,wowReason=SocialPlus_GetInviteStatus("WOW",FriendButtons[index].id)
+			local wowAllowed,wowReason,wowRestriction=SocialPlus_GetInviteStatus("WOW",FriendButtons[index].id)
 
 			if FACTION_ICON_PATH then
 				FG_ApplyGameIcon(button,FACTION_ICON_PATH,30,"RIGHT","RIGHT",-22,0)
-				button.SocialPlusIconAlpha=wowAllowed and 1 or 0.4
+				-- Same already-grouped exclusion as the BNet row below.
+				button.SocialPlusIconAlpha=(wowAllowed or wowRestriction==INVITE_RESTRICTION_ALREADY_GROUPED) and 1 or 0.4
 			elseif button.gameIcon then
 				button.gameIcon:Hide()
 				button.SocialPlusIconAlpha=nil
@@ -2611,8 +2619,13 @@ local function SocialPlus_UpdateFriendButton(button)
         -- their Horde/Alliance crest (set above) stays full-strength instead
         -- of fading along with genuinely blocked cases (region, project,
         -- coop), since the crest itself already communicates the faction
-        -- mismatch without needing to look dimmed too.
-        local fadeWowIcon=(client==BNET_CLIENT_WOW and not allowed and restriction~=INVITE_RESTRICTION_FACTION)
+        -- mismatch without needing to look dimmed too. Already-grouped
+        -- friends are excluded too, on request -- them already being in the
+        -- player's party isn't really "wrong" with them the way an offline
+        -- or ineligible friend is.
+        local fadeWowIcon=(client==BNET_CLIENT_WOW and not allowed
+            and restriction~=INVITE_RESTRICTION_FACTION
+            and restriction~=INVITE_RESTRICTION_ALREADY_GROUPED)
         button.SocialPlusIconAlpha=fadeWowIcon and 0.4 or 1
 		-- Show invite button	
 			hasTravelPassButton=true
@@ -5314,7 +5327,7 @@ SocialPlus_GetInviteStatus=function(kind,id)
 
 	-- Already grouped with this friend -- nothing to invite them to
 	if SocialPlus_IsFriendInMyGroup(info.name,nil) then
-		return false,L.INVITE_REASON_ALREADY_GROUPED,INVITE_RESTRICTION_INFO
+		return false,L.INVITE_REASON_ALREADY_GROUPED,INVITE_RESTRICTION_ALREADY_GROUPED
 	end
 
 	-- Some WoW friend info may include factionName or faction; check if present
@@ -5342,7 +5355,7 @@ SocialPlus_GetInviteStatus=function(kind,id)
 
 	-- Already grouped with this friend -- nothing to invite them to
 	if SocialPlus_IsFriendInMyGroup(characterName,realmName) then
-		return false,L.INVITE_REASON_ALREADY_GROUPED,INVITE_RESTRICTION_INFO
+		return false,L.INVITE_REASON_ALREADY_GROUPED,INVITE_RESTRICTION_ALREADY_GROUPED
 	end
 
 	-- BNGetFriendInfo position 16 is canSummon (boolean), not wowProjectID in MoP Classic;
@@ -5947,7 +5960,9 @@ function SocialPlus_ShowRowTooltip(button)
 	-- that entirely.
 	GameTooltip:SetOwner(button,"ANCHOR_NONE")
 	GameTooltip:ClearAllPoints()
-	GameTooltip:SetPoint("TOPLEFT",button,"TOPRIGHT",12,0)
+	-- Nudged further right than a plain flush anchor -- otherwise it sat
+	-- close enough to overlap the list's own scrollbar (reported live).
+	GameTooltip:SetPoint("TOPLEFT",button,"TOPRIGHT",28,0)
 	GameTooltip.SocialPlusShownKey=SocialPlus_GetRowIdentityKey(button.buttonType,button.id)
 
 	if button.buttonType==FRIENDS_BUTTON_TYPE_WOW then
