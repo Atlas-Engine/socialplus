@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.7c
+
+- Battle.net friends' tooltip now also shows their Battle.net broadcast message, with its own icon, below the note.
+- The note icon shown next to a friend's name in the list now matches the tooltip's note icon.
+
 ## 1.7b
 
 - Fixed the wrong faction icon showing on the friends-list row and invite button/menu for a friend with multiple WoW licenses online at once (was picking a different account than the one actually being shown/invited).

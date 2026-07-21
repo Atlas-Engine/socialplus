@@ -2920,7 +2920,9 @@ local function SocialPlus_UpdateFriendButton(button)
 			end
 			local baseNote=rawNote and strtrim(rawNote:match("^([^#]*)") or "")
 			if baseNote and baseNote~="" then
-				suffix=suffix.." |TInterface\\Icons\\INV_Misc_Note_06:14:14:0:0|t"
+				-- Same gold note icon as the tooltip, on request, instead
+				-- of this different one.
+				suffix=suffix.." |TInterface\\Buttons\\UI-GuildButton-PublicNote-Up:14:14:0:0|t"
 			end
 
 			nameText=prefix..nameText..suffix
@@ -5916,24 +5918,6 @@ local function SocialPlus_OnClick(self,button)
 	SocialPlus_ShowClickCatcher()
 end
 
--- Strips our own "#Group" tags from a raw note (e.g. "test#Friends" ->
--- "test"), same convention as everywhere else notes get displayed.
-local function SocialPlus_StripNoteTags(note)
-	if not note then return nil end
-	return strtrim(note:match("^([^#]*)") or "")
-end
-
--- Matches Blizzard's own note styling in the (now-suppressed) native
--- tooltip: a small note icon inline with the text, in gold rather than
--- plain white -- requested on request after the custom tooltip's first
--- pass looked visually plainer.
-local function SocialPlus_AddNoteLine(rawNote)
-	local note=SocialPlus_StripNoteTags(rawNote)
-	if note and note~="" then
-		GameTooltip:AddLine("|TInterface\\Buttons\\UI-GuildButton-PublicNote-Up:14:14:0:0|t "..note,1,0.82,0,true)
-	end
-end
-
 -- [[ Fully custom row tooltip ]]
 -- Built and shown entirely under our own control via GameTooltip -- a
 -- completely separate frame from Blizzard's "FriendsTooltip"/
@@ -5946,6 +5930,38 @@ end
 -- touches GameTooltip -- sidesteps that entire class of bug instead of
 -- continuing to patch around it.
 function SocialPlus_ShowRowTooltip(button)
+	-- Small helpers local to this function only (not top-level locals) --
+	-- Lua caps the main chunk at 200 locals total, and this file was
+	-- already close to that ceiling (confirmed live: adding these as
+	-- separate top-level locals tripped "main function has more than 200
+	-- local variables" again).
+	-- Strips our own "#Group" tags from a raw note (e.g. "test#Friends" ->
+	-- "test"), same convention as everywhere else notes get displayed.
+	local function StripNoteTags(note)
+		if not note then return nil end
+		return strtrim(note:match("^([^#]*)") or "")
+	end
+	-- Matches Blizzard's own note styling in the (now-suppressed) native
+	-- tooltip: a small note icon inline with the text, in gold rather than
+	-- plain white -- requested on request after the custom tooltip's first
+	-- pass looked visually plainer.
+	local function AddNoteLine(rawNote)
+		local note=StripNoteTags(rawNote)
+		if note and note~="" then
+			GameTooltip:AddLine("|TInterface\\Buttons\\UI-GuildButton-PublicNote-Up:14:14:0:0|t "..note,1,0.82,0,true)
+		end
+	end
+	-- Battle.net "Broadcast" status message (BNGetFriendInfo position 12 --
+	-- separate from the note at position 13). Icon is Blizzard's OWN real
+	-- broadcast-button icon (FriendsFrameBattlenetFrame.BroadcastButton),
+	-- read live via its FileDataID rather than guessed -- the two guessed
+	-- string paths tried before this were blank/black respectively.
+	local function AddBroadcastLine(messageText)
+		if messageText and messageText~="" then
+			GameTooltip:AddLine("|T628215:14:14:0:0|t "..messageText,0.6,0.8,1,true)
+		end
+	end
+
 	if not (button and GameTooltip) then return end
 	if button.buttonType~=FRIENDS_BUTTON_TYPE_WOW and button.buttonType~=FRIENDS_BUTTON_TYPE_BNET then
 		GameTooltip:Hide()
@@ -5980,11 +5996,11 @@ function SocialPlus_ShowRowTooltip(button)
 		else
 			GameTooltip:AddLine(FRIENDS_LIST_OFFLINE,0.6,0.6,0.6)
 		end
-		SocialPlus_AddNoteLine(info.notes)
+		AddNoteLine(info.notes)
 	else
 		local accountName,characterName,class,level,_,isOnline,_,client,canCoop,wowProjectID,lastOnline,
 			isAFK,isGameAFK,isDND,isGameBusy,mobile,zoneName,gameText,realmName=GetFriendInfoById(button.id)
-		local noteText=select(13,FG_BNGetFriendInfo(button.id))
+		local messageText,noteText=select(12,FG_BNGetFriendInfo(button.id))
 
 		-- Title (BattleTag) in the same blue as the "L90" level prefix
 		-- (FRIENDS_BNET_NAME_COLOR) rather than the class color -- on
@@ -6014,7 +6030,8 @@ function SocialPlus_ShowRowTooltip(button)
 			GameTooltip:AddLine(FRIENDS_LIST_OFFLINE,0.6,0.6,0.6)
 		end
 
-		SocialPlus_AddNoteLine(noteText)
+		AddNoteLine(noteText)
+		AddBroadcastLine(messageText)
 	end
 
 	GameTooltip:Show()
