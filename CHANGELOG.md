@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.7b
+
+- Fixed the wrong faction icon showing on the friends-list row and invite button/menu for a friend with multiple WoW licenses online at once (was picking a different account than the one actually being shown/invited).
+- The multi-license invite submenu now shows a faction crest next to each name, and opposite-faction entries render fully gray.
+- Fixed the tooltip sometimes vanishing and not updating while hovering a friend.
+
 ## 1.7a
 
 - Friend level tags ("L90") now match the BattleTag's blue instead of the class color, for both Battle.net and in-game friends.

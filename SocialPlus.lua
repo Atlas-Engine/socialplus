@@ -2512,9 +2512,26 @@ local function SocialPlus_UpdateFriendButton(button)
 			end
 
         local iconPath
-        local acct,ga
-        if C_BattleNet and C_BattleNet.GetFriendAccountInfo then
-            acct=C_BattleNet.GetFriendAccountInfo(id)
+        local ga
+        -- Match the SPECIFIC account this row is actually displaying
+        -- (characterName/realmName, already resolved above via
+        -- GetFriendInfoById), not just whichever account
+        -- C_BattleNet.GetFriendAccountInfo(id).gameAccountInfo considers
+        -- "the" one -- for a friend with multiple WoW licenses online at
+        -- once, those two APIs can resolve to DIFFERENT accounts, so the
+        -- row showed one character's name with a completely different
+        -- character's faction crest (reported live: an Alliance Rogue
+        -- shown with the Horde crest, because the friend also had a Horde
+        -- character online under the same BattleTag).
+        for _,acct in ipairs(SocialPlus_GetOnlineWoWGameAccounts(id)) do
+            if acct.characterName==characterName
+                and (not realmName or realmName=="" or acct.realmName==realmName) then
+                ga={realmName=acct.realmName,factionName=acct.factionName}
+                break
+            end
+        end
+        if not ga and C_BattleNet and C_BattleNet.GetFriendAccountInfo then
+            local acct=C_BattleNet.GetFriendAccountInfo(id)
             ga=acct and acct.gameAccountInfo or nil
         end
 
@@ -2888,28 +2905,33 @@ local function SocialPlus_UpdateFriendButton(button)
 		button:Hide()
 	end
 
-	-- Tooltip handling: if the widget currently holding the tooltip gets
-	-- reassigned to a different friend by a rebuild (list reorder, online/
-	-- offline rescan), we can't tell from here whether the mouse is even
-	-- still over that widget's current screen position -- a rebuild can
-	-- shift row order/heights out from under a stationary cursor. Trying
-	-- to re-show fresh content for "whoever this widget represents now"
-	-- repeatedly showed the WRONG friend's tooltip while the player hadn't
-	-- moved the mouse or clicked anything at all (reported live, multiple
-	-- times, different friend pairs each time). Hiding it instead is the
-	-- only way to guarantee nothing wrong ever displays -- a genuine mouse
-	-- movement re-triggers OnEnter and shows the correct one fresh.
-	if FriendsTooltip.button==button then
+	-- Tooltip handling: check whether THIS row is the one the mouse is
+	-- actually over right now (GetMouseFocus()), rather than checking
+	-- whether it's the widget FriendsTooltip.button happens to still
+	-- reference. A rebuild (list reorder, online/offline rescan) can
+	-- reassign which widget-to-friend mapping sits under a stationary
+	-- cursor -- comparing against the STALE FriendsTooltip.button meant a
+	-- newly-reassigned widget that's genuinely under the mouse right now
+	-- never got its own chance to refresh, since the check only ever ran
+	-- for whichever OLD widget the tooltip used to belong to (reported
+	-- live: hovering a friend showed their tooltip, then it just vanished
+	-- with no further update -- the correct widget's own pass never
+	-- resynced it because this comparison was backwards). Checking "is the
+	-- cursor over ME" per-row instead means whichever widget is actually
+	-- hovered always gets evaluated on its own render pass, regardless of
+	-- what the tooltip was last attached to.
+	if GetMouseFocus and GetMouseFocus()==button then
 		local identityKey=SocialPlus_GetRowIdentityKey(button.buttonType,button.id)
 		-- A nil identityKey (lookup momentarily failed) must NOT be treated
 		-- as "unchanged": nil==nil would wrongly count as still matching.
-		local sameFriend=identityKey and FriendsTooltip.SocialPlusShownKey==identityKey
+		local sameFriend=identityKey and FriendsTooltip.SocialPlusShownKey==identityKey and FriendsTooltip:IsShown()
 		if not sameFriend then
-			FriendsTooltip:Hide()
-			FriendsTooltip.button=nil
-			FriendsTooltip.SocialPlusShownType=nil
-			FriendsTooltip.SocialPlusShownID=nil
-			FriendsTooltip.SocialPlusShownKey=nil
+			FriendsTooltip.SocialPlusShownKey=identityKey
+			FriendsTooltip.SocialPlusShownType=button.buttonType
+			FriendsTooltip.SocialPlusShownID=button.id
+			if FriendsFrameTooltip_Show then
+				FriendsFrameTooltip_Show(button)
+			end
 		end
 	end
 
@@ -5302,15 +5324,30 @@ SocialPlus_GetInviteStatus=function(kind,id)
 		return false,L.INVITE_REASON_WRONG_PROJECT,INVITE_RESTRICTION_WOW_PROJECT_ID
 	end
 
-	-- Extra faction/region compatibility via C_BattleNet if available
-	local acct,ga=nil,nil
+	-- Extra faction/region compatibility -- matched to the SPECIFIC account
+	-- this row/button is actually displaying (characterName, resolved above
+	-- via GetFriendInfoById), not just whichever account C_BattleNet.
+	-- GetFriendAccountInfo(id).gameAccountInfo considers "the" one. For a
+	-- friend with multiple WoW licenses online at once those two APIs can
+	-- resolve to DIFFERENT accounts, so the invite button showed "opposite
+	-- faction" even when the character actually being shown/invited was
+	-- the SAME faction (reported live) -- same root cause as the row icon
+	-- mismatch fixed earlier.
+	local ga=nil
 	local friendFaction,friendRegionID=nil,nil
-	if C_BattleNet and C_BattleNet.GetFriendAccountInfo and type(C_BattleNet.GetFriendAccountInfo)=="function" then
-		acct=C_BattleNet.GetFriendAccountInfo(id)
-		ga=acct and acct.gameAccountInfo or nil
-		friendFaction=ga and ga.factionName or nil
-		friendRegionID=ga and ga.regionID or nil
+	for _,acct in ipairs(SocialPlus_GetOnlineWoWGameAccounts(id)) do
+		if acct.characterName==characterName
+			and (not realmName or realmName=="" or acct.realmName==realmName) then
+			ga={factionName=acct.factionName,regionID=acct.regionID}
+			break
+		end
 	end
+	if not ga and C_BattleNet and C_BattleNet.GetFriendAccountInfo and type(C_BattleNet.GetFriendAccountInfo)=="function" then
+		local acct=C_BattleNet.GetFriendAccountInfo(id)
+		ga=acct and acct.gameAccountInfo or nil
+	end
+	friendFaction=ga and ga.factionName or nil
+	friendRegionID=ga and ga.regionID or nil
 
 	-- If we know faction, block obvious opposite-faction cases first
 	if friendFaction and playerFaction and friendFaction~=playerFaction then
@@ -6490,8 +6527,23 @@ function SocialPlus_BuildInviteAccountSubmenu(level)
 			and CanCooperateWithGameAccount(acct.gameAccountID)==false
 		local ineligible=factionMismatch or projectMismatch or regionMismatch or coopBlocked
 
+		-- Faction crest on the right of each entry, same icon paths as the
+		-- main friends-list row (reported live: no way to tell which
+		-- account was which faction at a glance in this menu).
+		local factionIcon=""
+		if acct.factionName=="Horde" then
+			factionIcon=" |TInterface\\FriendsFrame\\plusmanz-horde:14:14:0:0|t"
+		elseif acct.factionName=="Alliance" then
+			factionIcon=" |TInterface\\FriendsFrame\\plusmanz-alliance:14:14:0:0|t"
+		end
+
+		-- Opposite-faction entries specifically render fully gray, not just
+		-- the library's own (subtle) disabled dimming -- reported live as
+		-- not obvious enough at a glance.
+		local nameHex=factionMismatch and "|cff808080" or hex
+
 		local info=LibDD:UIDropDownMenu_CreateInfo()
-		info.text="["..hex..target.."|r]"..detailText
+		info.text="["..nameHex..target.."|r]"..detailText..factionIcon
 		info.notCheckable=true
 		info.disabled=ineligible
 		if ineligible then
