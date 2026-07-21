@@ -751,6 +751,21 @@ local function SocialPlus_ApplyGroupOrder()
 		end
 	end
 
+	-- A group not yet in the persisted custom order -- freshly created,
+	-- just renamed, or pre-existing from before this backfill existed --
+	-- gets appended here so a later exact-name search recognizes it right
+	-- away via the fast groupOrder lookup above, instead of never matching
+	-- until the group happened to get drag-reordered at least once
+	-- (reported live: a brand-new group's header never showed on search).
+	if groupOrder then
+		for _,name in ipairs(others) do
+			if not indexByName[name] then
+				table.insert(groupOrder,name)
+				indexByName[name]=#groupOrder
+			end
+		end
+	end
+
 	table.sort(others,function(a,b)
 		local ai=indexByName[a] or math.huge
 		local bi=indexByName[b] or math.huge
@@ -4454,9 +4469,23 @@ local function InviteOrGroup(clickedgroup,invite)
 		end
 	end
 
-	-- Deleting a group also clears any mute setting for it
-	if not invite and not isFavorites and SocialPlus_SavedVars and SocialPlus_SavedVars.notifications then
-		SocialPlus_SavedVars.notifications.mutedGroups[clickedgroup]=nil
+	-- Deleting a group also clears any mute setting for it, and its entry
+	-- in the persisted custom order -- otherwise a stale name lingered
+	-- there forever, and a NEW group later created with the exact same
+	-- name would silently inherit that old position/collapse-search match
+	-- instead of behaving like the fresh group it actually is.
+	if not invite and not isFavorites and SocialPlus_SavedVars then
+		if SocialPlus_SavedVars.notifications then
+			SocialPlus_SavedVars.notifications.mutedGroups[clickedgroup]=nil
+		end
+		if SocialPlus_SavedVars.groupOrder then
+			for i,name in ipairs(SocialPlus_SavedVars.groupOrder) do
+				if name==clickedgroup then
+					table.remove(SocialPlus_SavedVars.groupOrder,i)
+					break
+				end
+			end
+		end
 	end
 end
 

@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.8b
+
+- Fixed a newly created (or never drag-reordered) group's real header not showing when searching its exact name.
+- Deleting a group now also clears its saved custom sort position, instead of leaving a stale entry behind.
+
 ## 1.8a
 
 - Searching (or clicking a group tag) for an exact group name now shows that group's real header (cogwheel, mute/rename/delete, collapse arrow) with everything else hidden, instead of just a flat filtered list.
