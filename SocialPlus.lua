@@ -1262,6 +1262,7 @@ end)
 		local i=SocialPlus_Searchbox.Instructions
 		print("region width:",i:GetWidth(),"text width:",i:GetStringWidth(),"text:",i:GetText())
 	end
+
 	local function SocialPlus_UpdateSearchGlow(self)
 		if SocialPlus_SearchGlow then
 			local focused=self:HasFocus()
@@ -2083,6 +2084,27 @@ local function GetFriendInfoById(id)
 				realmName=gameAccountInfo.realmName
 			end
 
+			-- Blizzard's "default" game-account summary above can come back
+			-- with a real WoW client but a garbage project ID (0, not a
+			-- valid expansion) and no character name at all -- confirmed
+			-- live, consistently, for one specific friend while every other
+			-- friend resolved fine. The per-account enumeration API (used a
+			-- few lines below for multi-license faction disambiguation) had
+			-- this friend's real, complete data even when the "default"
+			-- summary didn't. Fall back to it whenever the summary looks
+			-- incomplete for someone we otherwise know is in WoW.
+			if not characterName or characterName=="" or not wowProjectID or wowProjectID==0 then
+				local acct=SocialPlus_GetOnlineWoWGameAccounts(id)[1]
+				if acct then
+					characterName=acct.characterName
+					class=acct.className
+					level=acct.level
+					wowProjectID=acct.wowProjectID
+					realmName=acct.realmName
+					client=BNET_CLIENT_WOW
+				end
+			end
+
 			local coopArg=nil
 			if gameAccountInfo and gameAccountInfo.gameAccountID then
 				coopArg=gameAccountInfo.gameAccountID
@@ -2541,6 +2563,32 @@ local function SocialPlus_UpdateFriendButton(button)
 				button.status:SetTexture(FRIENDS_TEXTURE_ONLINE)
 			end
 
+        local iconPath
+        local ga
+        -- Match the SPECIFIC account this row is actually displaying
+        -- (characterName/realmName, already resolved above via
+        -- GetFriendInfoById), not just whichever account
+        -- C_BattleNet.GetFriendAccountInfo(id).gameAccountInfo considers
+        -- "the" one -- for a friend with multiple WoW licenses online at
+        -- once, those two APIs can resolve to DIFFERENT accounts, so the
+        -- row showed one character's name with a completely different
+        -- character's faction crest (reported live: an Alliance Rogue
+        -- shown with the Horde crest, because the friend also had a Horde
+        -- character online under the same BattleTag). Moved above the
+        -- infoText block below so the different-version branch can also
+        -- use ga.regionID to show which region they're playing in.
+        for _,acct in ipairs(SocialPlus_GetOnlineWoWGameAccounts(id)) do
+            if acct.characterName==characterName
+                and (not realmName or realmName=="" or acct.realmName==realmName) then
+                ga={realmName=acct.realmName,factionName=acct.factionName,regionID=acct.regionID}
+                break
+            end
+        end
+        if not ga and C_BattleNet and C_BattleNet.GetFriendAccountInfo then
+            local acct=C_BattleNet.GetFriendAccountInfo(id)
+            ga=acct and acct.gameAccountInfo or nil
+        end
+
 			if client==BNET_CLIENT_WOW and wowProjectID==WOW_PROJECT_ID then
 				if not zoneName or zoneName=="" then
 					infoText=UNKNOWN
@@ -2557,35 +2605,14 @@ local function SocialPlus_UpdateFriendButton(button)
 				-- there was no way to tell a TBC friend from a Retail one
 				-- at a glance (reported live). Same version label already
 				-- used in notifications (SocialPlus_BuildFriendDetailBlock)
-				-- shown here instead.
-				infoText=SocialPlus_GetVersionLabelText(wowProjectID)
+				-- shown here instead. Region appended too (e.g. "Retail
+				-- EU"), same reasoning -- a same-version-name friend in a
+				-- different region still isn't someone you can actually
+				-- group with, so it's worth knowing at a glance too.
+				infoText=SocialPlus_GetVersionLabelText(wowProjectID)..SocialPlus_FormatRegionText(ga and ga.regionID)
 			else
 				infoText=gameText
 			end
-
-        local iconPath
-        local ga
-        -- Match the SPECIFIC account this row is actually displaying
-        -- (characterName/realmName, already resolved above via
-        -- GetFriendInfoById), not just whichever account
-        -- C_BattleNet.GetFriendAccountInfo(id).gameAccountInfo considers
-        -- "the" one -- for a friend with multiple WoW licenses online at
-        -- once, those two APIs can resolve to DIFFERENT accounts, so the
-        -- row showed one character's name with a completely different
-        -- character's faction crest (reported live: an Alliance Rogue
-        -- shown with the Horde crest, because the friend also had a Horde
-        -- character online under the same BattleTag).
-        for _,acct in ipairs(SocialPlus_GetOnlineWoWGameAccounts(id)) do
-            if acct.characterName==characterName
-                and (not realmName or realmName=="" or acct.realmName==realmName) then
-                ga={realmName=acct.realmName,factionName=acct.factionName}
-                break
-            end
-        end
-        if not ga and C_BattleNet and C_BattleNet.GetFriendAccountInfo then
-            local acct=C_BattleNet.GetFriendAccountInfo(id)
-            ga=acct and acct.gameAccountInfo or nil
-        end
 
         local hasRealm=(realmName and realmName~="")
             or (ga and ga.realmName and ga.realmName~="")
@@ -7022,8 +7049,11 @@ local function SocialPlus_FormatFactionIconText(faction)
 end
 
 -- "" for Korea/Taiwan/China or when unknown (not requested). Placeholder
--- until real flag icon art is added.
-local function SocialPlus_FormatRegionText(regionID)
+-- until real flag icon art is added. Global (not local) -- called from
+-- SocialPlus_UpdateFriendButton, which is defined earlier in this file, so
+-- a local here wouldn't be visible there as an upvalue (same class of
+-- forward-reference issue as SocialPlus_NormalizeRealmForCompare earlier).
+function SocialPlus_FormatRegionText(regionID)
 	if regionID==1 then
 		return " ("..L.REGION_NA..")"
 	elseif regionID==3 then

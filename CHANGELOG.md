@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.9a
+
+- Battle.net friends on a different WoW version than you now also show their region next to it (e.g. "Retail EU").
+
 ## 1.8c
 
 - Fixed the friend right-click menu's Whisper (and View Friends List) sometimes acting on a different friend than the one actually clicked, if the list reindexed while the menu was open (e.g. after scrolling).
