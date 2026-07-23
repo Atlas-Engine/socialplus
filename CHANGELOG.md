@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.9b
+
+- Fixed some Battle.net friends showing "?" instead of their WoW version when Blizzard's own account data for them was incomplete, for every expansion (not just one).
+
 ## 1.9a
 
 - Battle.net friends on a different WoW version than you now also show their region next to it (e.g. "Retail EU").

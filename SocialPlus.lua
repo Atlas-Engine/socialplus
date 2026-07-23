@@ -2609,7 +2609,11 @@ local function SocialPlus_UpdateFriendButton(button)
 				-- EU"), same reasoning -- a same-version-name friend in a
 				-- different region still isn't someone you can actually
 				-- group with, so it's worth knowing at a glance too.
-				infoText=SocialPlus_GetVersionLabelText(wowProjectID)..SocialPlus_FormatRegionText(ga and ga.regionID)
+				local versionLabel=SocialPlus_GetVersionLabelText(wowProjectID)
+				if versionLabel=="?" then
+					versionLabel=SocialPlus_GetVersionLabelFromGameText(gameText) or "?"
+				end
+				infoText=versionLabel..SocialPlus_FormatRegionText(ga and ga.regionID)
 			else
 				infoText=gameText
 			end
@@ -4712,6 +4716,36 @@ function SocialPlus_GetVersionLabelText(wowProjectID)
 		[WOW_PROJECT_MISTS_CLASSIC or -6]=L.WOW_VERSION_MOP,
 	}
 	return (wowProjectID and labels[wowProjectID]) or "?"
+end
+
+-- wowProjectID can come back broken (0, not a real expansion) for a friend
+-- whose structured game-account fields didn't fully resolve -- confirmed
+-- live for multiple friends across different expansions. Blizzard's own
+-- free-text rich presence (gameText, e.g. "Mists of Pandaria Classic -
+-- Pagle") is generated independently of those broken fields and is still
+-- correct -- map its known expansion phrases to our own clean label
+-- (region gets appended separately by the caller) instead of showing a
+-- bare "?". The pattern list is local to this function (not a top-level
+-- local) -- this file is already right at Lua's 200-local-per-chunk
+-- ceiling for its main chunk, and this only runs on the rare "?" case.
+function SocialPlus_GetVersionLabelFromGameText(gameText)
+	if not gameText or gameText=="" then return nil end
+	-- Order matters: longer/more specific phrases first so e.g. "Wrath of
+	-- the Lich King Classic" doesn't accidentally get caught by a broader
+	-- pattern first.
+	local patterns={
+		{"Burning Crusade Classic",L.WOW_VERSION_TBC},
+		{"Wrath of the Lich King Classic",L.WOW_VERSION_WOTLK},
+		{"Cataclysm Classic",L.WOW_VERSION_CATA},
+		{"Mists of Pandaria Classic",L.WOW_VERSION_MOP},
+		{"Classic Era",L.WOW_VERSION_CLASSIC_ERA},
+	}
+	for _,entry in ipairs(patterns) do
+		if gameText:find(entry[1],1,true) then
+			return entry[2]
+		end
+	end
+	return nil
 end
 
 function SocialPlus_CreateSettingsPanel()
