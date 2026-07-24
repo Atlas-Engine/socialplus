@@ -2208,16 +2208,19 @@ local function SocialPlus_GetBNetButtonNameText(accountName,client,canCoop,chara
 	end
 
 	if characterName and characterName~="" then
-		local coopLabel=""
-		if not canCoop then
-			coopLabel=CANNOT_COOPERATE_LABEL
-		end
-
+		-- Realm deliberately left off here (on request) -- it's already
+		-- shown in this row's zone/location line and in the tooltip, so
+		-- appending it a third time just ate into the row's limited width
+		-- for no benefit (and was part of what pushed the note icon off
+		-- the end of long names).
+		--
+		-- Blizzard's own CANNOT_COOPERATE_LABEL ("*") used to be appended
+		-- here too when canCoop was false -- dropped on request (it read as
+		-- a stray/broken character, not a meaningful indicator, in this
+		-- row). Invite eligibility still checks the real canCoop flag
+		-- elsewhere (SocialPlus_GetInviteStatus); this only affects the
+		-- displayed name.
 		local charLabel=characterName
-		if realmName and realmName~="" then
-			charLabel=charLabel.."-"..realmName
-		end
-		charLabel=charLabel..coopLabel
 
 		if client==BNET_CLIENT_WOW then
 			if classColor then
@@ -2436,6 +2439,13 @@ local function SocialPlus_UpdateFriendButton(button)
 
 	if button.SocialPlusGroupGearButton then
 		button.SocialPlusGroupGearButton:Hide()
+	end
+
+	-- Rows are pooled/recycled across types (a button previously showing a
+	-- friend's note icon can get reused as a group divider) -- default to
+	-- hidden here; the BNET/WOW branch below re-shows it when applicable.
+	if button.SocialPlusNoteIcon then
+		button.SocialPlusNoteIcon:Hide()
 	end
 
 	-- Update based on button type
@@ -2969,21 +2979,32 @@ local function SocialPlus_UpdateFriendButton(button)
 			button.info:Show()
 		end
 		if button.buttonType==FRIENDS_BUTTON_TYPE_BNET or button.buttonType==FRIENDS_BUTTON_TYPE_WOW then
-			-- Favorite star stays on the left, in front of the name. The
-			-- note icon is a test placement on the right, after the name.
+			-- Pinned explicitly every render, not just left wherever
+			-- Blizzard's template put it. Rows are pooled/recycled, and the
+			-- ONLY other place this addon touches button.status is the
+			-- group-divider branch below, which re-anchors it to a
+			-- vertically-centered LEFT point -- a widget last used as a
+			-- divider and then recycled into a friend row kept that centered
+			-- position instead of reverting, so the status icon appeared to
+			-- randomly drift between top and middle depending on scroll
+			-- history (reported live). Anchoring it ourselves here, always,
+			-- makes its position deterministic regardless of prior reuse --
+			-- and gives the note icon below a stable point to anchor to.
+			button.status:ClearAllPoints()
+			button.status:SetPoint("TOPLEFT",button,"TOPLEFT",4,-3)
+
+			-- Favorite star stays on the left, in front of the name.
 			local prefix=""
-			local suffix=""
 
 			if SocialPlus_IsFavorite(button.buttonType,button.id) then
 				prefix=prefix.."|TInterface\\Common\\FavoritesIcon:26:26:0:-3|t"
 			end
 
-			-- Small note icon so a friend with an actual note stands out at
-			-- a glance, matching Retail. "Has a note" means real free text,
-			-- not just the group tags SocialPlus stores in the same note
-			-- field ("Sacha#Friends") -- strip everything from the first
-			-- "#" onward (NoteAndGroups does the same split, but isn't in
-			-- scope yet at this point in the file) before checking.
+			-- "Has a note" means real free text, not just the group tags
+			-- SocialPlus stores in the same note field ("Sacha#Friends") --
+			-- strip everything from the first "#" onward (NoteAndGroups does
+			-- the same split, but isn't in scope yet at this point in the
+			-- file) before checking.
 			local rawNote
 			if button.buttonType==FRIENDS_BUTTON_TYPE_BNET then
 				rawNote=select(13,FG_BNGetFriendInfo(button.id))
@@ -2992,13 +3013,30 @@ local function SocialPlus_UpdateFriendButton(button)
 				rawNote=info and info.notes
 			end
 			local baseNote=rawNote and strtrim(rawNote:match("^([^#]*)") or "")
-			if baseNote and baseNote~="" then
-				-- Same gold note icon as the tooltip, on request, instead
-				-- of this different one.
-				suffix=suffix.." |TInterface\\Buttons\\UI-GuildButton-PublicNote-Up:14:14:0:0|t"
+			local hasNote=baseNote and baseNote~=""
+
+			-- The note icon used to be appended as inline text after the
+			-- name (suffix..) but that put it INSIDE the same truncated,
+			-- fixed-width name string -- a long character/realm name (e.g.
+			-- "Lifeosuction-Nebupeach-Nazgrim") truncates before reaching
+			-- it, so the icon silently never rendered (reported live). It's
+			-- now a real texture anchored directly under the (now-pinned,
+			-- see above) status icon, so it never competes with the name
+			-- column's width at all.
+			if not button.SocialPlusNoteIcon then
+				local icon=button:CreateTexture(nil,"OVERLAY")
+				icon:SetTexture("Interface\\Buttons\\UI-GuildButton-PublicNote-Up")
+				icon:SetSize(10,10)
+				icon:SetPoint("TOP",button.status,"BOTTOM",0,-2)
+				button.SocialPlusNoteIcon=icon
+			end
+			if hasNote then
+				button.SocialPlusNoteIcon:Show()
+			else
+				button.SocialPlusNoteIcon:Hide()
 			end
 
-			nameText=prefix..nameText..suffix
+			nameText=prefix..nameText
 		end
 		button.name:SetText(nameText)
 		button.name:SetTextColor(nameColor.r,nameColor.g,nameColor.b)
@@ -5265,6 +5303,7 @@ SocialPlus_ClickCatcher:SetScript("OnMouseDown",function(self,button)
     -- it explicitly via :Click() so one click is enough.
     local clickedFriendRow=nil
     local clickedGear=nil
+    local clickedGearGroupKey=nil
     local clickedTravelPass=nil
     if FriendsScrollFrame and FriendsScrollFrame.buttons then
         for _,rowButton in ipairs(FriendsScrollFrame.buttons) do
@@ -5288,6 +5327,7 @@ SocialPlus_ClickCatcher:SetScript("OnMouseDown",function(self,button)
                 local overTravel=travel and travel:IsShown() and travel:IsMouseOver()
                 if overGear then
                     clickedGear=gear
+                    clickedGearGroupKey=rowButton.SocialPlusGroupName or ""
                 elseif overTravel then
                     clickedTravelPass=travel
                 else
@@ -5337,8 +5377,34 @@ SocialPlus_ClickCatcher:SetScript("OnMouseDown",function(self,button)
         -- of its way without touching the search, on request (clicking the
         -- cogwheel to manage a group you just searched for used to cancel
         -- the search entirely).
+        --
+        -- If THIS SAME gear's menu is the one currently open (re-clicking
+        -- it, e.g. right at its edge where this catcher intercepts instead
+        -- of the gear itself), a real toggle-close is wanted -- just close
+        -- it and stop, don't forward the click. Forwarding it here used to
+        -- run the gear's OnClick again unconditionally, which re-armed the
+        -- catcher (SocialPlus_ClickCatcherIsForMenu=true) even when
+        -- ToggleDropDownMenu closed rather than opened, so the SAME edge
+        -- click both closed the menu and immediately reopened it -- it
+        -- never actually stayed closed (reported live).
+        local sameMenuAlreadyOpen=clickedGearGroupKey
+            and L_UIDROPDOWNMENU_MENU_VALUE==clickedGearGroupKey
+            and L_DropDownList1 and L_DropDownList1:IsShown()
+
+        -- Close the REAL dropdown list first (not just our own overlay) --
+        -- without this, when a DIFFERENT gear's click needs forwarding
+        -- below, the actual LibDD list frame was still open when
+        -- clickedGear:Click() ran that gear's own OnClick, so its
+        -- ToggleDropDownMenu saw an already-open menu and closed it instead
+        -- of opening the new one -- but that OnClick still re-armed the
+        -- catcher for a menu that was no longer actually showing, and the
+        -- next click anywhere then hid this orphaned, still-armed catcher,
+        -- playing a second close sound (reported live).
+        LibDD:CloseDropDownMenus()
         self:Hide()
-        clickedGear:Click()
+        if not sameMenuAlreadyOpen then
+            clickedGear:Click()
+        end
         return
     end
 
@@ -6308,6 +6374,13 @@ function SocialPlus_ShowRowTooltip(button)
 		local accountName,characterName,class,level,_,isOnline,_,client,canCoop,wowProjectID,lastOnline,
 			isAFK,isGameAFK,isDND,isGameBusy,mobile,zoneName,gameText,realmName=GetFriendInfoById(button.id)
 		local messageText,noteText=select(12,FG_BNGetFriendInfo(button.id))
+		-- Inlined rather than calling SocialPlus_GetFriendGameAccountInfo --
+		-- that helper is declared further down the file (local, out of
+		-- lexical scope here), so referencing it from this earlier function
+		-- would silently resolve to a global nil instead of the helper.
+		local acctInfo=C_BattleNet and C_BattleNet.GetFriendAccountInfo and C_BattleNet.GetFriendAccountInfo(button.id)
+		local ga=acctInfo and acctInfo.gameAccountInfo
+		local regionID=ga and ga.regionID
 
 		-- Title (BattleTag) in the same blue as the "L90" level prefix
 		-- (FRIENDS_BNET_NAME_COLOR) rather than the class color -- on
@@ -6319,8 +6392,10 @@ function SocialPlus_ShowRowTooltip(button)
 				local classColor=ClassColourCode(class)
 				local charLabel=characterName
 				if realmName and realmName~="" then charLabel=charLabel.."-"..realmName end
-				GameTooltip:AddLine(classColor..charLabel.."|r",1,1,1)
 				if wowProjectID==WOW_PROJECT_ID then
+					-- Region goes on the name line here -- there's no separate
+					-- version line in this branch to carry it instead.
+					GameTooltip:AddLine(classColor..charLabel..SocialPlus_FormatRegionText(regionID).."|r",1,1,1)
 					if level and level~=0 then
 						GameTooltip:AddLine(format(FRIENDS_LEVEL_TEMPLATE,level,class or ""),0.8,0.8,0.8)
 					end
@@ -6328,7 +6403,11 @@ function SocialPlus_ShowRowTooltip(button)
 						GameTooltip:AddLine(mobile and LOCATION_MOBILE_APP or zoneName,0.6,0.6,0.6)
 					end
 				else
-					GameTooltip:AddLine(SocialPlus_GetVersionLabelText(wowProjectID),0.6,0.6,0.6)
+					-- Region goes on the version line here instead (e.g.
+					-- "Retail (EU)") -- putting it on the name line too gave
+					-- a duplicate "(NA) ... (NA)" (reported live).
+					GameTooltip:AddLine(classColor..charLabel.."|r",1,1,1)
+					GameTooltip:AddLine(SocialPlus_GetVersionLabelText(wowProjectID)..SocialPlus_FormatRegionText(regionID),0.6,0.6,0.6)
 				end
 
 				-- A single BattleTag can have more than one WoW client online at

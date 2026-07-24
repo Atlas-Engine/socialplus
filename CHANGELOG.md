@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.10a
+
+- Fixed the note icon not showing on the friends list for a long character/realm name (it was getting truncated away along with the name); it now sits under the status icon instead.
+- Fixed the status icon sometimes showing in the middle of a row instead of at the top, depending on scroll history.
+- Battle.net friends' names in the list no longer show the realm (already shown in the row's location line and in the tooltip).
+- Removed the "*" Blizzard shows next to a character's name when they can't currently group with you -- it read as a stray character rather than a meaningful indicator in this row.
+- Fixed the group cogwheel sometimes not actually closing (and playing its closing sound twice) when clicking right at its edge while its menu was already open.
+- Battle.net friends' tooltip now also shows their region (NA/EU) next to their name, matching the version line it already showed for a friend on a different WoW version than you.
+
 ## 1.9c
 
 - Battle.net friends' tooltip now also lists any other WoW sessions they have online at the same time (e.g. logged in on both NA and EU at once), instead of only showing whichever one Blizzard picks.
@@ -7,7 +16,7 @@
 
 ## 1.9b
 
-- Fixed some Battle.net friends showing "?" instead of their WoW version when Blizzard's own account data for them was incomplete, for every expansion (not just one).
+- Fixed some Battle.net friends showing "?" instead of their WoW version when Blizzard's own account data for them was incomplete, for every expansion.
 
 ## 1.9a
 
