@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.9c
+
+- Battle.net friends' tooltip now also lists any other WoW sessions they have online at the same time (e.g. logged in on both NA and EU at once), instead of only showing whichever one Blizzard picks.
+- The Invite/Suggest Invite submenu now shows a region tag (NA/EU) on the left of each character when a friend has multiple accounts online.
+
 ## 1.9b
 
 - Fixed some Battle.net friends showing "?" instead of their WoW version when Blizzard's own account data for them was incomplete, for every expansion (not just one).

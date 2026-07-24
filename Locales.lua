@@ -100,6 +100,7 @@ L.MSG_INVITE_ACCEPT_BROKEN  = "|cffff9955SocialPlus:|r this friend request could
 ----------------------------------------------------------------
 L.NOTIFY_ONLINE_MSG         = "%s is now |cFF00FF00online|r"
 L.NOTIFY_OFFLINE_MSG        = "%s is now |cFFFF0000offline|r"
+L.TOOLTIP_ALSO_ONLINE       = "Also online: %s"
 L.REGION_NA                 = "NA"
 L.REGION_EU                 = "EU"
 L.WOW_VERSION_RETAIL        = "Retail"
@@ -203,6 +204,7 @@ if locale == "frFR" then
     ----------------------------------------------------------------
     L.NOTIFY_ONLINE_MSG         = "%s est maintenant |cFF00FF00en ligne|r"
     L.NOTIFY_OFFLINE_MSG        = "%s est maintenant |cFFFF0000hors ligne|r"
+    L.TOOLTIP_ALSO_ONLINE       = "Également en ligne : %s"
     L.REGION_NA                 = "NA"
     L.REGION_EU                 = "EU"
     L.WOW_VERSION_RETAIL        = "Retail"
@@ -301,6 +303,7 @@ elseif locale == "esES" or locale == "esMX" then
     ----------------------------------------------------------------
     L.NOTIFY_ONLINE_MSG         = "%s está ahora |cFF00FF00en línea|r"
     L.NOTIFY_OFFLINE_MSG        = "%s está ahora |cFFFF0000desconectado|r"
+    L.TOOLTIP_ALSO_ONLINE       = "También en línea: %s"
     L.REGION_NA                 = "NA"
     L.REGION_EU                 = "EU"
     L.WOW_VERSION_RETAIL        = "Retail"

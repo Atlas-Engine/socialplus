@@ -6330,6 +6330,28 @@ function SocialPlus_ShowRowTooltip(button)
 				else
 					GameTooltip:AddLine(SocialPlus_GetVersionLabelText(wowProjectID),0.6,0.6,0.6)
 				end
+
+				-- A single BattleTag can have more than one WoW client online at
+				-- once (e.g. NA + EU simultaneously). GetFriendInfoById/
+				-- C_BattleNet.GetFriendAccountInfo only ever surface Blizzard's
+				-- own single pick above, so a friend logged into two regions at
+				-- once silently only ever showed one of them (reported live).
+				-- List any OTHER currently-online WoW sessions here using the
+				-- same multi-account enumeration already relied on for invites.
+				local otherAccounts=SocialPlus_GetOnlineWoWGameAccounts(button.id)
+				for _,acct in ipairs(otherAccounts) do
+					if not (acct.characterName==characterName and (acct.realmName or "")==(realmName or "")) then
+						local otherLabel=ClassColourCode(acct.className)..(acct.characterName or UNKNOWN).."|r"
+						if acct.realmName and acct.realmName~="" then
+							otherLabel=otherLabel.."-"..acct.realmName
+						end
+						otherLabel=otherLabel..SocialPlus_FormatRegionText(acct.regionID)
+						if acct.wowProjectID and acct.wowProjectID~=WOW_PROJECT_ID then
+							otherLabel=otherLabel.." - "..SocialPlus_GetVersionLabelText(acct.wowProjectID)
+						end
+						GameTooltip:AddLine(format(L.TOOLTIP_ALSO_ONLINE,otherLabel),0.6,0.8,0.6,true)
+					end
+				end
 			else
 				GameTooltip:AddLine(gameText or "",0.8,0.8,0.8)
 			end
@@ -7002,8 +7024,18 @@ function SocialPlus_BuildInviteAccountSubmenu(level)
 		-- not obvious enough at a glance.
 		local nameHex=factionMismatch and "|cff808080" or hex
 
+		-- Region tag on the far left of the line -- with several linked
+		-- accounts online at once (e.g. one NA, one EU), nothing distinguished
+		-- them by region at a glance the way the version header already does.
+		local regionPrefix=""
+		if acct.regionID==1 then
+			regionPrefix="|cff808080["..L.REGION_NA.."]|r "
+		elseif acct.regionID==3 then
+			regionPrefix="|cff808080["..L.REGION_EU.."]|r "
+		end
+
 		local info=LibDD:UIDropDownMenu_CreateInfo()
-		info.text="["..nameHex..target.."|r]"..detailText..factionIcon
+		info.text=regionPrefix.."["..nameHex..target.."|r]"..detailText..factionIcon
 		info.notCheckable=true
 		info.disabled=ineligible
 		if ineligible then
