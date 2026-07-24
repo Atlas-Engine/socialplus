@@ -6334,6 +6334,18 @@ function SocialPlus_ShowRowTooltip(button)
 			GameTooltip:AddLine("|T628215:14:14:0:0|t "..messageText,0.6,0.8,1,true)
 		end
 	end
+	-- Same faction crest, same size, as the multi-invite submenu
+	-- (SocialPlus_BuildInviteAccountSubmenu) -- prepended to a character
+	-- name line, on request, including each additional simultaneous
+	-- session line for a friend with more than one WoW license online.
+	local function FactionIconPrefix(factionName)
+		if factionName=="Horde" then
+			return "|TInterface\\FriendsFrame\\plusmanz-horde:14:14:0:0|t "
+		elseif factionName=="Alliance" then
+			return "|TInterface\\FriendsFrame\\plusmanz-alliance:14:14:0:0|t "
+		end
+		return ""
+	end
 
 	if not (button and GameTooltip) then return end
 	if button.buttonType~=FRIENDS_BUTTON_TYPE_WOW and button.buttonType~=FRIENDS_BUTTON_TYPE_BNET then
@@ -6382,6 +6394,8 @@ function SocialPlus_ShowRowTooltip(button)
 		local ga=acctInfo and acctInfo.gameAccountInfo
 		local regionID=ga and ga.regionID
 
+		local friendFaction=ga and ga.factionName
+
 		-- Title (BattleTag) in the same blue as the "L90" level prefix
 		-- (FRIENDS_BNET_NAME_COLOR) rather than the class color -- on
 		-- request, to match that existing element instead of the
@@ -6395,7 +6409,7 @@ function SocialPlus_ShowRowTooltip(button)
 				if wowProjectID==WOW_PROJECT_ID then
 					-- Region goes on the name line here -- there's no separate
 					-- version line in this branch to carry it instead.
-					GameTooltip:AddLine(classColor..charLabel..SocialPlus_FormatRegionText(regionID).."|r",1,1,1)
+					GameTooltip:AddLine(FactionIconPrefix(friendFaction)..classColor..charLabel..SocialPlus_FormatRegionText(regionID).."|r",1,1,1)
 					if level and level~=0 then
 						GameTooltip:AddLine(format(FRIENDS_LEVEL_TEMPLATE,level,class or ""),0.8,0.8,0.8)
 					end
@@ -6406,7 +6420,7 @@ function SocialPlus_ShowRowTooltip(button)
 					-- Region goes on the version line here instead (e.g.
 					-- "Retail (EU)") -- putting it on the name line too gave
 					-- a duplicate "(NA) ... (NA)" (reported live).
-					GameTooltip:AddLine(classColor..charLabel.."|r",1,1,1)
+					GameTooltip:AddLine(FactionIconPrefix(friendFaction)..classColor..charLabel.."|r",1,1,1)
 					GameTooltip:AddLine(SocialPlus_GetVersionLabelText(wowProjectID)..SocialPlus_FormatRegionText(regionID),0.6,0.6,0.6)
 				end
 
@@ -6420,7 +6434,7 @@ function SocialPlus_ShowRowTooltip(button)
 				local otherAccounts=SocialPlus_GetOnlineWoWGameAccounts(button.id)
 				for _,acct in ipairs(otherAccounts) do
 					if not (acct.characterName==characterName and (acct.realmName or "")==(realmName or "")) then
-						local otherLabel=ClassColourCode(acct.className)..(acct.characterName or UNKNOWN).."|r"
+						local otherLabel=FactionIconPrefix(acct.factionName)..ClassColourCode(acct.className)..(acct.characterName or UNKNOWN).."|r"
 						if acct.realmName and acct.realmName~="" then
 							otherLabel=otherLabel.."-"..acct.realmName
 						end

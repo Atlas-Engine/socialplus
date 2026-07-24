@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.10b
+
+- Battle.net friends' tooltip now shows a faction crest next to each character name, including any other simultaneous WoW sessions listed below it.
+
 ## 1.10a
 
 - Fixed the note icon not showing on the friends list for a long character/realm name (it was getting truncated away along with the name); it now sits under the status icon instead.
