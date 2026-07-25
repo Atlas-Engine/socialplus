@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.10c
+
+- Fixed version-unresolved Battle.net friends (shown as "?") showing that for every case, even when it's really just that they're at the character-select screen -- now shown as "Character Selection" instead when no character name has resolved at all.
+
 ## 1.10b
 
 - Battle.net friends' tooltip now shows a faction crest next to each character name, including any other simultaneous WoW sessions listed below it.

@@ -109,6 +109,7 @@ L.WOW_VERSION_TBC           = "TBC"
 L.WOW_VERSION_WOTLK         = "WotLK"
 L.WOW_VERSION_CATA          = "Cata"
 L.WOW_VERSION_MOP           = "MoP"
+L.CHARACTER_SELECTION       = "Character Selection"
 
 -----------------------------------------------------------------------
 -- Locale overrides
@@ -213,6 +214,7 @@ if locale == "frFR" then
     L.WOW_VERSION_WOTLK         = "WotLK"
     L.WOW_VERSION_CATA          = "Cata"
     L.WOW_VERSION_MOP           = "MoP"
+    L.CHARACTER_SELECTION       = "Sélection du personnage"
 
 elseif locale == "esES" or locale == "esMX" then
     ----------------------------------------------------------------
@@ -312,4 +314,5 @@ elseif locale == "esES" or locale == "esMX" then
     L.WOW_VERSION_WOTLK         = "WotLK"
     L.WOW_VERSION_CATA          = "Cata"
     L.WOW_VERSION_MOP           = "MoP"
+    L.CHARACTER_SELECTION       = "Selección de personaje"
 end

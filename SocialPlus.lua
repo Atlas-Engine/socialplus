@@ -2621,7 +2621,15 @@ local function SocialPlus_UpdateFriendButton(button)
 				-- group with, so it's worth knowing at a glance too.
 				local versionLabel=SocialPlus_GetVersionLabelText(wowProjectID)
 				if versionLabel=="?" then
-					versionLabel=SocialPlus_GetVersionLabelFromGameText(gameText) or "?"
+					versionLabel=SocialPlus_GetVersionLabelFromGameText(gameText)
+				end
+				if not versionLabel then
+					-- No character name resolved at all (not just version
+					-- data) almost always means they're sitting at the
+					-- character-select/loading screen rather than their
+					-- account data genuinely being broken -- show that
+					-- instead of a bare "?" (suspected live).
+					versionLabel=(not characterName or characterName=="") and L.CHARACTER_SELECTION or "?"
 				end
 				infoText=versionLabel..SocialPlus_FormatRegionText(ga and ga.regionID)
 			else
@@ -6445,6 +6453,11 @@ function SocialPlus_ShowRowTooltip(button)
 						GameTooltip:AddLine(format(L.TOOLTIP_ALSO_ONLINE,otherLabel),0.6,0.8,0.6,true)
 					end
 				end
+			elseif client==BNET_CLIENT_WOW then
+				-- Confirmed playing WoW but no character resolved -- same
+				-- character-select/loading-screen signal as the row's info
+				-- line above, rather than showing a blank/raw gameText line.
+				GameTooltip:AddLine(L.CHARACTER_SELECTION,0.8,0.8,0.8)
 			else
 				GameTooltip:AddLine(gameText or "",0.8,0.8,0.8)
 			end
