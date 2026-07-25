@@ -3,6 +3,7 @@
 ## 1.10c
 
 - Fixed version-unresolved Battle.net friends (shown as "?") showing that for every case, even when it's really just that they're at the character-select screen -- now shown as "Character Selection" instead when no character name has resolved at all.
+- SocialPlus now tells you once per session if a guild or group member is running a newer version than you.
 
 ## 1.10b
 

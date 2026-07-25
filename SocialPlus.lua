@@ -4897,31 +4897,14 @@ function SocialPlus_CreateSettingsPanel()
 	end)
 
 	-- Version, read from the .toc at load time so it always matches
-	-- whatever's actually packaged (the packager substitutes
-	-- "@project-version@" with the real release tag) -- never hardcoded,
-	-- so this can't drift out of date on a new release. Right-aligned on
-	-- the same axis as the title, just left of the close button.
-	-- Try the modern C_AddOns namespace first -- this client's version of
-	-- GetAddOnMetadata may be a no-op/absent global (confirmed pattern
-	-- elsewhere in this file for other moved/renamed APIs), in which case
-	-- the old "GetAddOnMetadata and GetAddOnMetadata(...)" guard silently
-	-- skips with no error, exactly matching the text just not appearing.
-	local addonVersion
-	if C_AddOns and C_AddOns.GetAddOnMetadata then
-		addonVersion=C_AddOns.GetAddOnMetadata(ADDON_NAME,"Version")
-	elseif GetAddOnMetadata then
-		addonVersion=GetAddOnMetadata(ADDON_NAME,"Version")
-	end
-	-- Built from pieces, not the literal token: CurseForge's packager does
-	-- a plain-text find-and-replace of "@project-version@" across EVERY
-	-- packaged file, not just the .toc -- so writing the literal string
-	-- here got substituted too, turning this into "~=1.5c" on an actual
-	-- 1.5c release and silently skipping the whole block (confirmed live:
-	-- the .toc correctly showed "1.5c", GetAddOnMetadata correctly
-	-- returned "1.5c", yet the text never appeared -- this self-defeating
-	-- check was why).
-	local unpackagedToken="@".."project-version".."@"
-	if addonVersion and addonVersion~="" and addonVersion~=unpackagedToken then
+	-- whatever's actually packaged -- never hardcoded, so this can't drift
+	-- out of date on a new release. Right-aligned on the same axis as the
+	-- title, just left of the close button. SocialPlus_GetAddonVersion
+	-- handles both the C_AddOns/global API split and the unpackaged
+	-- "@project-version@" sentinel (returning nil for a dev build) -- see
+	-- it for the full story on why that token can't be written literally.
+	local addonVersion=SocialPlus_GetAddonVersion()
+	if addonVersion then
 		-- GameFontDisableSmall (WoW's "grayed out" style) carries its own
 		-- dim alpha baked into the font object itself -- SetTextColor's RGB
 		-- was correct but that baked-in alpha kept it faded regardless
@@ -6215,6 +6198,9 @@ frame:RegisterEvent("FRIENDLIST_UPDATE")
 -- ticker existed for. With this event feeding the same coalesced scan,
 -- detection is near-instant and the ticker is just a safety net.
 frame:RegisterEvent("BN_FRIEND_INFO_CHANGED")
+-- Out-of-date version alert (see the version-check block further down)
+frame:RegisterEvent("CHAT_MSG_ADDON")
+frame:RegisterEvent("GROUP_ROSTER_UPDATE")
 
 local function SocialPlus_OnClick(self,button)
 	if self.buttonType==FRIENDS_BUTTON_TYPE_DIVIDER then
@@ -7776,6 +7762,122 @@ local function SocialPlus_HookWhoButtons()
 	end
 end
 
+-- [[ Out-of-date version alert ]]
+--
+-- Same idea as Bagnon's: broadcast our own version over the addon-message
+-- channel, and if another player reports a HIGHER one, tell the user once
+-- that theirs might be out of date. Everything here is deliberately
+-- best-effort -- a failed/unavailable comm API must never break the addon,
+-- so every call is guarded and every unparseable version is ignored rather
+-- than guessed at.
+--
+-- Declared as globals (not top-level locals) on purpose: this file's main
+-- chunk is already at Lua's 200-local ceiling (see the tooltip helpers for
+-- the same constraint).
+
+-- Addon message prefixes are capped at 16 characters.
+SOCIALPLUS_VERSION_PREFIX="SocialPlusVer"
+
+-- Only ever warn once per session, however many people report a newer build.
+SocialPlus_VersionAlertShown=false
+
+-- Our own version, straight from the .toc, or nil when running unpackaged.
+--
+-- The packager substitutes "@project-version@" with the real tag across
+-- EVERY packaged file -- so the sentinel we compare against has to be built
+-- from pieces, or it gets substituted too and the comparison silently
+-- becomes 'version ~= version' (this exact self-defeating bug shipped once
+-- already, see the settings panel's version text). Returning nil for the
+-- unpackaged case keeps a dev build from ever broadcasting or reacting to
+-- the literal token.
+function SocialPlus_GetAddonVersion()
+	local version
+	-- Try the modern C_AddOns namespace first -- this client's version of
+	-- the old global may be absent, in which case a bare
+	-- "GetAddOnMetadata and GetAddOnMetadata(...)" guard silently skips.
+	if C_AddOns and C_AddOns.GetAddOnMetadata then
+		version=C_AddOns.GetAddOnMetadata(ADDON_NAME,"Version")
+	elseif GetAddOnMetadata then
+		version=GetAddOnMetadata(ADDON_NAME,"Version")
+	end
+	local unpackagedToken="@".."project-version".."@"
+	if not version or version=="" or version==unpackagedToken then
+		return nil
+	end
+	return version
+end
+
+-- "1.10c" -> 1, 10, "c". Returns nil for anything that isn't our exact
+-- release format, so a malformed or foreign version string can never
+-- produce a bogus "you're outdated" warning.
+function SocialPlus_ParseVersion(version)
+	if type(version)~="string" then return nil end
+	local major,minor,letter=version:match("^(%d+)%.(%d+)(%a?)$")
+	if not major then return nil end
+	return tonumber(major),tonumber(minor),letter or ""
+end
+
+-- True only when `other` is a well-formed version strictly newer than
+-- `mine`. Minor is compared NUMERICALLY (1.10 is newer than 1.9 -- a plain
+-- string compare would get that backwards), and the letter suffix compares
+-- lexically with "" sorting before "a" (so 1.10 < 1.10a < 1.10b).
+function SocialPlus_IsVersionNewer(other,mine)
+	local oMajor,oMinor,oLetter=SocialPlus_ParseVersion(other)
+	local mMajor,mMinor,mLetter=SocialPlus_ParseVersion(mine)
+	if not oMajor or not mMajor then return false end
+	if oMajor~=mMajor then return oMajor>mMajor end
+	if oMinor~=mMinor then return oMinor>mMinor end
+	return oLetter>mLetter
+end
+
+function SocialPlus_BroadcastVersion()
+	local version=SocialPlus_GetAddonVersion()
+	if not version then return end
+	local send=(C_ChatInfo and C_ChatInfo.SendAddonMessage) or SendAddonMessage
+	if not send then return end
+
+	if IsInGuild and IsInGuild() then
+		pcall(send,SOCIALPLUS_VERSION_PREFIX,version,"GUILD")
+	end
+	-- RAID covers instance groups too; PARTY would be silently dropped there.
+	local channel
+	if IsInRaid and IsInRaid() then
+		channel="RAID"
+	elseif IsInGroup and IsInGroup() then
+		channel="PARTY"
+	end
+	if channel then
+		pcall(send,SOCIALPLUS_VERSION_PREFIX,version,channel)
+	end
+end
+
+-- Roster events fire in bursts (every member load, every join/leave), so
+-- coalesce them into at most one broadcast per settle window instead of
+-- spamming the channel -- same debounce shape as the friend-scan queue.
+SocialPlus_VersionBroadcastTimer=nil
+function SocialPlus_QueueVersionBroadcast()
+	if SocialPlus_VersionBroadcastTimer then return end
+	SocialPlus_VersionBroadcastTimer=C_Timer.NewTimer(5,function()
+		SocialPlus_VersionBroadcastTimer=nil
+		SocialPlus_BroadcastVersion()
+	end)
+end
+
+function SocialPlus_OnVersionMessage(prefix,message,sender)
+	if prefix~=SOCIALPLUS_VERSION_PREFIX then return end
+	if SocialPlus_VersionAlertShown then return end
+	local mine=SocialPlus_GetAddonVersion()
+	if not mine then return end
+	-- Our own broadcast comes back to us too, but it can never be strictly
+	-- newer than itself, so it falls out here with no special-casing.
+	if not SocialPlus_IsVersionNewer(message,mine) then return end
+
+	SocialPlus_VersionAlertShown=true
+	if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+		DEFAULT_CHAT_FRAME:AddMessage(format(L.MSG_VERSION_OUTDATED,mine,sender or UNKNOWN,message))
+	end
+end
+
 -- [[ Initialization on PLAYER_LOGIN ]]
 
 frame:SetScript("OnEvent",function(self,event,...)
@@ -7794,6 +7896,16 @@ frame:SetScript("OnEvent",function(self,event,...)
 		-- keep the worst-case notification delay reasonable. Not a
 		-- false-positive risk (just polling frequency), so kept short.
 		C_Timer.NewTicker(5,SocialPlus_QueueFriendScan)
+
+		-- Out-of-date version alert: the prefix must be registered before
+		-- CHAT_MSG_ADDON will ever deliver it to us. The opening broadcast
+		-- is delayed so guild/group rosters have actually finished loading
+		-- (sending into an empty roster right at login just gets dropped).
+		local registerPrefix=(C_ChatInfo and C_ChatInfo.RegisterAddonMessagePrefix) or RegisterAddonMessagePrefix
+		if registerPrefix then
+			pcall(registerPrefix,SOCIALPLUS_VERSION_PREFIX)
+		end
+		C_Timer.After(10,SocialPlus_BroadcastVersion)
 
 		FG_InitFactionIcon()
 
@@ -7947,5 +8059,10 @@ frame:SetScript("OnEvent",function(self,event,...)
 		SocialPlus_QueueFriendScan()
 	elseif event=="BN_FRIEND_INFO_CHANGED" then
 		SocialPlus_QueueFriendScan()
+	elseif event=="CHAT_MSG_ADDON" then
+		local prefix,message,_,sender=...
+		SocialPlus_OnVersionMessage(prefix,message,sender)
+	elseif event=="GROUP_ROSTER_UPDATE" then
+		SocialPlus_QueueVersionBroadcast()
 	end
 end)
