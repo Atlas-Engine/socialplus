@@ -6200,6 +6200,7 @@ frame:RegisterEvent("FRIENDLIST_UPDATE")
 frame:RegisterEvent("BN_FRIEND_INFO_CHANGED")
 -- Out-of-date version alert (see the version-check block further down)
 frame:RegisterEvent("CHAT_MSG_ADDON")
+frame:RegisterEvent("BN_CHAT_MSG_ADDON")
 frame:RegisterEvent("GROUP_ROSTER_UPDATE")
 
 local function SocialPlus_OnClick(self,button)
@@ -7878,6 +7879,88 @@ function SocialPlus_OnVersionMessage(prefix,message,sender)
 	end
 end
 
+-- Battle.net friends are the whole point of this addon, and they're far
+-- likelier to be running it than a random guildmate -- but they are NOT
+-- reachable over the addon-message channels above, which only ever cover
+-- guild/group members. BNSendGameData is the Battle.net equivalent, and
+-- it targets ONE game account at a time: there's no broadcast, just one
+-- send per online friend.
+--
+-- That makes this the one spot where a big friend list genuinely costs
+-- something -- 150 online friends means 150 sends -- and WoW will
+-- disconnect a client that bursts addon messages. So sends are queued and
+-- drained a couple per second rather than fired in a loop. Nothing is
+-- waiting on them, so being slow is free.
+
+-- gameAccountIDs already sent to this session, so a friend relogging (or
+-- several roster events in a row) can't queue them repeatedly.
+SocialPlus_VersionBNetSent={}
+SocialPlus_VersionBNetQueue={}
+SocialPlus_VersionBNetTicker=nil
+
+function SocialPlus_QueueBNetVersionSend(gameAccountID)
+	if not gameAccountID then return end
+	if SocialPlus_VersionBNetSent[gameAccountID] then return end
+	if not BNSendGameData then return end
+	if not SocialPlus_GetAddonVersion() then return end
+
+	SocialPlus_VersionBNetSent[gameAccountID]=true
+	SocialPlus_VersionBNetQueue[#SocialPlus_VersionBNetQueue+1]=gameAccountID
+	if SocialPlus_VersionBNetTicker then return end
+
+	SocialPlus_VersionBNetTicker=C_Timer.NewTicker(0.5,function(ticker)
+		local gameAccount=table.remove(SocialPlus_VersionBNetQueue,1)
+		if not gameAccount then
+			ticker:Cancel()
+			SocialPlus_VersionBNetTicker=nil
+			return
+		end
+		local version=SocialPlus_GetAddonVersion()
+		if version then
+			-- pcall'd: a friend can log out between queueing and sending,
+			-- and a cross-project target may simply reject the data.
+			pcall(BNSendGameData,gameAccount,SOCIALPLUS_VERSION_PREFIX,version)
+		end
+	end)
+end
+
+function SocialPlus_SendVersionToBNetFriends()
+	if not BNSendGameData then return end
+	if not SocialPlus_GetAddonVersion() then return end
+	for i=1,FG_BNGetNumFriends() do
+		-- Reuses the same online-WoW-account enumeration the invite menu
+		-- and tooltip already rely on, so a friend with two clients open
+		-- gets told on whichever ones are actually running WoW.
+		for _,acct in ipairs(SocialPlus_GetOnlineWoWGameAccounts(i)) do
+			SocialPlus_QueueBNetVersionSend(acct.gameAccountID)
+		end
+	end
+end
+
+-- One specific friend, for when they come online after our opening pass --
+-- far cheaper than re-walking the whole friend list on every online event
+-- (which matters on a large list, where that walk hits the game-account
+-- API once per friend).
+function SocialPlus_SendVersionToBNetFriend(presenceID)
+	if not BNSendGameData then return end
+	if not SocialPlus_GetAddonVersion() then return end
+	local index=SocialPlus_FindBNetIndexByPresenceID(presenceID)
+	if not index then return end
+	for _,acct in ipairs(SocialPlus_GetOnlineWoWGameAccounts(index)) do
+		SocialPlus_QueueBNetVersionSend(acct.gameAccountID)
+	end
+end
+
+-- BN_CHAT_MSG_ADDON identifies the sender by presenceID, not by name --
+-- resolve it to the BattleTag so the alert names someone recognisable
+-- instead of a bare number.
+function SocialPlus_ResolveBNetSenderName(presenceID)
+	if not presenceID then return nil end
+	local index=SocialPlus_FindBNetIndexByPresenceID(presenceID)
+	if not index then return nil end
+	return (GetFriendInfoById(index))
+end
+
 -- [[ Initialization on PLAYER_LOGIN ]]
 
 frame:SetScript("OnEvent",function(self,event,...)
@@ -7906,6 +7989,9 @@ frame:SetScript("OnEvent",function(self,event,...)
 			pcall(registerPrefix,SOCIALPLUS_VERSION_PREFIX)
 		end
 		C_Timer.After(10,SocialPlus_BroadcastVersion)
+		-- Staggered behind the guild/group broadcast so the two openers
+		-- don't stack into one burst of addon traffic at login.
+		C_Timer.After(15,SocialPlus_SendVersionToBNetFriends)
 
 		FG_InitFactionIcon()
 
@@ -8051,6 +8137,11 @@ frame:SetScript("OnEvent",function(self,event,...)
 		local bnetIDAccount=...
 		SocialPlus_QueueNotifyCheck(bnetIDAccount)
 		SocialPlus_QueueFriendScan()
+		-- Delayed: their game-account data (which is what carries the
+		-- gameAccountID we'd send to) hasn't streamed in yet at this point.
+		C_Timer.After(10,function()
+			SocialPlus_SendVersionToBNetFriend(bnetIDAccount)
+		end)
 	elseif event=="BN_FRIEND_ACCOUNT_OFFLINE" then
 		local bnetIDAccount=...
 		SocialPlus_QueueNotifyCheck(bnetIDAccount)
@@ -8062,6 +8153,9 @@ frame:SetScript("OnEvent",function(self,event,...)
 	elseif event=="CHAT_MSG_ADDON" then
 		local prefix,message,_,sender=...
 		SocialPlus_OnVersionMessage(prefix,message,sender)
+	elseif event=="BN_CHAT_MSG_ADDON" then
+		local prefix,message,_,senderPresenceID=...
+		SocialPlus_OnVersionMessage(prefix,message,SocialPlus_ResolveBNetSenderName(senderPresenceID))
 	elseif event=="GROUP_ROSTER_UPDATE" then
 		SocialPlus_QueueVersionBroadcast()
 	end

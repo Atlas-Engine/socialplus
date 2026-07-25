@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.11a
+
+- The newer-version alert now also reaches Battle.net friends, not just guild and group members.
+
 ## 1.10c
 
 - Fixed version-unresolved Battle.net friends (shown as "?") showing that for every case, even when it's really just that they're at the character-select screen -- now shown as "Character Selection" instead when no character name has resolved at all.
