@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.11c
+
+- Opening the friends list is roughly twice as fast, with about 60% fewer Battle.net API calls per refresh -- most noticeable on large friend lists, which is where the stutter was reported. Friends' sort names are now resolved once and remembered instead of being re-fetched for every friend on every refresh, and each friend's data is gathered once per refresh instead of once per group they belong to.
+- Fixed the search box keeping keyboard focus after clicking a friend, an invite button, or a group cogwheel -- it now releases focus like clicking anywhere else does, while still keeping your search term.
+- Clicking the search box while a friend's right-click menu is open now closes the menu and puts the cursor in the box in one click, instead of taking two.
+- Fixed the friends list rebuilding itself an extra time every time the panel opened, from the search box reporting a change when its text hadn't actually changed.
+
 ## 1.11b
 
 - Fixed moving a newly added Battle.net friend to a group doing nothing on the first attempt, so it had to be done twice. Battle.net silently drops the note write for a friend whose entry hasn't finished syncing yet; SocialPlus now retries it instead of assuming it worked.

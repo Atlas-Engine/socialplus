@@ -1282,9 +1282,17 @@ end)
 		local txt=self:GetText() or ""
 		txt=txt:match("^%s*(.-)%s*$") or ""
 		local norm=SocialPlus_NormalizeText(txt)
-		SocialPlus_SearchTerm=norm~="" and norm or nil
+		local newTerm=norm~="" and norm or nil
+		local termChanged=(newTerm~=SocialPlus_SearchTerm)
+		SocialPlus_SearchTerm=newTerm
 		SocialPlus_UpdateSearchGlow(self)
-		FriendsList_Update()
+		-- OnTextChanged also fires when the box is (re)initialised as the panel
+		-- opens, with the term going nil -> nil. Rebuilding the whole list for
+		-- a term that did not change cost one of the 3-4 rebuilds per open,
+		-- for no visible difference.
+		if termChanged then
+			FriendsList_Update()
+		end
 	end)
 
 	SocialPlus_Searchbox:SetScript("OnEditFocusGained",function(self)
@@ -2009,6 +2017,17 @@ local function GetFriendInfoById(id)
 		bnetAccountId,client,canCoop,wowProjectID,lastOnline,
 		isAFK,isGameAFK,isDND,isGameBusy,mobile,zoneName,gameText,realmName
 
+	if SocialPlusPerfDebug and SocialPlus_Perf then
+		SocialPlus_Perf.accountInfo=SocialPlus_Perf.accountInfo+1
+		-- Attribute each call to its caller. The group-loop hoist removed the
+		-- calls it was supposed to and the total barely moved, so the bulk is
+		-- coming from somewhere else entirely -- find it rather than guess.
+		if debugstack then
+			local site=tostring(debugstack(2,1,0) or ""):match("SocialPlus%.lua:(%d+)") or "?"
+			SocialPlus_Perf.sites=SocialPlus_Perf.sites or {}
+			SocialPlus_Perf.sites[site]=(SocialPlus_Perf.sites[site] or 0)+1
+		end
+	end
 	if C_BattleNet and C_BattleNet.GetFriendAccountInfo then
 		local accountInfo=C_BattleNet.GetFriendAccountInfo(id)
 		if accountInfo then
@@ -3348,23 +3367,61 @@ end
 -- names -- the sort had compared masked bytes). Fall back through
 -- sources; the battleTag ("Name#1234") is not subject to |K masking, so
 -- there's always a stable, human-sensible final key.
-local function SocialPlus_GetBNetSortName(i)
-	-- select() instead of a {tuple} wrapper: this runs once per BNet
+-- resolvedName is optional: pass the account name if you already hold it.
+--
+-- The raw tuple's name is masked for essentially every friend on this client,
+-- so the cheap path above is never taken and this used to mean one full
+-- C_BattleNet.GetFriendAccountInfo per friend per rebuild purely to produce a
+-- sort key -- measured at 256 of 432 calls, the single largest source. The
+-- rebuild's per-friend pass already fetches that name for online friends, so it
+-- hands it in rather than paying for it twice.
+--
+-- Pass `false` (not nil) for "no name available" to suppress the refetch.
+-- Resolved sort names, keyed on presenceID.
+--
+-- Keyed on the friend's STABLE identity, never the list index: an index-keyed
+-- cache renders one friend's data under another's row as soon as Blizzard
+-- reindexes the list (tried during this work; it corrupted the display).
+local SocialPlus_SortNameCache={}
+
+local function SocialPlus_GetBNetSortName(i,resolvedName)
+	-- Multiple assignment instead of a {tuple} wrapper: this runs once per BNet
 	-- friend per full rebuild, and the 19-slot throwaway table added up
 	-- under collapse/scroll spam (reported live as GC-churn memory peaks).
-	local rawName,battleTag=select(2,FG_BNGetFriendInfo(i))
+	local presenceID,rawName,battleTag=FG_BNGetFriendInfo(i)
 	if rawName and rawName~="" and not SocialPlus_IsMaskedPlaceholder(rawName) then
 		return rawName
 	end
-	local resolvedName=GetFriendInfoById(i)
+	-- The cache holds the FINAL sort name, not the resolved account name.
+	-- Caching only the resolved name achieved nothing: for these friends the
+	-- account name is masked too, so the function fell through to the battleTag
+	-- branch below and never stored anything, refetching every rebuild to reach
+	-- the same answer (measured: unchanged at 172 calls).
+	if resolvedName==nil then
+		local cached=presenceID and SocialPlus_SortNameCache[presenceID]
+		if cached then return cached end
+		resolvedName=GetFriendInfoById(i)
+	end
+
+	local final
 	if resolvedName and resolvedName~="" and not SocialPlus_IsMaskedPlaceholder(resolvedName) then
-		return resolvedName
-	end
-	if battleTag and battleTag~="" then
+		final=resolvedName
+	elseif battleTag and battleTag~="" then
 		-- Strip the numeric discriminator so "Dusk#12735" sorts as "Dusk"
-		return battleTag:match("^([^#]+)") or battleTag
+		final=battleTag:match("^([^#]+)") or battleTag
+	else
+		final=rawName
 	end
-	return rawName
+
+	-- Not cached during the post-login warmup: account data streams in for a
+	-- few seconds, and a name derived from the battleTag fallback then would
+	-- stick for the session instead of being replaced by the real one once it
+	-- arrives. After warmup, a masked name is masked for good.
+	if presenceID and type(final)=="string" and final~=""
+		and GetTime()>(SocialPlus_ScanWarmupUntil or 0) then
+		SocialPlus_SortNameCache[presenceID]=final
+	end
+	return final
 end
 
 local function CreateNote(note,groups)
@@ -3433,6 +3490,23 @@ end
 	local numWoWTotal=FG_GetNumFriends()
 	local numWoWOnline=FG_GetNumOnlineFriends()
 	local numWoWOffline=numWoWTotal-numWoWOnline
+
+	if SocialPlusPerfDebug and SocialPlus_Perf then
+		SocialPlus_Perf.rebuilds=SocialPlus_Perf.rebuilds+1
+		SocialPlus_Perf.bnet=numBNetTotal
+		SocialPlus_Perf.wow=numWoWOnline
+		-- Rebuilds outnumber hook fires, so some come from our own direct
+		-- calls. Record where from, rather than guessing which of the ~20
+		-- SocialPlus_Update call sites run on open.
+		if debugstack then
+			local lines={}
+			for ln in tostring(debugstack(3,6,0) or ""):gmatch("SocialPlus%.lua:(%d+)") do
+				lines[#lines+1]=ln
+			end
+			SocialPlus_Perf.callers=SocialPlus_Perf.callers or {}
+			SocialPlus_Perf.callers[#SocialPlus_Perf.callers+1]=table.concat(lines,"<-",1,math.min(#lines,3))
+		end
+	end
 
 	if QuickJoinToastButton then
 		QuickJoinToastButton:UpdateDisplayedFriendCount()
@@ -3817,6 +3891,80 @@ end
 
 SocialPlus_ApplyGroupOrder()
 
+if SocialPlusPerfDebug and SocialPlus_Perf then
+	SocialPlus_Perf.groups=#GroupSorted
+end
+
+    ----------------------------------------------------------------------
+    -- Per-friend data, computed ONCE per rebuild.
+    --
+    -- Every field below depends only on the friend, never on the group --
+    -- but it used to sit INSIDE the per-group loop, so a friend in N groups
+    -- paid for it N times and each group rescanned the whole friend list
+    -- (measured: ~1.75 C_BattleNet.GetFriendAccountInfo calls per friend per
+    -- rebuild, 448 calls for 64 friends).
+    --
+    -- Deliberately NOT a cache that outlives the rebuild. Blizzard's
+    -- friend-list index-to-friend mapping can shift between updates, so
+    -- anything keyed on the list index that survives longer than a single
+    -- pass eventually renders one friend's data under another's row --
+    -- exactly what a same-frame memo did when tried here. Gathered in one
+    -- tight pass, used immediately, discarded.
+    ----------------------------------------------------------------------
+    local usePrioritize=SocialPlus_SavedVars and SocialPlus_SavedVars.prioritize_current_client
+    if usePrioritize and not playerFaction then FG_InitFactionIcon() end
+    -- Offline rows are only ever built when they're shown, so don't pay for
+    -- their sort names when they're hidden.
+    local needOffline=not SocialPlus_SavedVars.hide_offline
+
+    local BNetPre={}
+    for i=1,numBNetTotal do
+        local online=BNetOnlineStatus[i]
+        local pre={fav=SocialPlus_IsFavorite(FRIENDS_BUTTON_TYPE_BNET,i) and true or false}
+        if online then
+            local accountName,_,_,_,_,_,_,client,_,wowProjectID,_,
+                isAFK,isGameAFK,isDND,isGameBusy=GetFriendInfoById(i)
+            -- Reuse the name from the call we just made instead of making a
+            -- second one inside the sort-key helper.
+            pre.sortKey=SocialPlus_GetBNetSortName(i,accountName or false)
+            pre.statusRank=SocialPlus_GetStatusRank(isAFK,isGameAFK,isDND,isGameBusy)
+            pre.promoted=false
+            pre.factionRank=1
+            local isKnownAppCode=(not client) or client==(BNET_CLIENT_APP or "App") or client=="BSAp"
+            if client==BNET_CLIENT_WOW then
+                pre.groupKey="WoW:"..tostring(wowProjectID or "?")
+                pre.appOnlyRank=0
+                if usePrioritize and wowProjectID==WOW_PROJECT_ID then
+                    pre.promoted=true
+                    local acct=C_BattleNet and C_BattleNet.GetFriendAccountInfo and C_BattleNet.GetFriendAccountInfo(i)
+                    local ga=acct and acct.gameAccountInfo
+                    local friendFaction=ga and ga.factionName
+                    pre.factionRank=(friendFaction and playerFaction and friendFaction==playerFaction) and 0 or 1
+                end
+            elseif isKnownAppCode then
+                pre.groupKey="AppOnly"
+                pre.appOnlyRank=1
+            else
+                pre.groupKey="Client:"..client
+                pre.appOnlyRank=0
+            end
+        elseif needOffline then
+            pre.sortKey=SocialPlus_GetBNetSortName(i)
+        end
+        BNetPre[i]=pre
+    end
+
+    local WoWPre={}
+    local wowScanTo=needOffline and numWoWTotal or numWoWOnline
+    for i=1,wowScanTo do
+        local info=FG_GetFriendInfoByIndex(i)
+        WoWPre[i]={
+            fav=SocialPlus_IsFavorite(FRIENDS_BUTTON_TYPE_WOW,i) and true or false,
+            sortKey=info and info.name,
+            statusRank=SocialPlus_GetStatusRank(info and info.afk,false,info and info.dnd,false),
+        }
+    end
+
     local index=0
     for _,group in ipairs(GroupSorted) do
         -- During a group-name search focus, skip the header ROW entirely
@@ -3848,9 +3996,6 @@ SocialPlus_ApplyGroupOrder()
             -- status, then same faction first, then alphabetical. Everyone
             -- else still follows the base order below them.
             ----------------------------------------------------------------
-            local usePrioritize=SocialPlus_SavedVars and SocialPlus_SavedVars.prioritize_current_client
-            if usePrioritize and not playerFaction then FG_InitFactionIcon() end
-
             local onlineRows={}
 
             -- BNet online
@@ -3860,9 +4005,10 @@ SocialPlus_ApplyGroupOrder()
                 -- BnetSocialPlus[i] reflects and is left untouched by
                 -- favoriting) -- this is what actually implements "move,
                 -- don't copy" at render time.
+                local pre=BNetPre[i]
                 local isMember
                 if group==SP_FAVORITES_GROUP then
-                    isMember=BNetOnlineStatus[i] and SocialPlus_IsFavorite(FRIENDS_BUTTON_TYPE_BNET,i)
+                    isMember=BNetOnlineStatus[i] and pre.fav
                 else
                     -- A favorited friend must never also render under their
                     -- real group -- BnetSocialPlus[i] still reflects their
@@ -3873,57 +4019,13 @@ SocialPlus_ApplyGroupOrder()
                     -- with an out-of-range FriendButtons index (confirmed
                     -- live).
                     isMember=BnetSocialPlus[i] and BnetSocialPlus[i][group] and BNetOnlineStatus[i]
-                        and not SocialPlus_IsFavorite(FRIENDS_BUTTON_TYPE_BNET,i)
+                        and not pre.fav
                 end
                 if isMember then
-                    local row={buttonType=FRIENDS_BUTTON_TYPE_BNET,id=i}
-
-                    -- Use GetFriendInfoById (the C_BattleNet-based path),
-                    -- not the raw BNGetFriendInfo tuple, for client/status --
-                    -- the raw tuple's field positions have already proven
-                    -- unreliable on this client family for other fields
-                    -- (wowProjectID at position 16), and confirmed live here
-                    -- too: using its isAFK/isDND/client positions produced a
-                    -- scrambled order (away friends above online, no real
-                    -- alphabetical order). This is the same path already
-                    -- used, and proven correct, for the status icon and
-                    -- invite checks elsewhere in the addon.
-                    local _,_,_,_,_,_,_,client,_,wowProjectID,_,
-                        isAFK,isGameAFK,isDND,isGameBusy=GetFriendInfoById(i)
-                    -- Masked-placeholder-safe sort name -- see
-                    -- SocialPlus_GetBNetSortName for the full story (both
-                    -- name sources can transiently be "|K...|k" tokens;
-                    -- trusting the raw tuple alone here was coincidence).
-                    row.sortKey=SocialPlus_GetBNetSortName(i)
-                    row.statusRank=SocialPlus_GetStatusRank(isAFK,isGameAFK,isDND,isGameBusy)
-                    row.promoted=false
-                    row.factionRank=1
-
-                    -- Idling in the Battle.net app isn't reported as a nil
-                    -- client, and isn't even always the same code -- confirmed
-                    -- live two different app-idle friends read "App" and
-                    -- "BSAp" respectively. Treat any client that isn't a real
-                    -- game (checked below) and isn't the same as an already-
-                    -- known game code as app-idle instead of hardcoding a
-                    -- single expected string.
-                    local isKnownAppCode=(not client) or client==(BNET_CLIENT_APP or "App") or client=="BSAp"
-                    if client==BNET_CLIENT_WOW then
-                        row.groupKey="WoW:"..tostring(wowProjectID or "?")
-                        row.appOnlyRank=0
-                        if usePrioritize and wowProjectID==WOW_PROJECT_ID then
-                            row.promoted=true
-                            local acct=C_BattleNet and C_BattleNet.GetFriendAccountInfo and C_BattleNet.GetFriendAccountInfo(i)
-                            local ga=acct and acct.gameAccountInfo
-                            local friendFaction=ga and ga.factionName
-                            row.factionRank=(friendFaction and playerFaction and friendFaction==playerFaction) and 0 or 1
-                        end
-                    elseif isKnownAppCode then
-                        row.groupKey="AppOnly"
-                        row.appOnlyRank=1
-                    else
-                        row.groupKey="Client:"..client
-                        row.appOnlyRank=0
-                    end
+                    local row={buttonType=FRIENDS_BUTTON_TYPE_BNET,id=i,
+                        sortKey=pre.sortKey,statusRank=pre.statusRank,
+                        promoted=pre.promoted,factionRank=pre.factionRank,
+                        groupKey=pre.groupKey,appOnlyRank=pre.appOnlyRank}
 
                     if SocialPlus_RowDebug then
                         print(string.format(
@@ -3940,18 +4042,18 @@ SocialPlus_ApplyGroupOrder()
 
             -- WoW online (native friend, always this exact WoW version)
             for i=1,numWoWOnline do
+                local wpre=WoWPre[i]
                 local isWowMember
                 if group==SP_FAVORITES_GROUP then
-                    isWowMember=SocialPlus_IsFavorite(FRIENDS_BUTTON_TYPE_WOW,i)
+                    isWowMember=wpre and wpre.fav
                 else
                     isWowMember=WowSocialPlus[i] and WowSocialPlus[i][group]
-                        and not SocialPlus_IsFavorite(FRIENDS_BUTTON_TYPE_WOW,i)
+                        and wpre and not wpre.fav
                 end
                 if isWowMember then
                     local row={buttonType=FRIENDS_BUTTON_TYPE_WOW,id=i}
-                    local info=FG_GetFriendInfoByIndex(i)
-                    row.sortKey=info and info.name
-                    row.statusRank=SocialPlus_GetStatusRank(info and info.afk,false,info and info.dnd,false)
+                    row.sortKey=wpre.sortKey
+                    row.statusRank=wpre.statusRank
                     row.groupKey="WoW:"..tostring(WOW_PROJECT_ID or "?")
                     row.appOnlyRank=0
                     row.promoted=usePrioritize and true or false
@@ -3999,37 +4101,38 @@ SocialPlus_ApplyGroupOrder()
 
                 -- BNet offline
                 for i=1,numBNetTotal do
+                    local opre=BNetPre[i]
                     local isOfflineMember
                     if group==SP_FAVORITES_GROUP then
-                        isOfflineMember=BNetOnlineStatus[i]==false and SocialPlus_IsFavorite(FRIENDS_BUTTON_TYPE_BNET,i)
+                        isOfflineMember=BNetOnlineStatus[i]==false and opre.fav
                     else
                         isOfflineMember=BnetSocialPlus[i] and BnetSocialPlus[i][group] and BNetOnlineStatus[i]==false
-                            and not SocialPlus_IsFavorite(FRIENDS_BUTTON_TYPE_BNET,i)
+                            and not opre.fav
                     end
                     if isOfflineMember then
                         offlineRows[#offlineRows+1]={
                             buttonType=FRIENDS_BUTTON_TYPE_BNET,
                             id=i,
-                            sortKey=SocialPlus_GetBNetSortName(i),
+                            sortKey=opre.sortKey,
                         }
                     end
                 end
 
                 -- WoW offline
                 for i=numWoWOnline+1,numWoWTotal do
+                    local wopre=WoWPre[i]
                     local isWowOfflineMember
                     if group==SP_FAVORITES_GROUP then
-                        isWowOfflineMember=SocialPlus_IsFavorite(FRIENDS_BUTTON_TYPE_WOW,i)
+                        isWowOfflineMember=wopre and wopre.fav
                     else
                         isWowOfflineMember=WowSocialPlus[i] and WowSocialPlus[i][group]
-                            and not SocialPlus_IsFavorite(FRIENDS_BUTTON_TYPE_WOW,i)
+                            and wopre and not wopre.fav
                     end
                     if isWowOfflineMember then
-                        local info=FG_GetFriendInfoByIndex(i)
                         offlineRows[#offlineRows+1]={
                             buttonType=FRIENDS_BUTTON_TYPE_WOW,
                             id=i,
-                            sortKey=info and info.name,
+                            sortKey=wopre.sortKey,
                         }
                     end
                 end
@@ -5293,6 +5396,23 @@ SocialPlus_ClickCatcher:SetScript("OnMouseDown",function(self,button)
     -- Ignore clicks still actually over the search box itself (typing,
     -- repositioning the cursor) -- let it behave normally.
     if SocialPlus_Searchbox and SocialPlus_Searchbox:IsMouseOver() then
+        -- A right-click friend menu is open and THIS full-screen frame is
+        -- what's sitting over the search box. Returning early (as the normal
+        -- typing/cursor case below does) left the menu up and the click
+        -- swallowed, so reaching the search box from an open menu took two
+        -- clicks. Dismiss the menu and put the caret in the box in one.
+        --
+        -- Hiding the catcher does not close a LibDD menu on its own -- every
+        -- other dismiss branch here calls CloseDropDownMenus explicitly, and
+        -- the same order is used: close the menu, then hide, so OnHide sees
+        -- the for-menu flag and plays the close sound exactly once.
+        if SocialPlus_ClickCatcherIsForMenu then
+            LibDD:CloseDropDownMenus()
+            self:Hide()
+            SocialPlus_Searchbox:SetFocus()
+            return
+        end
+
         -- The clear "X" button is a child sitting on the box's own edge,
         -- same overlap problem as the friend-row case below: this
         -- full-screen frame is on top while shown (search box focused or a
@@ -5360,6 +5480,14 @@ SocialPlus_ClickCatcher:SetScript("OnMouseDown",function(self,button)
         -- A right-click forwarded below still opens its own fresh menu
         -- immediately after.
         LibDD:CloseDropDownMenus()
+        -- Clicking a row control means you're done typing: drop keyboard
+        -- focus, but deliberately NOT the search term -- clicking a result
+        -- must not cancel the search that found it (see below). Focus and
+        -- term were previously cleared together, so preserving the term also
+        -- left the caret stuck in the search box.
+        if SocialPlus_Searchbox and SocialPlus_Searchbox:HasFocus() then
+            SocialPlus_Searchbox:ClearFocus()
+        end
         self:Hide()
         clickedFriendRow:Click(button)
         -- Stay armed for a later click that's genuinely outside the
@@ -5377,6 +5505,14 @@ SocialPlus_ClickCatcher:SetScript("OnMouseDown",function(self,button)
         -- Same forwarding as a friend row, and the same reasoning for
         -- staying armed afterward -- an invite click shouldn't cancel an
         -- active search either.
+        -- Clicking a row control means you're done typing: drop keyboard
+        -- focus, but deliberately NOT the search term -- clicking a result
+        -- must not cancel the search that found it (see below). Focus and
+        -- term were previously cleared together, so preserving the term also
+        -- left the caret stuck in the search box.
+        if SocialPlus_Searchbox and SocialPlus_Searchbox:HasFocus() then
+            SocialPlus_Searchbox:ClearFocus()
+        end
         self:Hide()
         clickedTravelPass:Click(button)
         if SocialPlus_SearchTerm then
@@ -5414,6 +5550,14 @@ SocialPlus_ClickCatcher:SetScript("OnMouseDown",function(self,button)
         -- next click anywhere then hid this orphaned, still-armed catcher,
         -- playing a second close sound (reported live).
         LibDD:CloseDropDownMenus()
+        -- Clicking a row control means you're done typing: drop keyboard
+        -- focus, but deliberately NOT the search term -- clicking a result
+        -- must not cancel the search that found it (see below). Focus and
+        -- term were previously cleared together, so preserving the term also
+        -- left the caret stuck in the search box.
+        if SocialPlus_Searchbox and SocialPlus_Searchbox:HasFocus() then
+            SocialPlus_Searchbox:ClearFocus()
+        end
         self:Hide()
         if not sameMenuAlreadyOpen then
             clickedGear:Click()
@@ -8128,6 +8272,14 @@ frame:SetScript("OnEvent",function(self,event,...)
 			FriendsFrame:HookScript("OnShow",function()
 				SocialPlus_HardResetScrollRows()
 				SocialPlus_Update(true)
+				-- KEEP THIS. Removing it as a "redundant" second rebuild sent
+				-- the open path from 3 rebuilds to 15 (51ms, measured): without
+				-- the settle pass the content height never stabilises, so the
+				-- scrollbar's OnValueChanged keeps re-entering Blizzard's
+				-- HybridScrollFrame update, which fires FriendsList_Update
+				-- again -- the self-sustaining churn documented throughout
+				-- SocialPlus_UpdateFriends. One extra rebuild here BUYS the
+				-- absence of a dozen.
 				SocialPlus_ScheduleCollapseSettle()
 			end)
 		end
@@ -8277,3 +8429,80 @@ frame:SetScript("OnEvent",function(self,event,...)
 		SocialPlus_QueueVersionBroadcast()
 	end
 end)
+
+-- =========================================================================
+-- Perf instrumentation (opt-in): /run SocialPlusPerfDebug=true
+-- =========================================================================
+-- Opening the friends panel with a large list stutters, and there are two
+-- candidate causes that reading the code cannot tell apart: the rebuild being
+-- expensive, or the rebuild running many times per open. Blizzard fires
+-- FriendsList_Update repeatedly while the panel opens and our hooksecurefunc
+-- follows every one of them.
+--
+-- So count both. `calls` is every time the hook fired; `rebuilds` is how many
+-- got past the early-out guards and actually rebuilt the list.
+SocialPlus_Perf={calls=0,rebuilds=0,totalMs=0,maxMs=0,accountInfo=0,
+                 accountInfoHits=0,hookFires=0,groups=0,bnet=0,wow=0,opens=0}
+
+function SocialPlus_PerfReset()
+	local p=SocialPlus_Perf
+	p.calls=0; p.rebuilds=0; p.totalMs=0; p.maxMs=0; p.accountInfo=0
+	p.accountInfoHits=0; p.hookFires=0; p.callers=nil; p.sites=nil
+end
+
+function SocialPlus_PerfReport()
+	local p=SocialPlus_Perf
+	if not DEFAULT_CHAT_FRAME then return end
+	local function line(msg) DEFAULT_CHAT_FRAME:AddMessage("|cff4da6ff[SP perf]|r "..msg) end
+	line(("%d BNet + %d WoW friends, %d groups"):format(p.bnet or 0,p.wow or 0,p.groups or 0))
+	line(("rebuilt %d time(s)"):format(p.rebuilds))
+	line(("total %.1f ms, worst single rebuild %.1f ms"):format(p.totalMs,p.maxMs))
+	line(("C_BattleNet.GetFriendAccountInfo calls: %d"):format(p.accountInfo))
+	-- What the current per-group scanning costs: each group rescans the whole
+	-- BNet list twice (online + offline) and the WoW list once.
+	local scans=(p.groups or 0)*((p.bnet or 0)*2+(p.wow or 0))
+	line(("membership tests this rebuild: ~%d (groups x friends)"):format(scans))
+	if p.sites then
+		local order={}
+		for site,n in pairs(p.sites) do order[#order+1]={site=site,n=n} end
+		table.sort(order,function(x,y) return x.n>y.n end)
+		for i=1,math.min(#order,5) do
+			line(("  account-info from line %s: %d call(s)"):format(order[i].site,order[i].n))
+		end
+	end
+	if p.callers then
+		for i=1,#p.callers do
+			line(("rebuild %d from %s"):format(i,tostring(p.callers[i])))
+		end
+	end
+end
+
+do
+	local realUpdate=SocialPlus_Update
+	function SocialPlus_Update(...)
+		if not SocialPlusPerfDebug then return realUpdate(...) end
+		local p=SocialPlus_Perf
+		p.calls=p.calls+1
+		local t0=debugprofilestop and debugprofilestop() or 0
+		local a,b,c=realUpdate(...)
+		if debugprofilestop then
+			local dt=debugprofilestop()-t0
+			p.totalMs=p.totalMs+dt
+			if dt>p.maxMs then p.maxMs=dt end
+		end
+		return a,b,c
+	end
+
+	if FriendsFrame then
+		FriendsFrame:HookScript("OnShow",function()
+			if not SocialPlusPerfDebug then return end
+			SocialPlus_Perf.opens=SocialPlus_Perf.opens+1
+			SocialPlus_PerfReset()
+			-- Reported after the open settles, so the whole burst of
+			-- FriendsList_Update calls is included rather than just the first.
+			if C_Timer and C_Timer.After then
+				C_Timer.After(1.5,SocialPlus_PerfReport)
+			end
+		end)
+	end
+end
