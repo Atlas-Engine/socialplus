@@ -4196,6 +4196,12 @@ local function SocialPlus_Rename(self,old)
 	end
 
 	SocialPlus_Update()
+	-- Rewrote notes across every affected BattleTag friend; those writes are
+	-- server-side and land after this render. No single value to wait on here,
+	-- so redraw shortly afterwards. See SocialPlus_RefreshAfterNoteWrite.
+	if SocialPlus_RefreshAfterNoteWrite then
+		SocialPlus_RefreshAfterNoteWrite()
+	end
 end
 
 local function SocialPlus_Create(self,data)
@@ -4216,8 +4222,12 @@ local function SocialPlus_Create(self,data)
 		SocialPlus_ClearSearch()
 	end
 
-	-- Rebuild list
+	-- Rebuild list. The immediate pass can still be reading the pre-write note
+	-- for a BattleTag friend, so schedule a redraw for once it lands too.
 	pcall(SocialPlus_Update)
+	if SocialPlus_RefreshAfterNoteWrite then
+		SocialPlus_RefreshAfterNoteWrite(data.kind,data.id,note,data.set)
+	end
 
 	-- Explicitly close the popup (works for both Accept click and Enter)
 	if self and self.Hide then
@@ -4298,6 +4308,10 @@ StaticPopupDialogs["FRIEND_SET_NOTE"]={
 			end
 			pcall(data.set,data.id,finalNote)
 			pcall(SocialPlus_Update)
+			-- BNet notes aren't readable back immediately; redraw once it lands.
+			if SocialPlus_RefreshAfterNoteWrite then
+				SocialPlus_RefreshAfterNoteWrite(data.kind,data.id,finalNote,data.set)
+			end
 		end
 	end,
 	timeout=0,
@@ -4563,6 +4577,14 @@ local function InviteOrGroup(clickedgroup,invite)
 				end
 			end
 		end
+	end
+
+	-- Deleting the group rewrote notes across every BattleTag friend that was in
+	-- it. Those writes are server-side and land after any immediate render, so
+	-- the list would otherwise still show the deleted group until something else
+	-- redrew it. See SocialPlus_RefreshAfterNoteWrite.
+	if (not invite) and SocialPlus_RefreshAfterNoteWrite then
+		SocialPlus_RefreshAfterNoteWrite()
 	end
 end
 
@@ -5911,7 +5933,7 @@ SocialPlus_FriendMenu.initialize=function(self,level)
 			if not kind or not id or not setter then return end
 			local groups={}
 			local baseNote=NoteAndGroups(note,groups)
-			StaticPopup_Show("FRIEND_SET_NOTE",nil,nil,{id=id,set=setter,note=baseNote,groups=groups})
+			StaticPopup_Show("FRIEND_SET_NOTE",nil,nil,{kind=kind,id=id,set=setter,note=baseNote,groups=groups})
 		end
 		LibDD:UIDropDownMenu_AddButton(info,level)
 
@@ -6715,16 +6737,99 @@ function SocialPlus_CreateGroupFromDropdown()
 	local kind,id,note,setter=SocialPlus_GetDropdownFriendNote()
 	if not kind or not id or not setter then return end
 
-	StaticPopup_Show("SocialPlus_CREATE",nil,nil,{id=id,note=note,set=setter})
+	StaticPopup_Show("SocialPlus_CREATE",nil,nil,{kind=kind,id=id,note=note,set=setter})
 
 	-- Close the dropdown after clicking "Create new group"
 	LibDD:CloseDropDownMenus()
 end
 
+-- Redraw the list once a note write has actually landed.
+--
+-- BNet notes go through BNSetFriendNote, which is a SERVER round-trip: the value
+-- is NOT readable back on the next line. Re-rendering immediately therefore
+-- shows the OLD note and the change looks like it did nothing -- which is why
+-- moving a friend to a group appeared to need two attempts (reported live).
+-- Character-friend notes are written locally and need none of this.
+--
+-- Given `expectedNote` we poll until exactly that value reads back, so the
+-- redraw happens the moment it lands and no later. Without it -- bulk writes
+-- spanning many friends, where there's no single value to wait on -- we just
+-- redraw a couple of times across the next second.
+--
+-- Deliberately NOT driven off BN_FRIEND_INFO_CHANGED: that fires constantly for
+-- zone/status/level changes, so rebuilding on it would add per-friend work all
+-- session long, which is the opposite of what a large friend list needs.
+function SocialPlus_RefreshAfterNoteWrite(kind,id,expectedNote,setter)
+	if not (C_Timer and C_Timer.After) then
+		SocialPlus_Update(true)
+		return
+	end
+
+	if kind=="BNET" and id and expectedNote~=nil then
+		local presenceID=FG_BNGetFriendInfo(id)
+		if presenceID then
+			local tries=0
+			local function pollForWrite()
+				tries=tries+1
+				local idx=SocialPlus_FindBNetIndexByPresenceID(presenceID)
+				local current=idx and select(13,FG_BNGetFriendInfo(idx)) or nil
+				if current==expectedNote then
+					SocialPlus_GroupDebug("landed after",tries.." poll(s)")
+					SocialPlus_Update(true)
+					return
+				end
+				-- Give up after ~2s and redraw anyway, so the list can never sit
+				-- stale on a write that silently failed.
+				if tries>=8 then
+					SocialPlus_GroupDebug("gave up; note never landed")
+					SocialPlus_Update(true)
+					return
+				end
+				-- RE-ISSUE the write, don't just wait for it.
+				--
+				-- BNSetFriendNote on a freshly added BattleTag friend is simply
+				-- dropped -- confirmed live, the note read back empty straight
+				-- after the call and stayed empty, which is why moving them to a
+				-- group appeared to need two attempts. The server accepts it once
+				-- the friend entry has finished syncing, so retry a couple of
+				-- times rather than only redrawing.
+				if setter and idx and (tries==2 or tries==4 or tries==6) then
+					SocialPlus_GroupDebug("re-issuing write, attempt",tries)
+					setter(idx,expectedNote)
+				end
+				C_Timer.After(0.25,pollForWrite)
+			end
+			C_Timer.After(0.25,pollForWrite)
+			return
+		end
+	end
+
+	C_Timer.After(0.3,function() SocialPlus_Update(true) end)
+	C_Timer.After(1.0,function() SocialPlus_Update(true) end)
+end
+
+-- Turn on with: /run SocialPlusGroupDebug=true
+-- Reports what the group move actually resolved and wrote. The symptom -- having
+-- to pick the group twice -- can come from resolving the wrong friend, reading a
+-- stale note, or the write not landing, and those look identical from outside.
+function SocialPlus_GroupDebug(...)
+	if not SocialPlusGroupDebug then return end
+	local parts={}
+	for i=1,select('#',...) do parts[#parts+1]=tostring((select(i,...))) end
+	if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+		DEFAULT_CHAT_FRAME:AddMessage("|cff4da6ff[SP group]|r "..table.concat(parts," | "))
+	end
+end
+
 function SocialPlus_ModifyGroupFromDropdown(group,mode)
 	if not group or group=="" then return end
 	local kind,id,note,setter=SocialPlus_GetDropdownFriendNote()
-	if not kind or not id or not setter then return end
+	SocialPlus_GroupDebug("resolve",mode,group,"kind="..tostring(kind),"id="..tostring(id),
+		"note="..tostring(note),"setter="..tostring(setter~=nil))
+	if not kind or not id or not setter then
+		SocialPlus_GroupDebug("ABORT: nothing resolved")
+		return
+	end
 
 	local groups={}
 	local baseNote=NoteAndGroups(note,groups)
@@ -6759,7 +6864,15 @@ function SocialPlus_ModifyGroupFromDropdown(group,mode)
 		newNote=CreateNote(baseNote,groups)
 	end
 
+	SocialPlus_GroupDebug("writing",'"'..tostring(newNote)..'"')
 	setter(id,newNote)
+	if kind=="BNET" then
+		local pid=FG_BNGetFriendInfo(id)
+		local backIdx=pid and SocialPlus_FindBNetIndexByPresenceID(pid) or nil
+		local readBack=backIdx and select(13,FG_BNGetFriendInfo(backIdx)) or nil
+		SocialPlus_GroupDebug("after write","presenceID="..tostring(pid),
+			"idx="..tostring(backIdx),"readback="..tostring(readBack))
+	end
 
 	-- Clear search so full list is shown after adding/removing
 	if SocialPlus_ClearSearch then
@@ -6769,6 +6882,10 @@ function SocialPlus_ModifyGroupFromDropdown(group,mode)
 	-- Rebuild and close menus
 	SocialPlus_Update()
 	LibDD:CloseDropDownMenus()
+
+	-- See SocialPlus_RefreshAfterNoteWrite: the write above is not readable back
+	-- immediately, so the render has to wait for it.
+	SocialPlus_RefreshAfterNoteWrite(kind,id,newNote,setter)
 end
 
 -- [[ BNet remove friend flow ]]	

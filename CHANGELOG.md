@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.11b
+
+- Fixed moving a newly added Battle.net friend to a group doing nothing on the first attempt, so it had to be done twice. Battle.net silently drops the note write for a friend whose entry hasn't finished syncing yet; SocialPlus now retries it instead of assuming it worked.
+- The friends list now waits for a group/note change to actually take effect before redrawing, rather than redrawing immediately and showing the old grouping. Also applies to creating, renaming and deleting a group, and to setting a note.
+
 ## 1.11a
 
 - The newer-version alert now also reaches Battle.net friends, not just guild and group members.
