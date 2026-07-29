@@ -45,10 +45,13 @@ jobs:
             exit 1
           fi
 
+          # Plain text, deliberately NOT Markdown. CurseForge shows these notes
+          # unrendered: a "[text](url)" link displays as literal syntax and a
+          # "---" rule as three dashes. A bare URL auto-links on both CurseForge
+          # and GitHub, so this reads correctly in both places.
           {
             sed -e '/./,$!d' section.md
-            printf '\n---\n\n'
-            printf '[View all changelogs](https://github.com/%s/blob/main/CHANGELOG.md)\n' "${GITHUB_REPOSITORY}"
+            printf '\nView all changelogs: https://github.com/%s/blob/main/CHANGELOG.md\n' "${GITHUB_REPOSITORY}"
           } > notes.md
 
           echo "--- release notes ---"
