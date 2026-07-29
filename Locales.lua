@@ -38,7 +38,7 @@ L.MENU_REMOVE_FAVORITE    = "Remove from Favorites"
 ----------------------------------------------------------------
 -- Search & grouping
 ----------------------------------------------------------------
-L.SEARCH_PLACEHOLDER      = "Names/Groups/Classes"
+L.SEARCH_PLACEHOLDER      = "Search name, group, class"
 L.GROUP_UNGROUPED         = "General"
 L.GROUP_FAVORITES         = "Favorites"
 L.GROUP_INGAME            = "In-game Friends"
@@ -69,7 +69,7 @@ L.SETTING_NOTIFY_ENABLE      = "Notify when friends come online"
 L.SETTING_NOTIFY_OFFLINE     = "Notify when friends go offline"
 L.SETTING_NOTIFY_SAME_VERSION_PREFIX = "Only notify for "
 L.SETTING_NOTIFY_SAME_VERSION_SUFFIX = " friends"
-L.SETTING_NOTIFY_SOUND       = "Play a sound with notifications"
+L.SETTING_NOTIFY_SOUND       = "Play a sound when friends come online"
 
 ----------------------------------------------------------------
 -- Popup titles
@@ -144,7 +144,7 @@ if locale == "frFR" then
     ----------------------------------------------------------------
     -- Search & grouping
     ----------------------------------------------------------------
-    L.SEARCH_PLACEHOLDER      = "Noms/Groupes/Classes"
+    L.SEARCH_PLACEHOLDER      = "Nom, groupe, classe"
     L.GROUP_UNGROUPED         = "Général"
     L.GROUP_FAVORITES         = "Favoris"
     L.GROUP_INGAME            = "Amis en jeu"
@@ -175,7 +175,7 @@ if locale == "frFR" then
     L.SETTING_NOTIFY_OFFLINE     = "Notifier quand un ami se déconnecte"
     L.SETTING_NOTIFY_SAME_VERSION_PREFIX = "Notifier uniquement pour les amis "
     L.SETTING_NOTIFY_SAME_VERSION_SUFFIX = ""
-    L.SETTING_NOTIFY_SOUND       = "Jouer un son avec les notifications"
+    L.SETTING_NOTIFY_SOUND       = "Jouer un son quand un ami se connecte"
 
     ----------------------------------------------------------------
     -- Popup titles
@@ -245,7 +245,7 @@ elseif locale == "esES" or locale == "esMX" then
     ----------------------------------------------------------------
     -- Search & grouping
     ----------------------------------------------------------------
-    L.SEARCH_PLACEHOLDER      = "Nombres/Grupos/Clases"
+    L.SEARCH_PLACEHOLDER      = "Nombre, grupo, clase"
     L.GROUP_UNGROUPED         = "General"
     L.GROUP_FAVORITES         = "Favoritos"
     L.GROUP_INGAME            = "Amigos en el juego"
@@ -276,7 +276,7 @@ elseif locale == "esES" or locale == "esMX" then
     L.SETTING_NOTIFY_OFFLINE     = "Notificar cuando un amigo se desconecta"
     L.SETTING_NOTIFY_SAME_VERSION_PREFIX = "Notificar solo a los amigos de "
     L.SETTING_NOTIFY_SAME_VERSION_SUFFIX = ""
-    L.SETTING_NOTIFY_SOUND       = "Reproducir sonido con las notificaciones"
+    L.SETTING_NOTIFY_SOUND       = "Reproducir sonido cuando un amigo se conecta"
 
     ----------------------------------------------------------------
     -- Popup titles

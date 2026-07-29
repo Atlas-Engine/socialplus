@@ -1196,8 +1196,9 @@ outer:Hide()
 SocialPlus_SearchGlow=glow
 SocialPlus_SearchGlowOuter=outer
 
-	-- Fixed, visible position near top-right. 24 tall (was 20) so the text
-	-- isn't cramped vertically; 170 wide, nudged up 1px.
+	-- Top-right, 24 tall (was 20) so the text isn't cramped vertically. 170 is
+	-- the PREFERRED width -- SocialPlus_LayoutSearchBox below shrinks it when
+	-- the Friends/Ignore tabs need the room.
 	local sbWidth = 170
 	SocialPlus_Searchbox:SetSize(sbWidth,24)
 	SocialPlus_Searchbox:SetPoint("TOPRIGHT",FriendsFrame,"TOPRIGHT",-9,-61)
@@ -1250,18 +1251,18 @@ end)
 	SocialPlus_Searchbox:SetFont(font,size,flags)
 	SocialPlus_Searchbox:SetTextColor(1,1,1)
 	SocialPlus_Searchbox.Instructions:SetTextColor(0.5,0.5,0.5)
+	-- Placeholder is set a size smaller than the text you type. It shares a
+	-- 170px box with the magnifier and the clear "X", leaving roughly 120px,
+	-- so at the input size anything longer than a couple of words truncated --
+	-- and a hint reading smaller than real input is the usual convention
+	-- anyway, so this both fits and looks less like typed text.
+	local insFont,insSize,insFlags=SocialPlus_Searchbox.Instructions:GetFont()
+	if insFont and insSize then
+		SocialPlus_Searchbox.Instructions:SetFont(insFont,insSize-1,insFlags)
+	end
 	-- Single-line placeholder: truncates with "..." instead of wrapping to
 	-- a second line if a locale string is still too long for the box.
 	SocialPlus_Searchbox.Instructions:SetWordWrap(false)
-
-	-- TEMP DIAGNOSTIC: SocialPlus_Searchbox is a file-local upvalue, not a
-	-- real global, so /run can't reach it externally -- this slash command
-	-- lives inside the addon itself, where it can.
-	SLASH_SPSEARCHBOX1="/spsb"
-	SlashCmdList["SPSEARCHBOX"]=function()
-		local i=SocialPlus_Searchbox.Instructions
-		print("region width:",i:GetWidth(),"text width:",i:GetStringWidth(),"text:",i:GetText())
-	end
 
 	local function SocialPlus_UpdateSearchGlow(self)
 		if SocialPlus_SearchGlow then
@@ -1279,6 +1280,12 @@ end)
 
 	SocialPlus_Searchbox:SetScript("OnTextChanged",function(self)
 		SearchBoxTemplate_OnTextChanged(self)
+		-- The template re-shows the placeholder whenever the box is empty,
+		-- including while focused -- e.g. after clearing with backspace. Keep
+		-- it hidden for as long as the box has focus.
+		if self.Instructions and self:HasFocus() then
+			self.Instructions:Hide()
+		end
 		local txt=self:GetText() or ""
 		txt=txt:match("^%s*(.-)%s*$") or ""
 		local norm=SocialPlus_NormalizeText(txt)
@@ -1297,10 +1304,18 @@ end)
 
 	SocialPlus_Searchbox:SetScript("OnEditFocusGained",function(self)
 		SocialPlus_ShowClickCatcher()
+		-- Placeholder clears the moment the box lights up, instead of sitting
+		-- under the caret until the first keystroke.
+		if self.Instructions then self.Instructions:Hide() end
 		SocialPlus_UpdateSearchGlow(self)
 	end)
 
 	SocialPlus_Searchbox:SetScript("OnEditFocusLost",function(self)
+		-- Back only if nothing was typed -- with text present the placeholder
+		-- must stay hidden regardless of focus.
+		if self.Instructions and (self:GetText() or "")=="" then
+			self.Instructions:Show()
+		end
 		SocialPlus_UpdateSearchGlow(self)
 	end)
 
@@ -2017,17 +2032,6 @@ local function GetFriendInfoById(id)
 		bnetAccountId,client,canCoop,wowProjectID,lastOnline,
 		isAFK,isGameAFK,isDND,isGameBusy,mobile,zoneName,gameText,realmName
 
-	if SocialPlusPerfDebug and SocialPlus_Perf then
-		SocialPlus_Perf.accountInfo=SocialPlus_Perf.accountInfo+1
-		-- Attribute each call to its caller. The group-loop hoist removed the
-		-- calls it was supposed to and the total barely moved, so the bulk is
-		-- coming from somewhere else entirely -- find it rather than guess.
-		if debugstack then
-			local site=tostring(debugstack(2,1,0) or ""):match("SocialPlus%.lua:(%d+)") or "?"
-			SocialPlus_Perf.sites=SocialPlus_Perf.sites or {}
-			SocialPlus_Perf.sites[site]=(SocialPlus_Perf.sites[site] or 0)+1
-		end
-	end
 	if C_BattleNet and C_BattleNet.GetFriendAccountInfo then
 		local accountInfo=C_BattleNet.GetFriendAccountInfo(id)
 		if accountInfo then
@@ -3490,24 +3494,6 @@ end
 	local numWoWTotal=FG_GetNumFriends()
 	local numWoWOnline=FG_GetNumOnlineFriends()
 	local numWoWOffline=numWoWTotal-numWoWOnline
-
-	if SocialPlusPerfDebug and SocialPlus_Perf then
-		SocialPlus_Perf.rebuilds=SocialPlus_Perf.rebuilds+1
-		SocialPlus_Perf.bnet=numBNetTotal
-		SocialPlus_Perf.wow=numWoWOnline
-		-- Rebuilds outnumber hook fires, so some come from our own direct
-		-- calls. Record where from, rather than guessing which of the ~20
-		-- SocialPlus_Update call sites run on open.
-		if debugstack then
-			local lines={}
-			for ln in tostring(debugstack(3,6,0) or ""):gmatch("SocialPlus%.lua:(%d+)") do
-				lines[#lines+1]=ln
-			end
-			SocialPlus_Perf.callers=SocialPlus_Perf.callers or {}
-			SocialPlus_Perf.callers[#SocialPlus_Perf.callers+1]=table.concat(lines,"<-",1,math.min(#lines,3))
-		end
-	end
-
 	if QuickJoinToastButton then
 		QuickJoinToastButton:UpdateDisplayedFriendCount()
 	end
@@ -3890,10 +3876,6 @@ end
 end
 
 SocialPlus_ApplyGroupOrder()
-
-if SocialPlusPerfDebug and SocialPlus_Perf then
-	SocialPlus_Perf.groups=#GroupSorted
-end
 
     ----------------------------------------------------------------------
     -- Per-friend data, computed ONCE per rebuild.
@@ -4737,9 +4719,6 @@ SocialPlus_Menu.initialize=function(self,level)
 	local displayLabel=isFavorites and SocialPlus_GetFavoritesLabel() or (groupKey~="" and groupKey or L.GROUP_UNGROUPED)
 
 		for _,items in ipairs(menu_items[level]) do
-		-- Favorites isn't a real, user-managed group -- Rename and Delete
-		-- are excluded from the menu entirely (not just disabled), per spec.
-		if not (level==1 and isFavorites and (items.text==L.GROUP_RENAME or items.text==L.GROUP_REMOVE)) then
 		local info=LibDD:UIDropDownMenu_CreateInfo()
 
 		for prop,value in pairs(items) do
@@ -4778,8 +4757,21 @@ SocialPlus_Menu.initialize=function(self,level)
 			end
 		end
 
-		LibDD:UIDropDownMenu_AddButton(info,level)
+		-- Favorites isn't a user-managed group, so it can't be renamed or
+		-- deleted -- but the rows are shown GREYED rather than omitted, so the
+		-- menu keeps the same shape and height as every other group's. They
+		-- used to be left out entirely, which made this one menu two rows
+		-- shorter and the items jump position.
+		--
+		-- Invite All and Mute stay live: favorites are real friends, and
+		-- Favorites mutes under its own reserved key.
+		if level==1 and isFavorites then
+			if info.text==L.GROUP_RENAME or info.text==L.GROUP_REMOVE then
+				info.disabled=true
+			end
 		end
+
+		LibDD:UIDropDownMenu_AddButton(info,level)
 	end
 end
 
@@ -5107,24 +5099,27 @@ function SocialPlus_CreateSettingsPanel()
 	_G[notifyEnable:GetName().."Text"]:SetText(L.SETTING_NOTIFY_ENABLE)
 	notifyEnable:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.notifications and SocialPlus_SavedVars.notifications.enabled)
 
-	local notifyOffline=CreateFrame("CheckButton","SocialPlus_NotifyOfflineCheck",f,"UICheckButtonTemplate")
-	notifyOffline:SetPoint("TOPLEFT",notifyEnable,"BOTTOMLEFT",0,-6)
-	_G[notifyOffline:GetName().."Text"]:SetText(L.SETTING_NOTIFY_OFFLINE)
-	notifyOffline:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.notifications and SocialPlus_SavedVars.notifications.offline_too)
-	notifyOffline:SetScript("OnClick",function()
-		SocialPlus_SavedVars.notifications.offline_too=not SocialPlus_SavedVars.notifications.offline_too
-	end)
-
-	-- Reproduces Blizzard's own friend online/offline chime
-	-- (SOUNDKIT.UI_BNET_TOAST), which this addon's chat-message
-	-- notification doesn't otherwise come with -- the toast CVars this
-	-- addon flips off only silence Blizzard's visual popup, not this.
+	-- Sound sits directly under the "come online" toggle it belongs to, so
+	-- the two online options read as a pair and "go offline" follows after.
+	--
+	-- Reproduces Blizzard's own friend online chime (SOUNDKIT.UI_BNET_TOAST),
+	-- which this addon's chat-message notification doesn't otherwise come
+	-- with -- the toast CVars this addon flips off only silence Blizzard's
+	-- visual popup, not this.
 	local notifySound=CreateFrame("CheckButton","SocialPlus_NotifySoundCheck",f,"UICheckButtonTemplate")
-	notifySound:SetPoint("TOPLEFT",notifyOffline,"BOTTOMLEFT",0,-6)
+	notifySound:SetPoint("TOPLEFT",notifyEnable,"BOTTOMLEFT",0,-6)
 	_G[notifySound:GetName().."Text"]:SetText(L.SETTING_NOTIFY_SOUND)
 	notifySound:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.notifications and SocialPlus_SavedVars.notifications.sound)
 	notifySound:SetScript("OnClick",function()
 		SocialPlus_SavedVars.notifications.sound=not SocialPlus_SavedVars.notifications.sound
+	end)
+
+	local notifyOffline=CreateFrame("CheckButton","SocialPlus_NotifyOfflineCheck",f,"UICheckButtonTemplate")
+	notifyOffline:SetPoint("TOPLEFT",notifySound,"BOTTOMLEFT",0,-6)
+	_G[notifyOffline:GetName().."Text"]:SetText(L.SETTING_NOTIFY_OFFLINE)
+	notifyOffline:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.notifications and SocialPlus_SavedVars.notifications.offline_too)
+	notifyOffline:SetScript("OnClick",function()
+		SocialPlus_SavedVars.notifications.offline_too=not SocialPlus_SavedVars.notifications.offline_too
 	end)
 
 	-- Only notify friends on this exact WoW version -- labelled dynamically
@@ -5133,7 +5128,7 @@ function SocialPlus_CreateSettingsPanel()
 	-- this is an opt-in filter for people who specifically don't want
 	-- cross-version noise.
 	local notifySameVersion=CreateFrame("CheckButton","SocialPlus_NotifySameVersionCheck",f,"UICheckButtonTemplate")
-	notifySameVersion:SetPoint("TOPLEFT",notifySound,"BOTTOMLEFT",0,-6)
+	notifySameVersion:SetPoint("TOPLEFT",notifyOffline,"BOTTOMLEFT",0,-6)
 	_G[notifySameVersion:GetName().."Text"]:SetText(
 		L.SETTING_NOTIFY_SAME_VERSION_PREFIX..currentVersionLabel..L.SETTING_NOTIFY_SAME_VERSION_SUFFIX)
 	notifySameVersion:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.notifications and SocialPlus_SavedVars.notifications.same_version_only)
@@ -5274,8 +5269,51 @@ function SocialPlus_CreateSettingsPanel()
 	end
 end
 
+-- The search box shares its row with Blizzard's Friends/Ignore tabs, whose
+-- width comes from the GAME client's locale, not ours. At a fixed 170 the box
+-- left exactly 1px of clearance on a Spanish client (measured with /spgap:
+-- "Amigos"/"Ignorar") and would overlap outright in a wordier locale.
+--
+-- So the width adapts: keep 170 when there's room, otherwise give the tabs
+-- their space and shrink, down to a floor where the box is still usable. Runs
+-- whenever the tab strip may have changed, since the tabs are laid out by
+-- Blizzard and we only get to react.
+function SocialPlus_LayoutSearchBox()
+	if not (SocialPlus_Searchbox and FriendsFrame) then return end
+
+	local PREFERRED,MINIMUM,GAP=170,104,8
+
+	local frameRight=FriendsFrame:GetRight()
+	if not frameRight then return end
+
+	local rightmostTab=nil
+	for i=1,4 do
+		local tab=_G["FriendsTabHeaderTab"..i]
+		if tab and tab:IsShown() then
+			local r=tab:GetRight()
+			if r and (not rightmostTab or r>rightmostTab) then rightmostTab=r end
+		end
+	end
+
+	-- No tabs laid out yet (panel never shown): leave the preferred width.
+	if not rightmostTab then
+		SocialPlus_Searchbox:SetWidth(PREFERRED)
+		return
+	end
+
+	-- -9 mirrors the TOPRIGHT inset the box is anchored with.
+	local available=(frameRight-9)-(rightmostTab+GAP)
+	local width=math.min(PREFERRED,math.max(MINIMUM,available))
+	if math.floor(width+0.5)~=math.floor((SocialPlus_Searchbox:GetWidth() or 0)+0.5) then
+		SocialPlus_Searchbox:SetWidth(width)
+	end
+end
+
 local function SocialPlus_UpdateFriendsTabVisibility()
 	if not FriendsFrame then return end
+	-- Tabs may have just been re-laid out (shown, or switched); re-fit first so
+	-- the box is never briefly overlapping them.
+	SocialPlus_LayoutSearchBox()
 
 	local tabID=PanelTemplates_GetSelectedTab(FriendsFrame) or FriendsFrame.selectedTab
 	local isFriendsTab=(tabID==1)
@@ -7663,10 +7701,24 @@ local function SocialPlus_BuildFriendLink(characterName,realmName,class,accountN
 	return classColourCode.."|Hplayer:"..fullName.."|h"..fullName.."|h|r"
 end
 
-local function SocialPlus_PrintNotification(text)
+-- Minimum gap between friend-online chimes, in seconds. Logging in, or a
+-- guild group all coming online together, used to fire one chime per friend
+-- back to back.
+SOCIALPLUS_ONLINE_SOUND_GAP=5
+
+-- Deliberately a global rather than a file-scope local: this chunk sits at
+-- Lua's 200-locals-per-chunk ceiling (see SP_Rebuild), so there is no local
+-- slot left to spend on a timestamp.
+SocialPlus_SoundThrottle=SocialPlus_SoundThrottle or {}
+
+-- withSound is opt-in per caller: only a friend coming ONLINE chimes. Going
+-- offline prints its message silently -- a friend leaving isn't something you
+-- need to be pulled away from what you're doing for.
+local function SocialPlus_PrintNotification(text,withSound)
 	if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
 		DEFAULT_CHAT_FRAME:AddMessage(text)
 	end
+	if not withSound then return end
 	-- Blizzard's own friend online/offline chime -- SOUNDKIT.UI_BNET_TOAST
 	-- (sound kit 18019, same ID across Vanilla/TBC/Wrath's FrameXML source,
 	-- so it's not version-specific). Not gated behind the toast CVars this
@@ -7675,6 +7727,14 @@ local function SocialPlus_PrintNotification(text)
 	-- reproduces what the default chat message is normally paired with,
 	-- independent of the (disabled) toast popup.
 	if SocialPlus_SavedVars and SocialPlus_SavedVars.notifications and SocialPlus_SavedVars.notifications.sound then
+		-- Leading edge: the first friend in a burst is heard immediately, the
+		-- rest of the burst is silent. The chat messages are all still printed,
+		-- so nothing is lost -- only the repeated chime is dropped.
+		local now=(GetTime and GetTime()) or 0
+		local last=SocialPlus_SoundThrottle.lastOnline or 0
+		if now-last<SOCIALPLUS_ONLINE_SOUND_GAP then return end
+		SocialPlus_SoundThrottle.lastOnline=now
+
 		if SOUNDKIT and SOUNDKIT.UI_BNET_TOAST then
 			PlaySound(SOUNDKIT.UI_BNET_TOAST)
 		else
@@ -7714,7 +7774,7 @@ local function SocialPlus_NotifyOnline(state)
 	local detailBlock=SocialPlus_BuildFriendDetailBlock(state.level,state.class,state.wowProjectID,state.faction,state.regionID)
 	local groupPrefix=SocialPlus_BuildGroupPrefix(state.noteText,state.battleTag)
 	local msg=string.format(L.NOTIFY_ONLINE_MSG,link..detailBlock)
-	SocialPlus_PrintNotification(groupPrefix..msg..".")
+	SocialPlus_PrintNotification(groupPrefix..msg..".",true)
 end
 
 local function SocialPlus_NotifyOffline(state)
@@ -8429,80 +8489,3 @@ frame:SetScript("OnEvent",function(self,event,...)
 		SocialPlus_QueueVersionBroadcast()
 	end
 end)
-
--- =========================================================================
--- Perf instrumentation (opt-in): /run SocialPlusPerfDebug=true
--- =========================================================================
--- Opening the friends panel with a large list stutters, and there are two
--- candidate causes that reading the code cannot tell apart: the rebuild being
--- expensive, or the rebuild running many times per open. Blizzard fires
--- FriendsList_Update repeatedly while the panel opens and our hooksecurefunc
--- follows every one of them.
---
--- So count both. `calls` is every time the hook fired; `rebuilds` is how many
--- got past the early-out guards and actually rebuilt the list.
-SocialPlus_Perf={calls=0,rebuilds=0,totalMs=0,maxMs=0,accountInfo=0,
-                 accountInfoHits=0,hookFires=0,groups=0,bnet=0,wow=0,opens=0}
-
-function SocialPlus_PerfReset()
-	local p=SocialPlus_Perf
-	p.calls=0; p.rebuilds=0; p.totalMs=0; p.maxMs=0; p.accountInfo=0
-	p.accountInfoHits=0; p.hookFires=0; p.callers=nil; p.sites=nil
-end
-
-function SocialPlus_PerfReport()
-	local p=SocialPlus_Perf
-	if not DEFAULT_CHAT_FRAME then return end
-	local function line(msg) DEFAULT_CHAT_FRAME:AddMessage("|cff4da6ff[SP perf]|r "..msg) end
-	line(("%d BNet + %d WoW friends, %d groups"):format(p.bnet or 0,p.wow or 0,p.groups or 0))
-	line(("rebuilt %d time(s)"):format(p.rebuilds))
-	line(("total %.1f ms, worst single rebuild %.1f ms"):format(p.totalMs,p.maxMs))
-	line(("C_BattleNet.GetFriendAccountInfo calls: %d"):format(p.accountInfo))
-	-- What the current per-group scanning costs: each group rescans the whole
-	-- BNet list twice (online + offline) and the WoW list once.
-	local scans=(p.groups or 0)*((p.bnet or 0)*2+(p.wow or 0))
-	line(("membership tests this rebuild: ~%d (groups x friends)"):format(scans))
-	if p.sites then
-		local order={}
-		for site,n in pairs(p.sites) do order[#order+1]={site=site,n=n} end
-		table.sort(order,function(x,y) return x.n>y.n end)
-		for i=1,math.min(#order,5) do
-			line(("  account-info from line %s: %d call(s)"):format(order[i].site,order[i].n))
-		end
-	end
-	if p.callers then
-		for i=1,#p.callers do
-			line(("rebuild %d from %s"):format(i,tostring(p.callers[i])))
-		end
-	end
-end
-
-do
-	local realUpdate=SocialPlus_Update
-	function SocialPlus_Update(...)
-		if not SocialPlusPerfDebug then return realUpdate(...) end
-		local p=SocialPlus_Perf
-		p.calls=p.calls+1
-		local t0=debugprofilestop and debugprofilestop() or 0
-		local a,b,c=realUpdate(...)
-		if debugprofilestop then
-			local dt=debugprofilestop()-t0
-			p.totalMs=p.totalMs+dt
-			if dt>p.maxMs then p.maxMs=dt end
-		end
-		return a,b,c
-	end
-
-	if FriendsFrame then
-		FriendsFrame:HookScript("OnShow",function()
-			if not SocialPlusPerfDebug then return end
-			SocialPlus_Perf.opens=SocialPlus_Perf.opens+1
-			SocialPlus_PerfReset()
-			-- Reported after the open settles, so the whole burst of
-			-- FriendsList_Update calls is included rather than just the first.
-			if C_Timer and C_Timer.After then
-				C_Timer.After(1.5,SocialPlus_PerfReport)
-			end
-		end)
-	end
-end

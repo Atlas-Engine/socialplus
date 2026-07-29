@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.12a
+
+- Friends going offline no longer play a sound, and the sound for friends coming online is limited to one every few seconds -- logging in, or a group of friends arriving together, used to fire one chime per friend back to back. Every chat message is still shown; only the repeated chime is dropped.
+- The sound option is renamed to "Play a sound when friends come online" and now sits directly under the matching notification option, so the two online settings read as a pair.
+- Fixed the search box overlapping the Friends/Ignore tabs on non-English clients -- there was 1 pixel of clearance on a Spanish client. The box now sizes itself around whatever room the tabs need, in any client language.
+- Search box placeholder is shorter, slightly smaller, and now clears the moment you click into the box instead of sitting under the cursor until you type.
+- The Favorites group's menu now shows Rename Group and Delete Group greyed out rather than leaving them out, so every group's menu keeps the same shape.
+
 ## 1.11c
 
 - Opening the friends list is roughly twice as fast, with about 60% fewer Battle.net API calls per refresh -- most noticeable on large friend lists, which is where the stutter was reported. Friends' sort names are now resolved once and remembered instead of being re-fetched for every friend on every refresh, and each friend's data is gathered once per refresh instead of once per group they belong to.
