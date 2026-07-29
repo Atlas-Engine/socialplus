@@ -1,0 +1,63 @@
+name: Publish release
+
+# Turns a pushed tag into a GitHub Release whose notes are that version's
+# CHANGELOG.md section, plus a link to the full changelog.
+#
+# Why this exists: CurseForge builds from published Releases, not from bare
+# tags. With no Release, it fell back to showing the commit subject -- a single
+# line -- as the entire changelog for the version.
+#
+# Nothing here touches CurseForge directly. It only publishes the Release;
+# CurseForge's existing GitHub integration picks it up from there, so no API
+# key or secret is needed.
+on:
+  push:
+    tags:
+      - '*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build release notes from CHANGELOG.md
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME}"
+
+          # Pull just this version's section: everything after its "## <version>"
+          # heading, up to the next "## " heading.
+          awk -v want="## ${VERSION}" '
+            $0 == want { grab = 1; next }
+            grab && /^## / { exit }
+            grab { print }
+          ' CHANGELOG.md > section.md
+
+          # Fail loudly rather than publishing an empty release: a missing
+          # section means the changelog entry was forgotten, which is exactly
+          # the mistake worth catching before it reaches CurseForge.
+          if [ ! -s section.md ]; then
+            echo "No '## ${VERSION}' section found in CHANGELOG.md" >&2
+            exit 1
+          fi
+
+          {
+            sed -e '/./,$!d' section.md
+            printf '\n---\n\n'
+            printf '[View all changelogs](https://github.com/%s/blob/main/CHANGELOG.md)\n' "${GITHUB_REPOSITORY}"
+          } > notes.md
+
+          echo "--- release notes ---"
+          cat notes.md
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "${GITHUB_REF_NAME}" \
+            --notes-file notes.md
