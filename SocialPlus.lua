@@ -2647,12 +2647,22 @@ local function SocialPlus_UpdateFriendButton(button)
 					versionLabel=SocialPlus_GetVersionLabelFromGameText(gameText)
 				end
 				if not versionLabel then
-					-- No character name resolved at all (not just version
-					-- data) almost always means they're sitting at the
-					-- character-select/loading screen rather than their
-					-- account data genuinely being broken -- show that
-					-- instead of a bare "?" (suspected live).
-					versionLabel=(not characterName or characterName=="") and L.CHARACTER_SELECTION or "?"
+					-- This used to claim "Character Selection". It cannot: a
+					-- full game-account dump for a friend who was demonstrably
+					-- playing showed characterName, realmID, characterLevel,
+					-- classID, wowProjectID and richPresence ALL empty or zero,
+					-- with only isOnline/clientProgram set. Sitting at the
+					-- character-select screen produces exactly the same empty
+					-- payload, so the two are indistinguishable and asserting
+					-- either one is wrong half the time.
+					--
+					-- Say only what Blizzard actually tells us: its own
+					-- presence text if there is any, otherwise just the game.
+					if not characterName or characterName=="" then
+						versionLabel=(gameText and gameText~="" and gameText) or L.WOW_ONLINE_NO_DETAILS
+					else
+						versionLabel="?"
+					end
 				end
 				infoText=versionLabel..SocialPlus_FormatRegionText(ga and ga.regionID)
 			else
@@ -6645,10 +6655,10 @@ function SocialPlus_ShowRowTooltip(button)
 					end
 				end
 			elseif client==BNET_CLIENT_WOW then
-				-- Confirmed playing WoW but no character resolved -- same
-				-- character-select/loading-screen signal as the row's info
-				-- line above, rather than showing a blank/raw gameText line.
-				GameTooltip:AddLine(L.CHARACTER_SELECTION,0.8,0.8,0.8)
+				-- Same reasoning as the row's info line above: an empty
+				-- character payload cannot tell character-select apart from
+				-- withheld data, so don't claim either.
+				GameTooltip:AddLine((gameText and gameText~="" and gameText) or L.WOW_ONLINE_NO_DETAILS,0.8,0.8,0.8)
 			else
 				GameTooltip:AddLine(gameText or "",0.8,0.8,0.8)
 			end

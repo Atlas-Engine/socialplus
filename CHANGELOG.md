@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.12b
+
+- Battle.net friends who are online in WoW but whose character details Blizzard doesn't send are no longer labelled "Character Selection" -- they now show what's actually known instead. Blizzard sends an identical, completely empty payload whether a friend is sitting at the character-select screen or is playing normally with their details unavailable, so the old label was a guess and was wrong for anyone in the second case.
+
 ## 1.12a
 
 - Friends going offline no longer play a sound, and the sound for friends coming online is limited to one every few seconds -- logging in, or a group of friends arriving together, used to fire one chime per friend back to back. Every chat message is still shown; only the repeated chime is dropped.
