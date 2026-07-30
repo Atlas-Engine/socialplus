@@ -12,6 +12,9 @@ name: Publish release
 # Nothing here talks to CurseForge; its existing GitHub integration does the
 # rest, so no API key or secret is involved.
 on:
+  # Manual re-run, for redoing a release after its tag has been deleted.
+  # The path filter below only applies to push, so this needs no changelog edit.
+  workflow_dispatch:
   push:
     branches:
       - main
