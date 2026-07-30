@@ -1,19 +1,22 @@
 name: Publish release
 
-# Turns a pushed tag into a GitHub Release whose notes are that version's
-# CHANGELOG.md section, plus a link to the full changelog.
+# Cuts a release from CHANGELOG.md whenever a new version section lands on main.
 #
-# Why this exists: CurseForge builds from published Releases, not from bare
-# tags. With no Release, it fell back to showing the commit subject -- a single
-# line -- as the entire changelog for the version.
+# Why it is NOT triggered by pushing a tag: CurseForge builds its file the
+# moment a tag appears and generates its own changelog from the git log. A
+# workflow reacting to that same tag publishes the Release seconds later --
+# always too late, and CurseForge never re-reads it. Creating the tag and the
+# Release together via `gh release create` closes that window, so the tag
+# CurseForge sees already has proper notes attached.
 #
-# Nothing here touches CurseForge directly. It only publishes the Release;
-# CurseForge's existing GitHub integration picks it up from there, so no API
-# key or secret is needed.
+# Nothing here talks to CurseForge; its existing GitHub integration does the
+# rest, so no API key or secret is involved.
 on:
   push:
-    tags:
-      - '*'
+    branches:
+      - main
+    paths:
+      - CHANGELOG.md
 
 permissions:
   contents: write
@@ -22,24 +25,48 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+        with:
+          # Tags are needed to tell an already-released version from a new one.
+          fetch-depth: 0
 
-      - name: Build release notes from CHANGELOG.md
+      - name: Work out whether there is a new version to release
+        id: check
         run: |
           set -euo pipefail
-          VERSION="${GITHUB_REF_NAME}"
 
-          # Pull just this version's section: everything after its "## <version>"
-          # heading, up to the next "## " heading.
+          # Topmost "## <version>" heading is the version being released.
+          VERSION="$(grep -m1 '^## ' CHANGELOG.md | sed -e 's/^## //' -e 's/[[:space:]]*$//')"
+          if [ -z "${VERSION}" ]; then
+            echo "No '## <version>' heading found in CHANGELOG.md" >&2
+            exit 1
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+          # Already released: this push changed the changelog for some other
+          # reason (a typo fix, an older entry). Nothing to do -- and skipping
+          # rather than failing keeps such edits from showing as red builds.
+          if git rev-parse -q --verify "refs/tags/${VERSION}" >/dev/null; then
+            echo "Tag ${VERSION} already exists -- nothing to release."
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build release notes
+        if: steps.check.outputs.release == 'true'
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.check.outputs.version }}"
+
+          # This version's section only: everything after its heading, up to
+          # the next "## ".
           awk -v want="## ${VERSION}" '
             $0 == want { grab = 1; next }
             grab && /^## / { exit }
             grab { print }
           ' CHANGELOG.md > section.md
 
-          # Fail loudly rather than publishing an empty release: a missing
-          # section means the changelog entry was forgotten, which is exactly
-          # the mistake worth catching before it reaches CurseForge.
           if [ ! -s section.md ]; then
             echo "No '## ${VERSION}' section found in CHANGELOG.md" >&2
             exit 1
@@ -57,10 +84,17 @@ jobs:
           echo "--- release notes ---"
           cat notes.md
 
-      - name: Publish
+      - name: Create tag and release together
+        if: steps.check.outputs.release == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "${GITHUB_REF_NAME}" \
-            --title "${GITHUB_REF_NAME}" \
+          set -euo pipefail
+          VERSION="${{ steps.check.outputs.version }}"
+
+          # --target creates the tag at this commit as part of publishing, so a
+          # tag never exists on its own. That ordering is the entire point.
+          gh release create "${VERSION}" \
+            --target "${GITHUB_SHA}" \
+            --title "${VERSION}" \
             --notes-file notes.md
