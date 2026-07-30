@@ -1,8 +1,26 @@
 package-as: SocialPlus
 
+# Use CHANGELOG.md as the changelog instead of letting the packager generate one.
+#
+# Without this, CurseForge builds the changelog itself from the git commits
+# between tags -- the "lightweight tag <sha> / commit / commit / commit" dump.
+# It does NOT read the GitHub Release body: publishing notes there, whether
+# seconds after the tag or created atomically with it, made no difference to
+# what CurseForge displayed. This setting is the only thing that replaces that
+# generated text.
+#
+# markup-type matters too: the notes were previously shown unrendered, so
+# Markdown syntax appeared literally. Declaring it tells CurseForge how to
+# render the file rather than leaving it to guess.
+#
+# NOTE: CHANGELOG.md is deliberately NOT in the ignore list below any more --
+# the packager has to be able to read it.
+manual-changelog:
+  filename: CHANGELOG.md
+  markup-type: markdown
+
 ignore:
   - README.md
-  - CHANGELOG.md
   - LICENSE
   - .git
   - .gitignore
