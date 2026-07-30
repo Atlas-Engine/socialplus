@@ -5075,6 +5075,22 @@ function SocialPlus_CreateSettingsPanel()
 	f:SetBackdropColor(0,0,0,1)
 	f:SetBackdropBorderColor(1,1,1,1)
 
+	-- Solid fill UNDER both backdrop layers.
+	--
+	-- Setting those layers to opaque black isn't enough on its own: the art
+	-- itself (UI-DialogBox-Background-Dark, and the tooltip tint over it) is
+	-- semi-transparent, so bright UI behind the panel still bleeds through --
+	-- the same problem the friend tooltip had. Sublevel -8 keeps it beneath
+	-- both, and the insets match the backdrop so the border art still frames it.
+	local fSolid=f:CreateTexture(nil,"BACKGROUND",nil,-8)
+	fSolid:SetPoint("TOPLEFT",f,"TOPLEFT",11,-12)
+	fSolid:SetPoint("BOTTOMRIGHT",f,"BOTTOMRIGHT",-12,11)
+	if fSolid.SetColorTexture then
+		fSolid:SetColorTexture(0,0,0,1)
+	else
+		fSolid:SetTexture(0,0,0,1)
+	end
+
 	-- Second layer: the tooltip-tint backdrop this panel had on its own
 	-- before, now on top of the dark dialog background instead of replacing
 	-- it -- same BACKDROP_TOOLTIP_16_16_5555 shape/insets as the library.
@@ -6550,6 +6566,35 @@ function SocialPlus_MakeTooltipOpaque()
 	if GameTooltip.SetBackdropColor then
 		GameTooltip:SetBackdropColor(0,0,0,1)
 	end
+
+	-- Those two weren't enough on their own: the tooltip's own background art is
+	-- semi-transparent, so setting its colour to opaque black still let raid
+	-- frames show through. Lay a solid texture of our own behind the text.
+	--
+	-- BORDER sits above the tooltip's BACKGROUND art but below the font strings,
+	-- so it hides what's behind without covering the text.
+	local bg=GameTooltip.SocialPlusOpaqueBG
+	if not bg then
+		bg=GameTooltip:CreateTexture(nil,"BORDER")
+		bg:SetPoint("TOPLEFT",GameTooltip,"TOPLEFT",2,-2)
+		bg:SetPoint("BOTTOMRIGHT",GameTooltip,"BOTTOMRIGHT",-2,2)
+		if bg.SetColorTexture then
+			bg:SetColorTexture(0,0,0,1)
+		else
+			bg:SetTexture(0,0,0,1)
+		end
+		GameTooltip.SocialPlusOpaqueBG=bg
+
+		-- Parented to GameTooltip, so without this it would darken EVERY
+		-- tooltip in the game, not just ours. Hidden again whenever the
+		-- tooltip closes; our show path re-shows it.
+		GameTooltip:HookScript("OnHide",function()
+			if GameTooltip.SocialPlusOpaqueBG then
+				GameTooltip.SocialPlusOpaqueBG:Hide()
+			end
+		end)
+	end
+	bg:Show()
 end
 
 local function SocialPlus_OnClick(self,button)
