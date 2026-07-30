@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.12c
+
+- Battle.net friends currently on an arena map now show a crossed-swords icon next to their faction crest, and their location line turns red in the tooltip. Only friends playing your own WoW version are marked, since you can't join anyone else's game anyway.
+
 ## 1.12b
 
 - Battle.net friends who are online in WoW but whose character details Blizzard doesn't send are no longer labelled "Character Selection" -- they now show what's actually known instead. Blizzard sends an identical, completely empty payload whether a friend is sitting at the character-select screen or is playing normally with their details unavailable, so the old label was a guess and was wrong for anyone in the second case.

@@ -39,6 +39,23 @@ L.MENU_REMOVE_FAVORITE    = "Remove from Favorites"
 -- Search & grouping
 ----------------------------------------------------------------
 L.SEARCH_PLACEHOLDER      = "Search name, group, class"
+
+----------------------------------------------------------------
+-- Arena detection
+----------------------------------------------------------------
+-- Matched against the friend's areaName, which is the arena MAP name (a friend
+-- in a skirmish shows "Ruins of Lordaeron", confirmed live). Kept as a locale
+-- table rather than hardcoded in the logic so it can be translated -- Blizzard
+-- reports this string localized, so an untranslated list would silently never
+-- match. Skirmish and rated use the same maps, so this means "on an arena map".
+L.ARENA_ZONES = {
+    "Nagrand Arena",
+    "Blade's Edge Arena",
+    "Ruins of Lordaeron",
+    "Dalaran Sewers",
+    "The Tiger's Peak",
+    "Tol'viron Arena",
+}
 L.GROUP_UNGROUPED         = "General"
 L.GROUP_FAVORITES         = "Favorites"
 L.GROUP_INGAME            = "In-game Friends"
@@ -145,6 +162,14 @@ if locale == "frFR" then
     -- Search & grouping
     ----------------------------------------------------------------
     L.SEARCH_PLACEHOLDER      = "Nom, groupe, classe"
+    L.ARENA_ZONES = {
+        "Arene de Nagrand",
+        "Arene de Blade's Edge",
+        "Ruines de Lordaeron",
+        "Egouts de Dalaran",
+        "Le Pic du Tigre",
+        "Arene de Tol'viron",
+    }
     L.GROUP_UNGROUPED         = "Général"
     L.GROUP_FAVORITES         = "Favoris"
     L.GROUP_INGAME            = "Amis en jeu"
@@ -246,6 +271,14 @@ elseif locale == "esES" or locale == "esMX" then
     -- Search & grouping
     ----------------------------------------------------------------
     L.SEARCH_PLACEHOLDER      = "Nombre, grupo, clase"
+    L.ARENA_ZONES = {
+        "Arena de Nagrand",
+        "Arena de Filo de Navaja",
+        "Ruinas de Lordaeron",
+        "Cloacas de Dalaran",
+        "El Pico del Tigre",
+        "Arena de Tol'viron",
+    }
     L.GROUP_UNGROUPED         = "General"
     L.GROUP_FAVORITES         = "Favoritos"
     L.GROUP_INGAME            = "Amigos en el juego"

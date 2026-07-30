@@ -2470,6 +2470,14 @@ local function SocialPlus_UpdateFriendButton(button)
 	if button.SocialPlusNoteIcon then
 		button.SocialPlusNoteIcon:Hide()
 	end
+	-- Same pooling hazard: without this, a row that showed the arena icon keeps
+	-- showing it after being recycled as a divider or a non-arena friend.
+	if button.SocialPlusArenaIcon then
+		button.SocialPlusArenaIcon:Hide()
+	end
+	-- Stale-state hazard again: a recycled row must not inherit the previous
+	-- friend's zone, or a non-arena friend can show the swords.
+	button.SocialPlusZoneName=nil
 
 	-- Update based on button type
 	if button.buttonType==FRIENDS_BUTTON_TYPE_WOW then
@@ -2571,6 +2579,20 @@ local function SocialPlus_UpdateFriendButton(button)
 			isOnline,bnetAccountId,client,canCoop,wowProjectID,lastOnline,
 			isAFK,isGameAFK,isDND,isGameBusy,mobile,zoneName,gameText,realmName=
 			GetFriendInfoById(id)
+
+		-- Stashed for the shared section further down, which needs the area but
+		-- runs outside this branch's scope. Carrying it on the button costs
+		-- nothing; re-reading it there meant a SECOND GetFriendInfoById for
+		-- every visible row, doubling the per-row cost of the very call the
+		-- rebuild was optimised to avoid.
+		-- Only for friends on the SAME WoW version. A TBC friend's zone can be
+		-- "Nagrand Arena" too -- the maps share names across versions -- but you
+		-- can't play with them, so the icon is noise. It also keeps placement
+		-- consistent: same-version friends always get the faction crest, while
+		-- other versions get the generic game icon at a different size and
+		-- offset, which is what made the swords sit between rows.
+		button.SocialPlusZoneName=(client==BNET_CLIENT_WOW
+			and wowProjectID==WOW_PROJECT_ID) and zoneName or nil
 
 		nameText=SocialPlus_GetBNetButtonNameText(accountName,client,canCoop,characterName,class,level,realmName)
 
@@ -3077,6 +3099,46 @@ local function SocialPlus_UpdateFriendButton(button)
 				button.SocialPlusNoteIcon:Hide()
 			end
 
+			-- Crossed swords for a friend on an arena map. Anchored to the
+			-- status icon like the note icon, NOT appended to the name string:
+			-- the name is a fixed-width truncating field, and anything put
+			-- inside it silently vanishes for long character/realm names (the
+			-- exact bug the note icon was moved out of the name to fix).
+			if not button.SocialPlusArenaIcon then
+				local icon=button:CreateTexture(nil,"OVERLAY")
+				-- A UI texture, not a spell icon: everything under Interface\Icons
+				-- is a square with a baked-in black background. This one is
+				-- crossed swords on transparency, so it sits cleanly next to the
+				-- faction crest.
+				icon:SetTexture([[Interface\GossipFrame\BattleMasterGossipIcon]])
+				-- 20 rather than 14: this texture has transparent padding around
+				-- the swords, so the art renders noticeably smaller than its box.
+				icon:SetSize(20,20)
+				button.SocialPlusArenaIcon=icon
+			end
+			-- Anchored each pass, not once at creation: button.gameIcon (the
+			-- faction crest) may not exist yet the first time a pooled row is
+			-- built, and a SetPoint against a missing frame silently leaves the
+			-- icon unanchored in the corner.
+			button.SocialPlusArenaIcon:ClearAllPoints()
+			if button.gameIcon then
+				button.SocialPlusArenaIcon:SetPoint("RIGHT",button.gameIcon,"LEFT",-4,0)
+			else
+				button.SocialPlusArenaIcon:SetPoint("LEFT",button.status,"RIGHT",2,0)
+			end
+			-- Re-read the area here rather than using the BNET branch's
+			-- zoneName: this block is the SHARED section after the per-type
+			-- branches, so that local is out of scope and was always nil --
+			-- which is why the tooltip (which fetches its own copy) showed
+			-- "In Arena" while the row icon never appeared.
+			local arenaZone=(button.buttonType==FRIENDS_BUTTON_TYPE_BNET)
+				and button.SocialPlusZoneName or nil
+			if SocialPlus_IsArenaZone(arenaZone) then
+				button.SocialPlusArenaIcon:Show()
+			else
+				button.SocialPlusArenaIcon:Hide()
+			end
+
 			nameText=prefix..nameText
 		end
 		button.name:SetText(nameText)
@@ -3397,6 +3459,60 @@ end
 -- cache renders one friend's data under another's row as soon as Blizzard
 -- reindexes the list (tried during this work; it corrupted the display).
 local SocialPlus_SortNameCache={}
+
+-- True when a friend's reported area is an arena map.
+--
+-- areaName is the arena's own map name for someone in one -- a friend in a
+-- skirmish reads "Ruins of Lordaeron" (confirmed live), not their parent zone --
+-- so matching the map list in Locales.lua is enough. Blizzard localizes the
+-- string, which is why that list lives in the locale file.
+--
+-- Deliberately a GLOBAL, not a file-local: this chunk is at Lua's 200-locals
+-- ceiling (adding two here hit 201), and a global is also visible to the row
+-- renderer above, which would otherwise call it before its declaration.
+-- Accent-insensitive key for zone matching.
+--
+-- Blizzard's own strings carry accents ("Arene de Nagrand" is really "Ar958ne
+-- de Nagrand"), and any accent that doesn't survive a copy/paste into the locale
+-- file turns an exact match into a silent miss -- the icon just never appears,
+-- with nothing to debug. Folding both sides removes that whole class of failure.
+SocialPlus_ZoneAccentMap={
+	["95p"]="a",["95r"]="a",["95t"]="a",["95s"]="a",["95q"]="a",
+	["958"]="e",["959"]="e",["95x"]="e",["95y"]="e",
+	["95z"]="i",["95{"]="i",["95|"]="i",["95}"]="i",
+	["958"]="o",["959"]="o",["9580"]="o",["9582"]="o",["9581"]="o",
+	["9585"]="u",["9586"]="u",["9587"]="u",["9588"]="u",
+	["95w"]="c",["95"]="n",
+}
+function SocialPlus_FoldZoneName(text)
+	if type(text)~="string" then return "" end
+	text=text:lower()
+	-- Lowercasing leaves the accented bytes alone, so map them explicitly.
+	for from,to in pairs(SocialPlus_ZoneAccentMap) do
+		text=text:gsub(from,to)
+	end
+	return text
+end
+
+SocialPlus_ArenaZoneLookup=nil
+function SocialPlus_IsArenaZone(areaName)
+	if type(areaName)~="string" or areaName=="" then return false end
+	if not SocialPlus_ArenaZoneLookup then
+		SocialPlus_ArenaZoneLookup={}
+		local list=L and L.ARENA_ZONES
+		if type(list)=="table" then
+			for _,z in ipairs(list) do
+				if type(z)=="string" and z~="" then
+					SocialPlus_ArenaZoneLookup[SocialPlus_FoldZoneName(z)]=true
+				end
+			end
+		end
+	end
+	-- The row appends " - Realm" to the location, but areaName itself is bare;
+	-- trim defensively in case a caller passes the composed string.
+	local bare=areaName:match("^(.-)%s+%-%s+.*$") or areaName
+	return SocialPlus_ArenaZoneLookup[SocialPlus_FoldZoneName(bare)]==true
+end
 
 local function SocialPlus_GetBNetSortName(i,resolvedName)
 	-- Multiple assignment instead of a {tuple} wrapper: this runs once per BNet
@@ -6623,7 +6739,13 @@ function SocialPlus_ShowRowTooltip(button)
 						GameTooltip:AddLine(format(FRIENDS_LEVEL_TEMPLATE,level,class or ""),0.8,0.8,0.8)
 					end
 					if zoneName and zoneName~="" then
-						GameTooltip:AddLine(mobile and LOCATION_MOBILE_APP or zoneName,0.6,0.6,0.6)
+						-- No separate "In Arena" line: the zone name already says
+						-- it ("Blade's Edge Arena"), so colouring that line is
+						-- enough. It also avoids translating a status string --
+						-- the zone name arrives already localized by Blizzard.
+						local zr,zg,zb=0.6,0.6,0.6
+						if SocialPlus_IsArenaZone(zoneName) then zr,zg,zb=1,0.4,0.4 end
+						GameTooltip:AddLine(mobile and LOCATION_MOBILE_APP or zoneName,zr,zg,zb)
 					end
 				else
 					-- Region goes on the version line here instead (e.g.
