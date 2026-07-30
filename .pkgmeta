@@ -13,14 +13,20 @@ package-as: SocialPlus
 # Markdown syntax appeared literally. Declaring it tells CurseForge how to
 # render the file rather than leaving it to guess.
 #
-# NOTE: CHANGELOG.md is deliberately NOT in the ignore list below any more --
-# the packager has to be able to read it.
+# It points at CHANGELOG-RELEASE.md, which the release workflow regenerates on
+# every release to hold ONLY that version's entries plus the "View all
+# changelogs" link. Pointing it at CHANGELOG.md instead would dump the entire
+# history onto the CurseForge page.
+#
+# CHANGELOG-RELEASE.md must therefore stay out of the ignore list below -- the
+# packager has to be able to read it.
 manual-changelog:
-  filename: CHANGELOG.md
+  filename: CHANGELOG-RELEASE.md
   markup-type: markdown
 
 ignore:
   - README.md
+  - CHANGELOG.md
   - LICENSE
   - .git
   - .gitignore

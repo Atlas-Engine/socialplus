@@ -84,6 +84,29 @@ jobs:
           echo "--- release notes ---"
           cat notes.md
 
+      - name: Commit the single-version changelog CurseForge will use
+        id: notescommit
+        if: steps.check.outputs.release == 'true'
+        run: |
+          set -euo pipefail
+          # CurseForge does NOT read the GitHub Release body -- it generates its
+          # own changelog from the commits between tags. .pkgmeta manual-changelog
+          # overrides that, but it points at a FILE in the repo, so the file has
+          # to exist at the tagged commit. Writing just this version keeps
+          # CurseForge showing the release entries, not history or commit noise.
+          cp notes.md CHANGELOG-RELEASE.md
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG-RELEASE.md
+          if git diff --cached --quiet; then
+            echo "CHANGELOG-RELEASE.md already current."
+          else
+            # Only this file: touching CHANGELOG.md would re-trigger the workflow.
+            git commit -m "Update release changelog for ${{ steps.check.outputs.version }}"
+            git push origin HEAD:main
+          fi
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
       - name: Create tag and release together
         if: steps.check.outputs.release == 'true'
         env:
@@ -94,7 +117,11 @@ jobs:
 
           # --target creates the tag at this commit as part of publishing, so a
           # tag never exists on its own. That ordering is the entire point.
+          # Tag the changelog commit, not the pushed one: the tagged commit must
+          # contain CHANGELOG-RELEASE.md or CurseForge builds without it.
+          TARGET="${{ steps.notescommit.outputs.sha }}"
+          if [ -z "${TARGET}" ]; then TARGET="${GITHUB_SHA}"; fi
           gh release create "${VERSION}" \
-            --target "${GITHUB_SHA}" \
+            --target "${TARGET}" \
             --title "${VERSION}" \
             --notes-file notes.md
