@@ -3,6 +3,7 @@
 ## 1.12c
 
 - Battle.net friends currently on an arena map now show a crossed-swords icon next to their faction crest, and their location line turns red in the tooltip. Only friends playing your own WoW version are marked, since you can't join anyone else's game anyway.
+- The friend tooltip is no longer see-through. Its background was translucent, so anything bright behind it -- raid frames especially -- showed through and made every line hard to read.
 
 ## 1.12b
 

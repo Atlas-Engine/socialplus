@@ -6533,6 +6533,25 @@ frame:RegisterEvent("CHAT_MSG_ADDON")
 frame:RegisterEvent("BN_CHAT_MSG_ADDON")
 frame:RegisterEvent("GROUP_ROSTER_UPDATE")
 
+-- Forces the tooltip's background fully opaque before it's shown.
+--
+-- Blizzard's tooltip backdrop is translucent, so anything bright underneath --
+-- raid frames especially -- shows straight through and makes every line hard to
+-- read (reported live). Applied per show rather than once at load: Blizzard
+-- re-applies its own backdrop colour whenever the tooltip is set up again, so a
+-- one-time change gets undone.
+-- Global, not a file-local: this chunk is at Lua's 200-locals ceiling.
+function SocialPlus_MakeTooltipOpaque()
+	-- Modern templates use NineSlice; older ones a plain backdrop. Handle both.
+	local ns=GameTooltip.NineSlice
+	if ns and ns.SetCenterColor then
+		ns:SetCenterColor(0,0,0,1)
+	end
+	if GameTooltip.SetBackdropColor then
+		GameTooltip:SetBackdropColor(0,0,0,1)
+	end
+end
+
 local function SocialPlus_OnClick(self,button)
 	if self.buttonType==FRIENDS_BUTTON_TYPE_DIVIDER then
 		-- Use the raw group key; for General this is "" (ungrouped)
@@ -6792,6 +6811,7 @@ function SocialPlus_ShowRowTooltip(button)
 		AddBroadcastLine(messageText)
 	end
 
+	SocialPlus_MakeTooltipOpaque()
 	GameTooltip:Show()
 end
 
@@ -6960,6 +6980,7 @@ travel:HookScript("OnEnter",function(self)
 		GameTooltip:AddLine(reason,1,0.3,0.3,true)
 	end
 
+	SocialPlus_MakeTooltipOpaque()
 	GameTooltip:Show()
 end)
 
