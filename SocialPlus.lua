@@ -4073,6 +4073,126 @@ SocialPlus_ApplyGroupOrder()
         }
     end
 
+    ----------------------------------------------------------------------
+    -- Group -> members index, built ONCE per rebuild.
+    --
+    -- The per-group loop below used to find each group's members by
+    -- rescanning the WHOLE friend list once per group -- four scans per
+    -- group (BNet online, WoW online, BNet offline, WoW offline), i.e.
+    -- O(G*N) for G groups and N friends. That is the dominant rebuild cost
+    -- for a 300+ friend list, and it is pure re-derivation: BnetSocialPlus
+    -- and WowSocialPlus already hold every friend's group memberships, just
+    -- indexed friend -> groups. Invert them here, in one pass over each
+    -- list, so the loop below reads its own bucket instead of rescanning.
+    --
+    -- Bucket ORDER is load-bearing and matches the old scan order exactly:
+    -- all BNet rows in friend-index order, then all WoW rows in
+    -- friend-index order. table.sort is not stable, so identical output
+    -- ordering depends on feeding the identical comparator an identically
+    -- ordered input -- rows that tie must stay in the order they used to
+    -- be appended in.
+    ----------------------------------------------------------------------
+    local OnlineRowsByGroup={}
+    local OfflineRowsByGroup={}
+    -- Shared stand-in for a group with no rows. Never written to: sorting
+    -- and iterating it are both no-ops, which is exactly what the empty
+    -- per-group table used to do.
+    local EMPTY_ROWS={}
+
+    -- A group the loop below never renders needs no bucket. This is the
+    -- same short-circuit as before -- rows for a collapsed group were never
+    -- built -- so collapsing still costs nothing. Covers the search-focus
+    -- case too: SocialPlus_IsCollapsedForDisplay already reports every
+    -- non-focused group as collapsed while a focus is active.
+    local groupWantsRows={}
+    local function GroupWantsRows(group)
+        local want=groupWantsRows[group]
+        if want==nil then
+            want=not SocialPlus_IsCollapsedForDisplay(group)
+            groupWantsRows[group]=want
+        end
+        return want
+    end
+
+    local function BucketRow(byGroup,group,row)
+        if not GroupWantsRows(group) then return end
+        local bucket=byGroup[group]
+        if not bucket then
+            bucket={}
+            byGroup[group]=bucket
+        end
+        bucket[#bucket+1]=row
+    end
+
+    -- One row table per friend, shared by every bucket that friend lands in.
+    -- Safe because rows are read-only once built (the comparators and the
+    -- push loop only read them, table.sort only reorders the array), and it
+    -- replaces the old one-allocation-per-friend-per-group churn.
+    local function BucketFriend(byGroup,groups,fav,row)
+        if fav then
+            -- Membership in the virtual Favorites group comes from the
+            -- favorite flag, never from the friend's note tags, and it is a
+            -- MOVE, not a copy: a favorited friend renders under Favorites
+            -- ONLY, never also under their real group(s), which `groups`
+            -- still lists because favoriting deliberately doesn't rewrite
+            -- the note. Rendering them twice would overrun the row count
+            -- pre-sized in the first pass (which correctly skips them) and
+            -- index past the end of FriendButtons -- confirmed live.
+            BucketRow(byGroup,SP_FAVORITES_GROUP,row)
+        elseif groups then
+            for group in pairs(groups) do
+                -- The converse of that move: a NON-favorited friend whose
+                -- note literally carries the Favorites sentinel still does
+                -- not render there, because the old membership test for
+                -- that group was the favorite flag alone and ignored the
+                -- parsed tags entirely.
+                if group~=SP_FAVORITES_GROUP then
+                    BucketRow(byGroup,group,row)
+                end
+            end
+        end
+    end
+
+    -- BNet first, in friend-index order (see the bucket-order note above).
+    for i=1,numBNetTotal do
+        local pre=BNetPre[i]
+        local online=BNetOnlineStatus[i]
+        if online then
+            BucketFriend(OnlineRowsByGroup,BnetSocialPlus[i],pre.fav,
+                {buttonType=FRIENDS_BUTTON_TYPE_BNET,id=i,
+                sortKey=pre.sortKey,statusRank=pre.statusRank,
+                promoted=pre.promoted,factionRank=pre.factionRank,
+                groupKey=pre.groupKey,appOnlyRank=pre.appOnlyRank})
+        elseif needOffline and online==false then
+            BucketFriend(OfflineRowsByGroup,BnetSocialPlus[i],pre.fav,
+                {buttonType=FRIENDS_BUTTON_TYPE_BNET,id=i,sortKey=pre.sortKey})
+        end
+    end
+
+    -- WoW second, so each bucket keeps the old "BNet rows, then WoW rows"
+    -- pre-sort order.
+    for i=1,numWoWOnline do
+        local wpre=WoWPre[i]
+        if wpre then
+            BucketFriend(OnlineRowsByGroup,WowSocialPlus[i],wpre.fav,
+                {buttonType=FRIENDS_BUTTON_TYPE_WOW,id=i,
+                sortKey=wpre.sortKey,statusRank=wpre.statusRank,
+                groupKey="WoW:"..tostring(WOW_PROJECT_ID or "?"),
+                appOnlyRank=0,promoted=usePrioritize and true or false,
+                factionRank=0})
+        end
+    end
+
+    if needOffline then
+        for i=numWoWOnline+1,numWoWTotal do
+            local wopre=WoWPre[i]
+            if wopre then
+                BucketFriend(OfflineRowsByGroup,WowSocialPlus[i],wopre.fav,
+                    {buttonType=FRIENDS_BUTTON_TYPE_WOW,id=i,sortKey=wopre.sortKey})
+            end
+        end
+    end
+
     local index=0
     for _,group in ipairs(GroupSorted) do
         -- During a group-name search focus, skip the header ROW entirely
@@ -4104,38 +4224,11 @@ SocialPlus_ApplyGroupOrder()
             -- status, then same faction first, then alphabetical. Everyone
             -- else still follows the base order below them.
             ----------------------------------------------------------------
-            local onlineRows={}
+            local onlineRows=OnlineRowsByGroup[group] or EMPTY_ROWS
 
-            -- BNet online
-            for i=1,numBNetTotal do
-                -- Membership for the virtual Favorites group comes from the
-                -- favorite flag, not the friend's real note tags (which
-                -- BnetSocialPlus[i] reflects and is left untouched by
-                -- favoriting) -- this is what actually implements "move,
-                -- don't copy" at render time.
-                local pre=BNetPre[i]
-                local isMember
-                if group==SP_FAVORITES_GROUP then
-                    isMember=BNetOnlineStatus[i] and pre.fav
-                else
-                    -- A favorited friend must never also render under their
-                    -- real group -- BnetSocialPlus[i] still reflects their
-                    -- true note tags (favoriting doesn't touch them), so
-                    -- without this exclusion they'd render twice, mismatching
-                    -- the row count already pre-sized in the first pass
-                    -- (which does correctly skip them here) and crashing
-                    -- with an out-of-range FriendButtons index (confirmed
-                    -- live).
-                    isMember=BnetSocialPlus[i] and BnetSocialPlus[i][group] and BNetOnlineStatus[i]
-                        and not pre.fav
-                end
-                if isMember then
-                    local row={buttonType=FRIENDS_BUTTON_TYPE_BNET,id=i,
-                        sortKey=pre.sortKey,statusRank=pre.statusRank,
-                        promoted=pre.promoted,factionRank=pre.factionRank,
-                        groupKey=pre.groupKey,appOnlyRank=pre.appOnlyRank}
-
-                    if SocialPlus_RowDebug then
+            if SocialPlus_RowDebug then
+                for _,row in ipairs(onlineRows) do
+                    if row.buttonType==FRIENDS_BUTTON_TYPE_BNET then
                         print(string.format(
                             "|cff33ff99[ROWDEBUG]|r group=%q sortKey=%q promoted=%s statusRank=%s appOnlyRank=%s groupKey=%q factionRank=%s id=%s",
                             tostring(group),tostring(row.sortKey),tostring(row.promoted),
@@ -4143,30 +4236,6 @@ SocialPlus_ApplyGroupOrder()
                             tostring(row.factionRank),tostring(row.id)
                         ))
                     end
-
-                    onlineRows[#onlineRows+1]=row
-                end
-            end
-
-            -- WoW online (native friend, always this exact WoW version)
-            for i=1,numWoWOnline do
-                local wpre=WoWPre[i]
-                local isWowMember
-                if group==SP_FAVORITES_GROUP then
-                    isWowMember=wpre and wpre.fav
-                else
-                    isWowMember=WowSocialPlus[i] and WowSocialPlus[i][group]
-                        and wpre and not wpre.fav
-                end
-                if isWowMember then
-                    local row={buttonType=FRIENDS_BUTTON_TYPE_WOW,id=i}
-                    row.sortKey=wpre.sortKey
-                    row.statusRank=wpre.statusRank
-                    row.groupKey="WoW:"..tostring(WOW_PROJECT_ID or "?")
-                    row.appOnlyRank=0
-                    row.promoted=usePrioritize and true or false
-                    row.factionRank=0
-                    onlineRows[#onlineRows+1]=row
                 end
             end
 
@@ -4205,45 +4274,7 @@ SocialPlus_ApplyGroupOrder()
             -- them in), not sorted at all -- reported live as offline
             -- friends not appearing A-Z.
             if not SocialPlus_SavedVars.hide_offline then
-                local offlineRows={}
-
-                -- BNet offline
-                for i=1,numBNetTotal do
-                    local opre=BNetPre[i]
-                    local isOfflineMember
-                    if group==SP_FAVORITES_GROUP then
-                        isOfflineMember=BNetOnlineStatus[i]==false and opre.fav
-                    else
-                        isOfflineMember=BnetSocialPlus[i] and BnetSocialPlus[i][group] and BNetOnlineStatus[i]==false
-                            and not opre.fav
-                    end
-                    if isOfflineMember then
-                        offlineRows[#offlineRows+1]={
-                            buttonType=FRIENDS_BUTTON_TYPE_BNET,
-                            id=i,
-                            sortKey=opre.sortKey,
-                        }
-                    end
-                end
-
-                -- WoW offline
-                for i=numWoWOnline+1,numWoWTotal do
-                    local wopre=WoWPre[i]
-                    local isWowOfflineMember
-                    if group==SP_FAVORITES_GROUP then
-                        isWowOfflineMember=wopre and wopre.fav
-                    else
-                        isWowOfflineMember=WowSocialPlus[i] and WowSocialPlus[i][group]
-                            and wopre and not wopre.fav
-                    end
-                    if isWowOfflineMember then
-                        offlineRows[#offlineRows+1]={
-                            buttonType=FRIENDS_BUTTON_TYPE_WOW,
-                            id=i,
-                            sortKey=wopre.sortKey,
-                        }
-                    end
-                end
+                local offlineRows=OfflineRowsByGroup[group] or EMPTY_ROWS
 
                 table.sort(offlineRows,function(a,b)
                     if a.sortKey and b.sortKey then
