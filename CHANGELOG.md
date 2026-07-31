@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.13a
+
+- Friends in Dalaran Arena are now marked as being in an arena. That map is reported under two different names and only one of them was recognised.
+
 ## 1.12c
 
 - Battle.net friends currently on an arena map now show a crossed-swords icon next to their faction crest, and their location line turns red in the tooltip. Only friends playing your own WoW version are marked, since you can't join anyone else's game anyway.

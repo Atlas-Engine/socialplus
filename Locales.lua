@@ -53,6 +53,7 @@ L.ARENA_ZONES = {
     "Blade's Edge Arena",
     "Ruins of Lordaeron",
     "Dalaran Sewers",
+    "Dalaran Arena",
     "The Tiger's Peak",
     "Tol'viron Arena",
 }
@@ -167,6 +168,7 @@ if locale == "frFR" then
         "Arene de Blade's Edge",
         "Ruines de Lordaeron",
         "Egouts de Dalaran",
+        "Arene de Dalaran",
         "Le Pic du Tigre",
         "Arene de Tol'viron",
     }
@@ -276,6 +278,7 @@ elseif locale == "esES" or locale == "esMX" then
         "Arena de Filo de Navaja",
         "Ruinas de Lordaeron",
         "Cloacas de Dalaran",
+        "Arena de Dalaran",
         "El Pico del Tigre",
         "Arena de Tol'viron",
     }
