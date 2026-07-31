@@ -660,11 +660,92 @@ local function Clamp(v, lo, hi)
 	return v
 end
 
+--[[------------------------------------------------------------------------
+Benchmark
+
+Times full SocialPlus_Update(true) rebuilds. Passing forceUpdate=true is
+deliberate: it bypasses the visibility guards at the top of that function, so
+the rebuild runs even with the friends list closed. The row RENDER half only
+does real work while the list is open though, so the report states which of
+the two it just measured rather than quietly comparing unlike numbers.
+
+The first pass is reported separately because note parsing is cached between
+rebuilds -- the pass right after a note change does measurably more work than
+the steady-state ones following it.
+--------------------------------------------------------------------------]]
+
+local function Now()
+	if debugprofilestop then return debugprofilestop() end
+	return (GetTime and GetTime() * 1000) or 0
+end
+
+local function TimeOneRebuild()
+	local t0 = Now()
+	SocialPlus_Update(true)
+	return Now() - t0
+end
+
+local function Benchmark(iters)
+	if type(SocialPlus_Update) ~= "function" then
+		Say("|cffff2020SocialPlus_Update unavailable|r -- is SocialPlus itself loaded?")
+		return
+	end
+
+	local bnet = BNGetNumFriends and (BNGetNumFriends()) or 0
+	local wow = (C_FriendList and C_FriendList.GetNumFriends
+		and C_FriendList.GetNumFriends()) or 0
+
+	local first = TimeOneRebuild()
+
+	-- Auto-size the run to roughly a two-second budget. A rebuild over a
+	-- 5000-friend simulated list is slow enough that a fixed iteration count
+	-- would freeze the client for ten seconds.
+	if iters then
+		iters = math.floor(Clamp(iters, 2, 1000))
+	else
+		iters = math.floor(Clamp(math.floor(2000 / math.max(first, 0.5)), 5, 200))
+	end
+
+	local samples = {}
+	for _ = 1, iters - 1 do
+		samples[#samples + 1] = TimeOneRebuild()
+	end
+
+	local total, min, max = 0, math.huge, 0
+	local sorted = {}
+	for i, v in ipairs(samples) do
+		total = total + v
+		if v < min then min = v end
+		if v > max then max = v end
+		sorted[i] = v
+	end
+	table.sort(sorted)
+
+	Say("benchmark: %d rebuilds over %d friends (%d BNet + %d native WoW)%s",
+		#samples + 1, bnet + wow, bnet, wow,
+		SIM.active and string.format(", %d simulated across %d groups",
+			SIM.opts.total, SIM.opts.groups) or "")
+	Say("  first pass  |cffffffff%.2f ms|r   (includes any note re-parsing)", first)
+	if #samples > 0 then
+		Say("  steady      |cffffff00%.2f ms|r mean   min %.2f   median %.2f   max %.2f",
+			total / #samples, min, sorted[math.ceil(#sorted / 2)], max)
+	end
+
+	local open = FriendsListFrame and FriendsListFrame:IsShown()
+	Say("  friends list %s -- %s", open and "|cff20ff20OPEN|r" or "|cffff8000CLOSED|r",
+		open and "row rendering included" or "rebuild only, rows not drawn")
+	if SIM.active then
+		Say("  compare: same |cffffffffseed=%d|r on another branch measures the same list.",
+			SIM.opts.seed)
+	end
+end
+
 local function ShowHelp()
 	Say("friend-list simulator (debug tool).")
 	print("  |cffffffff/spsim <n>|r            simulate n fake friends")
 	print("  |cffffffff/spsim off|r            stop and restore the real list")
 	print("  |cffffffff/spsim status|r         show what is currently simulated")
+	print("  |cffffffff/spsim bench [n]|r     time n full rebuilds (auto-sized if omitted)")
 	print("  Options, any order:  |cffffffff/spsim 400 groups=20 wow=150 seed=7|r")
 	print("    |cffffffffgroups=|r n   distinct groups to spread across (default 12)")
 	print("    |cffffffffwow=|r n      how many are native WoW friends (default 30%)")
@@ -691,6 +772,7 @@ local function HandleCommand(msg)
 	local first = args[1] and args[1]:lower() or ""
 	if first == "" or first == "help" then return ShowHelp() end
 	if first == "status" then return ShowStatus() end
+	if first == "bench" then return Benchmark(tonumber(args[2])) end
 	if first == "off" or first == "stop" or first == "0" then return Stop() end
 
 	-- Allow a leading "simulate" for people who type it out in full.
