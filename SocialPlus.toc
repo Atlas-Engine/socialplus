@@ -15,3 +15,6 @@ Libs\LibUIDropDownMenu\LibUIDropDownMenu.lua
 # Core Lua
 Locales.lua
 SocialPlus.lua
+
+# Debug / testing tools. Inert until explicitly turned on with /spsim.
+SocialPlusSim.lua
