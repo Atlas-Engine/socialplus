@@ -16,5 +16,11 @@ Libs\LibUIDropDownMenu\LibUIDropDownMenu.lua
 Locales.lua
 SocialPlus.lua
 
-# Debug / testing tools. Inert until explicitly turned on with /spsim.
+#@do-not-package@
+# Debug / testing tool: the /spsim friend-list simulator. This whole block is
+# stripped by the packager and the file itself is in .pkgmeta's ignore list, so
+# it loads from a git checkout but never ships in a CurseForge release. Both
+# halves are required: dropping only the file would leave the packaged .toc
+# pointing at something that isn't there.
 SocialPlusSim.lua
+#@end-do-not-package@

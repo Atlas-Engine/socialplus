@@ -31,3 +31,7 @@ ignore:
   - .git
   - .gitignore
   - .github
+  # Debug-only friend-list simulator (/spsim). Kept out of released builds;
+  # its SocialPlus.toc entry is wrapped in @do-not-package@ to match, so the
+  # packaged .toc doesn't reference a file that isn't in the package.
+  - SocialPlusSim.lua
