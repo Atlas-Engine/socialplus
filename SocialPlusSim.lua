@@ -44,6 +44,15 @@ there is no such character on the server. That is expected; this is a rendering
 and performance harness, not a mock server.
 ----------------------------------------------------------------------------]]
 
+-- Files in the same addon share the namespace table passed as varargs, so the
+-- simulator can read the addon's own localisation instead of duplicating it.
+-- Arena names in particular MUST come from there: SocialPlus_IsArenaZone
+-- matches against L.ARENA_ZONES for the active locale, so a hardcoded English
+-- list would silently never match on a French or German client -- the icon
+-- would just never appear and the test would look like a pass.
+local ADDON_NAME, ns = ...
+local L = ns and ns.L
+
 local SIM = {
 	active = false,
 	bnetOnline = {},   -- ordered: fake BNet friends that are "online"
@@ -97,6 +106,20 @@ local CLASSES = {
 }
 
 local FACTIONS = { "Alliance", "Horde" }
+
+-- Only used if the addon's own list isn't reachable for some reason; the
+-- locale list above is always preferred so the names match what
+-- SocialPlus_IsArenaZone actually tests against.
+local ARENA_FALLBACK = {
+	"Nagrand Arena","Blade's Edge Arena","Ruins of Lordaeron","Dalaran Sewers",
+	"Dalaran Arena","The Tiger's Peak","Tol'viron Arena",
+}
+
+local function ArenaZones()
+	local zones = L and L.ARENA_ZONES
+	if type(zones) == "table" and #zones > 0 then return zones end
+	return ARENA_FALLBACK
+end
 
 local DEFAULT_GROUPS = {
 	"Raid","Mythic","Alts","Guild","PvP","Leveling","IRL","Discord","Bench",
@@ -229,6 +252,7 @@ local function GenerateBNet(rnd, index, opts, groups)
 			-- setting promotes, and the only one with a faction to match.
 			rec.client = WOW_CLIENT
 			rec.wowProjectID = ThisProjectID()
+			rec.sameVersion = true
 		elseif kind <= 70 then
 			rec.client = WOW_CLIENT
 			rec.wowProjectID = OtherProjectID()
@@ -245,6 +269,23 @@ local function GenerateBNet(rnd, index, opts, groups)
 			rec.areaName      = Pick(rnd, ZONES)
 			rec.realmName     = Pick(rnd, REALMS)
 			rec.factionName   = Pick(rnd, FACTIONS)
+			-- Arena placement. Only applied to same-version friends, because
+			-- those are the only ones the crossed-swords icon marks at all.
+			if rec.sameVersion and opts.arenaPct > 0 and rnd(100) <= opts.arenaPct then
+				rec.areaName = Pick(rnd, ArenaZones())
+				rec.inArena = true
+			end
+
+			-- No realm name. The faction crest additionally requires a
+			-- resolved realm, so this is what produces the generic WoW logo
+			-- variant instead -- and that logo is applied larger and lower,
+			-- which is exactly the case the arena swords used to be misplaced
+			-- against. Without this the simulator can only ever generate the
+			-- half of the problem that already worked.
+			if opts.norealmPct > 0 and rnd(100) <= opts.norealmPct then
+				rec.realmName = nil
+			end
+
 			rec.richPresence  = string.format("Level %d %s - %s",
 				rec.level, rec.className, rec.areaName)
 		else
@@ -284,10 +325,21 @@ local function Generate(opts)
 	local numWoW  = opts.wow
 	local numBNet = opts.total - numWoW
 
+	-- Counted so the activation message can say whether the case being tested
+	-- was actually produced. At a low arena= percentage a small run can easily
+	-- generate none, which otherwise looks identical to a fix that works.
+	SIM.arenaCount, SIM.arenaNoRealmCount = 0, 0
+
 	for i = 1, numBNet do
 		local rec = GenerateBNet(rnd, i, opts, groups)
 		local bucket = rec.isOnline and SIM.bnetOnline or SIM.bnetOffline
 		bucket[#bucket + 1] = rec
+		if rec.inArena then
+			SIM.arenaCount = SIM.arenaCount + 1
+			if not rec.realmName then
+				SIM.arenaNoRealmCount = SIM.arenaNoRealmCount + 1
+			end
+		end
 	end
 	for i = 1, numWoW do
 		local rec = GenerateWoW(rnd, i, opts, groups)
@@ -634,6 +686,13 @@ local function Start(opts)
 	Say("  %d online / %d offline, %d favourited, seed=%d",
 		#SIM.bnetOnline + #SIM.wowOnline,
 		#SIM.bnetOffline + #SIM.wowOffline, favs, opts.seed)
+	if opts.arenaPct > 0 then
+		Say("  %d in arenas, %d of those showing the WoW logo instead of a faction crest",
+			SIM.arenaCount, SIM.arenaNoRealmCount)
+		if SIM.arenaCount == 0 then
+			Say("  |cffff8000None generated|r -- raise arena= or the friend count and re-run.")
+		end
+	end
 	Say("|cffff8000Heads up:|r other addons and Blizzard's friends UI will see these too. " ..
 		"Your real friends are untouched. Use |cffffffff/spsim off|r when done.")
 end
@@ -651,6 +710,10 @@ local function DefaultOpts(total)
 		offlinePct = 45,
 		fav        = 8,
 		seed       = 1,
+		-- Both off unless asked for: they exist to force specific rendering
+		-- cases, and leaving them on would make an ordinary run unrealistic.
+		arenaPct   = 0,
+		norealmPct = 0,
 	}
 end
 
@@ -752,6 +815,10 @@ local function ShowHelp()
 	print("    |cfffffffftags=|r n     max group tags per friend (default 3)")
 	print("    |cffffffffoffline=|r n  percent offline (default 45)")
 	print("    |cfffffffffav=|r n      percent favourited (default 8)")
+	print("    |cffffffffarena=|r n    percent put in an arena (default 0). Only applies to")
+	print("                    friends on your WoW version -- the only ones marked.")
+	print("    |cffffffffnorealm=|r n  percent whose realm doesn't resolve (default 0), which")
+	print("                    swaps their faction crest for the generic WoW logo.")
 	print("    |cffffffffseed=|r n     RNG seed; same seed = same list (default 1)")
 end
 
@@ -797,6 +864,8 @@ local function HandleCommand(msg)
 			elseif key == "tags"    then opts.maxTags    = math.floor(Clamp(value, 0, 10))
 			elseif key == "offline" then opts.offlinePct = math.floor(Clamp(value, 0, 100))
 			elseif key == "fav"     then opts.fav        = math.floor(Clamp(value, 0, 100))
+			elseif key == "arena"   then opts.arenaPct   = math.floor(Clamp(value, 0, 100))
+			elseif key == "norealm" then opts.norealmPct = math.floor(Clamp(value, 0, 100))
 			elseif key == "seed"    then opts.seed       = math.floor(Clamp(value, 1, 2147483646))
 			else Say("|cffff8000Ignoring unknown option:|r %s", args[i]) end
 		else
