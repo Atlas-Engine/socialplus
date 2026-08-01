@@ -1430,7 +1430,22 @@ SocialPlus_RebuildGameIcons()
 -- TexCoords
 SOCIALPLUS_TEXCOORD_BY_ICONPATH={
 	-- CatalogShopProductLogos.blp: crop right logo with a bit of padding (DEFAULT)
-	["Interface\\Shop\\CatalogShopProductLogos2x"]={0.26,0.65,0.10,0.90},
+	--
+	-- Cropped tight to the logo art rather than loosely around it. The loose
+	-- crop {0.26,0.65,0.10,0.90} left a wide transparent margin, which was
+	-- compensated for by drawing the icon in a 64px box -- double every other
+	-- icon -- so the art came out the right size while the BOX was twice as
+	-- big as it looked. That box is what neighbours anchor against and what
+	-- overhangs the row, so the size had to come out of the crop instead.
+	--
+	-- Measured in a client with /spsim wcrop + wnudge, not derived: the logo
+	-- is nowhere near the middle of the region it was being cropped from. Its
+	-- centre sits at about v 0.314, well above the 0.50 you get by assuming
+	-- the art is centred, which is why every attempt to fix this by resizing
+	-- the crop failed -- resizing happens about the crop's own centre, so it
+	-- changed how big the logo was without ever moving it onto the row's
+	-- centre line.
+	["Interface\\Shop\\CatalogShopProductLogos2x"]={0.370,0.565,0.114,0.514},
 
 	-- Same texture, LEFT logo (used when "different region")
 	["Interface\\Shop\\CatalogShopProductLogos2x_LEFT"]={0.00,0.39,0.10,0.90},
@@ -1461,29 +1476,30 @@ local function FG_ApplyGameIcon(button,iconPath,size,point,relPoint,offX,offY)
 	offX=offX or -30
 	offY=offY or 0
 
-	if iconPath=="Interface\\Shop\\CatalogShopProductLogos2x" then
-		-- This one needs a bigger box than a friends-frame crest: it comes
-		-- from a shop atlas and its art reads much smaller inside the cropped
-		-- region, so 64 matches the crest's visual weight rather than its
-		-- literal size.
-		size=64
-		offX=-8
-		-- Vertical offset deliberately 0. It used to be -15, which dropped the
-		-- logo below the row's centre line while every other icon stayed on
-		-- it. That was invisible until something anchored itself beside the
-		-- icon: the arena swords did, inherited the drop, and ended up in the
-		-- gap between two rows (reported live). Keeping every icon variant on
-		-- the same centre line means anything placed next to one lines up
-		-- with it, whichever variant a friend happens to get.
-		offY=0
-	end
+	-- No special case for the generic WoW logo any more. It used to be drawn
+	-- at size=64 with offX=-8 while every other icon is 30-32 at about -22,
+	-- to make up for a loose texture crop that left the art small inside its
+	-- box. Sizing the BOX to fix the ART is what broke placement:
+	--
+	--   * the box is anchored RIGHT->RIGHT, so it is centred on the row, but
+	--     at 64px on a ~32px icon row it overhung ~16px into the rows above
+	--     and below, and magnified any off-centre art inside the crop 2x;
+	--   * the arena swords anchor to this icon's LEFT edge, which for a 64px
+	--     box sits at -72 against a crest's -52 -- so the swords jumped ~20px
+	--     left on any row that got the logo instead of a crest.
+	--
+	-- The art keeps its on-screen size via a tighter texcoord (see
+	-- SOCIALPLUS_TEXCOORD_BY_ICONPATH); the box now matches every other icon,
+	-- so neighbours anchored to it line up whichever variant a friend gets.
 
 	-- Published for anything anchoring itself against this icon (the arena
-	-- swords do). Some icons are deliberately placed off the row's centre
-	-- line -- the generic WoW logo above is one -- and a sibling anchored to
-	-- the icon inherits that shift unless it can cancel it. Recording the
-	-- value here keeps it a single source of truth, so a future icon needing
-	-- its own placement can't silently drag those siblings out of the row.
+	-- swords do). Every icon is currently placed on the row's centre line, so
+	-- this is 0 in practice and the swords' cancel is a no-op -- it is kept
+	-- because a sibling anchored to the icon silently inherits any vertical
+	-- shift, and that failure is invisible until someone puts an icon beside
+	-- another one. Recording the value keeps it a single source of truth, so
+	-- a future icon needing its own placement can't drag those siblings out
+	-- of the row the way the 64px logo box did.
 	button.SocialPlusIconOffY=offY
 
 	icon:SetPoint(point,button,relPoint,offX,offY)
