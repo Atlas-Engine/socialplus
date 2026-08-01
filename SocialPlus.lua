@@ -1462,9 +1462,20 @@ local function FG_ApplyGameIcon(button,iconPath,size,point,relPoint,offX,offY)
 	offY=offY or 0
 
 	if iconPath=="Interface\\Shop\\CatalogShopProductLogos2x" then
+		-- This one needs a bigger box than a friends-frame crest: it comes
+		-- from a shop atlas and its art reads much smaller inside the cropped
+		-- region, so 64 matches the crest's visual weight rather than its
+		-- literal size.
 		size=64
 		offX=-8
-		offY=-15
+		-- Vertical offset deliberately 0. It used to be -15, which dropped the
+		-- logo below the row's centre line while every other icon stayed on
+		-- it. That was invisible until something anchored itself beside the
+		-- icon: the arena swords did, inherited the drop, and ended up in the
+		-- gap between two rows (reported live). Keeping every icon variant on
+		-- the same centre line means anything placed next to one lines up
+		-- with it, whichever variant a friend happens to get.
+		offY=0
 	end
 
 	-- Published for anything anchoring itself against this icon (the arena
