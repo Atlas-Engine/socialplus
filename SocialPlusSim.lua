@@ -809,6 +809,12 @@ local function ShowHelp()
 	print("  |cffffffff/spsim off|r            stop and restore the real list")
 	print("  |cffffffff/spsim status|r         show what is currently simulated")
 	print("  |cffffffff/spsim bench [n]|r     time n full rebuilds (auto-sized if omitted)")
+	print("  |cffffffff/spsim wcrop [n]|r     resize the generic WoW logo art live, n = 10-100")
+	print("                        percent of its loose crop. Prints the numbers to keep.")
+	print("  |cffffffff/spsim wnudge d [r]|r   move the logo ART d px down and r px right")
+	print("                        inside its box; negative goes up / left.")
+	print("  |cffffffff/spsim wdiag|r        dump each visible row's game icon: texture, crop,")
+	print("                        size and anchor -- what it ended up with, not what we set.")
 	print("  Options, any order:  |cffffffff/spsim 400 groups=20 wow=150 seed=7|r")
 	print("    |cffffffffgroups=|r n   distinct groups to spread across (default 12)")
 	print("    |cffffffffwow=|r n      how many are native WoW friends (default 30%)")
@@ -831,6 +837,204 @@ local function ShowStatus()
 		#SIM.bnetOnline + #SIM.wowOnline, #SIM.bnetOffline + #SIM.wowOffline)
 end
 
+--[[------------------------------------------------------------------------
+Generic WoW logo crop tuning
+
+The logo comes from a shop atlas, and how much of its cropped region is actual
+art rather than transparent padding cannot be measured from outside the client
+-- it has to be looked at. That turned "make the logo fill the same box as
+every other icon" into a guess, copy, reload, squint loop.
+
+This tunes it live instead. The whole logo is known to sit inside the original
+loose crop below, so every candidate is that region scaled towards its centre:
+/spsim wcrop 62 tries 62% of it. Scaling both axes by the same factor keeps
+the region's aspect ratio, so the art can't stretch -- only its framing
+changes. Find the value that matches the faction crests, then paste the
+printed numbers into SOCIALPLUS_TEXCOORD_BY_ICONPATH in SocialPlus.lua.
+
+Debug-only, like the rest of this file: it edits the live table in memory and
+nothing persists across a reload.
+--------------------------------------------------------------------------]]
+
+local WOW_LOGO_PATH  = "Interface\\Shop\\CatalogShopProductLogos2x"
+-- Known to contain the entire logo with padding to spare, so it is the outer
+-- bound every scaled crop stays inside.
+local WOW_LOGO_LOOSE = {0.26, 0.65, 0.10, 0.90}
+
+-- Live crop state: a scale plus a centre offset, both applied to the loose
+-- crop above. Kept as state so wcrop and wnudge compose instead of each
+-- discarding the other's result.
+local LOGO = { pct = 62, du = 0, dv = 0 }
+
+-- The box the logo is drawn in, needed to convert a nudge in on-screen pixels
+-- into texture coordinates. Matches the "game" icon style in SocialPlus.lua.
+local LOGO_BOX = 32
+
+local function ApplyLogoCrop()
+	local tbl = SOCIALPLUS_TEXCOORD_BY_ICONPATH
+	if type(tbl) ~= "table" then
+		Say("|cffff2020SOCIALPLUS_TEXCOORD_BY_ICONPATH missing|r -- is SocialPlus loaded?")
+		return nil
+	end
+
+	local scale = LOGO.pct / 100
+	local uMid  = (WOW_LOGO_LOOSE[1] + WOW_LOGO_LOOSE[2]) / 2 + LOGO.du
+	local vMid  = (WOW_LOGO_LOOSE[3] + WOW_LOGO_LOOSE[4]) / 2 + LOGO.dv
+	local uHalf = (WOW_LOGO_LOOSE[2] - WOW_LOGO_LOOSE[1]) / 2 * scale
+	local vHalf = (WOW_LOGO_LOOSE[4] - WOW_LOGO_LOOSE[3]) / 2 * scale
+
+	tbl[WOW_LOGO_PATH] = {uMid - uHalf, uMid + uHalf, vMid - vHalf, vMid + vHalf}
+
+	local new = tbl[WOW_LOGO_PATH]
+	Say("W %d%% nudge(%.0f,%.0f)px -> |cffffffff{%.3f,%.3f,%.3f,%.3f}|r",
+		LOGO.pct,
+		LOGO.du / ((WOW_LOGO_LOOSE[2] - WOW_LOGO_LOOSE[1]) * scale / LOGO_BOX),
+		LOGO.dv / ((WOW_LOGO_LOOSE[4] - WOW_LOGO_LOOSE[3]) * scale / LOGO_BOX),
+		new[1], new[2], new[3], new[4])
+	Refresh()
+	return new
+end
+
+local function SetLogoCrop(pct)
+	local tbl = SOCIALPLUS_TEXCOORD_BY_ICONPATH
+	if type(tbl) ~= "table" then
+		Say("|cffff2020SOCIALPLUS_TEXCOORD_BY_ICONPATH missing|r -- is SocialPlus loaded?")
+		return
+	end
+
+	if not pct then
+		local cur = tbl[WOW_LOGO_PATH]
+		if cur then
+			Say("W crop is {%.3f,%.3f,%.3f,%.3f}", cur[1], cur[2], cur[3], cur[4])
+		end
+		Say("usage: |cffffffff/spsim wcrop n|r   n = percent of the loose crop, 10-100")
+		Say("       |cffffffff/spsim wnudge d [r]|r  move the ART d px down, r px right")
+		return
+	end
+
+	-- Floored because it is printed with %d, which rejects a fractional number
+	-- on anything newer than the 5.1 the live client runs.
+	LOGO.pct = math.floor(Clamp(pct, 10, 100))
+	ApplyLogoCrop()
+end
+
+-- Moves the ART within its box, which is the one thing scaling cannot do: the
+-- crop is resized about its own centre, so if the logo does not sit at that
+-- centre in the atlas, no percentage will ever bring it to the middle of the
+-- box -- it just makes the offset proportionally larger.
+--
+-- Arguments are in on-screen pixels, positive down and right, because that is
+-- what is actually observable. Moving the art down means sampling HIGHER in
+-- the texture, so the crop shifts the opposite way to the art.
+local function NudgeLogo(down, right)
+	if not down and not right then
+		Say("usage: |cffffffff/spsim wnudge d [r]|r  -- move the art d px down, r px right")
+		Say("       negative values move it up / left. Try 2-3 px at a time.")
+		return
+	end
+
+	local scale = LOGO.pct / 100
+	local uPerPx = (WOW_LOGO_LOOSE[2] - WOW_LOGO_LOOSE[1]) * scale / LOGO_BOX
+	local vPerPx = (WOW_LOGO_LOOSE[4] - WOW_LOGO_LOOSE[3]) * scale / LOGO_BOX
+
+	LOGO.dv = LOGO.dv - (down  or 0) * vPerPx
+	LOGO.du = LOGO.du - (right or 0) * uPerPx
+	ApplyLogoCrop()
+end
+
+--[[------------------------------------------------------------------------
+Row icon diagnostics
+
+/spsim wdiag dumps what the game icon on each visible row ACTUALLY ended up
+with -- texture, texcoord, size and anchor -- rather than what this addon
+asked for. The two differ whenever something re-anchors or re-textures it
+after we place it, and that difference is invisible from the source alone.
+
+Read the anchor line first. This addon always places the icon as
+  RIGHT -> <button> RIGHT
+so any row reporting a different point, a different relative frame, or two
+anchor points is being positioned by something else -- Blizzard's own friend
+button update is the likely candidate, since it owns this same texture. A
+texcoord of 0.000..1.000 means the same thing for the crop: ours was replaced,
+which is exactly the case /spsim wcrop cannot fix.
+--------------------------------------------------------------------------]]
+
+local function FriendRows()
+	local sf = FriendsListFrameScrollFrame or FriendsFrameFriendsScrollFrame
+	if sf and sf.buttons then return sf.buttons end
+	-- Older layouts expose the rows as globals instead of a .buttons array.
+	local rows, i = {}, 1
+	while true do
+		local b = _G["FriendsFrameFriendsScrollFrameButton" .. i]
+			or _G["FriendsListFrameScrollFrameButton" .. i]
+		if not b then break end
+		rows[#rows + 1] = b
+		i = i + 1
+	end
+	return rows
+end
+
+local function DescribeAnchors(region)
+	local n = region.GetNumPoints and region:GetNumPoints() or 0
+	if n == 0 then return "NO ANCHOR" end
+	local out = {}
+	for i = 1, n do
+		local point, rel, relPoint, x, y = region:GetPoint(i)
+		local relName = "?"
+		if rel then relName = (rel.GetName and rel:GetName()) or "<unnamed>" end
+		out[#out + 1] = string.format("%s->%s %s (%.0f,%.0f)",
+			tostring(point), relName, tostring(relPoint), x or 0, y or 0)
+	end
+	return table.concat(out, " + ")
+end
+
+-- GetTexCoord returns eight numbers, one xy pair per corner, not a
+-- left/right/top/bottom rect -- so the edges have to be picked back out.
+local function CropEdges(region)
+	if not region.GetTexCoord then return nil end
+	local ULx, ULy, LLx, LLy, URx, URy = region:GetTexCoord()
+	if not ULx then return nil end
+	return ULx, URx, ULy, LLy
+end
+
+local function DiagnoseRows()
+	local rows = FriendRows()
+	if #rows == 0 then
+		Say("|cffff2020no friend rows found|r -- is the friends list open?")
+		return
+	end
+
+	Say("row icon diagnostics (%d rows):", #rows)
+	local shown = 0
+	for i = 1, #rows do
+		local b = rows[i]
+		local icon = b and b.gameIcon
+		if b and b:IsShown() and icon and icon:IsShown() then
+			shown = shown + 1
+			local label = (b.name and b.name.GetText and b.name:GetText()) or "?"
+			local tex   = icon.GetTexture and icon:GetTexture()
+			local w, h  = icon:GetSize()
+			print(string.format("  |cffffffff%s|r", tostring(label)))
+			print(string.format("    tex   %s (%s)", tostring(tex), type(tex)))
+			local l, r, t, btm = CropEdges(icon)
+			if l then
+				print(string.format("    size  %.0fx%.0f   crop u %.3f..%.3f  v %.3f..%.3f",
+					w, h, l, r, t, btm))
+			else
+				print(string.format("    size  %.0fx%.0f   crop <none>", w, h))
+			end
+			print(string.format("    where %s", DescribeAnchors(icon)))
+			local sw = b.SocialPlusArenaIcon
+			if sw and sw:IsShown() then
+				print(string.format("    sword %s", DescribeAnchors(sw)))
+			end
+		end
+	end
+	if shown == 0 then
+		Say("no visible row is currently showing a game icon.")
+	end
+end
+
 local function HandleCommand(msg)
 	msg = (msg or ""):gsub("^%s+", ""):gsub("%s+$", "")
 	local args = {}
@@ -840,6 +1044,11 @@ local function HandleCommand(msg)
 	if first == "" or first == "help" then return ShowHelp() end
 	if first == "status" then return ShowStatus() end
 	if first == "bench" then return Benchmark(tonumber(args[2])) end
+	-- Deliberately usable while the simulator is off: the logo shows on real
+	-- friends too, so there is no reason to require a fake list to tune it.
+	if first == "wcrop" then return SetLogoCrop(tonumber(args[2])) end
+	if first == "wnudge" then return NudgeLogo(tonumber(args[2]), tonumber(args[3])) end
+	if first == "wdiag" then return DiagnoseRows() end
 	if first == "off" or first == "stop" or first == "0" then return Stop() end
 
 	-- Allow a leading "simulate" for people who type it out in full.
