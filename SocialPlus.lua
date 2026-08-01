@@ -1443,6 +1443,12 @@ local function FG_ApplyGameIcon(button,iconPath,size,point,relPoint,offX,offY)
 		if button and button.gameIcon then
 			button.gameIcon:Hide()
 		end
+		-- Clear the recorded offset too. Rows are pooled, so leaving the
+		-- previous occupant's value behind would misplace anything anchored
+		-- against this icon on the next row to reuse this button.
+		if button then
+			button.SocialPlusIconOffY=nil
+		end
 		return
 	end
 
@@ -1460,6 +1466,14 @@ local function FG_ApplyGameIcon(button,iconPath,size,point,relPoint,offX,offY)
 		offX=-8
 		offY=-15
 	end
+
+	-- Published for anything anchoring itself against this icon (the arena
+	-- swords do). Some icons are deliberately placed off the row's centre
+	-- line -- the generic WoW logo above is one -- and a sibling anchored to
+	-- the icon inherits that shift unless it can cancel it. Recording the
+	-- value here keeps it a single source of truth, so a future icon needing
+	-- its own placement can't silently drag those siblings out of the row.
+	button.SocialPlusIconOffY=offY
 
 	icon:SetPoint(point,button,relPoint,offX,offY)
 	icon:SetSize(size,size)
@@ -2587,10 +2601,18 @@ local function SocialPlus_UpdateFriendButton(button)
 		-- rebuild was optimised to avoid.
 		-- Only for friends on the SAME WoW version. A TBC friend's zone can be
 		-- "Nagrand Arena" too -- the maps share names across versions -- but you
-		-- can't play with them, so the icon is noise. It also keeps placement
-		-- consistent: same-version friends always get the faction crest, while
-		-- other versions get the generic game icon at a different size and
-		-- offset, which is what made the swords sit between rows.
+		-- can't play with them, so the icon is noise.
+		--
+		-- This deliberately does NOT also require the faction crest to be
+		-- showing. That used to be justified with "same-version friends always
+		-- get the faction crest", which is false: the crest additionally
+		-- requires a resolved realm name (see the icon selection further
+		-- down), so a same-version friend whose realm hasn't come through
+		-- falls back to the generic WoW logo -- which is placed larger and
+		-- lower, and dragged the swords anchored to it down between two rows
+		-- (reported live). The swords anchor now cancels the icon's own
+		-- offset, so their placement no longer depends on which icon variant
+		-- a friend happens to get.
 		button.SocialPlusZoneName=(client==BNET_CLIENT_WOW
 			and wowProjectID==WOW_PROJECT_ID) and zoneName or nil
 
@@ -3121,9 +3143,25 @@ local function SocialPlus_UpdateFriendButton(button)
 			-- built, and a SetPoint against a missing frame silently leaves the
 			-- icon unanchored in the corner.
 			button.SocialPlusArenaIcon:ClearAllPoints()
-			if button.gameIcon then
-				button.SocialPlusArenaIcon:SetPoint("RIGHT",button.gameIcon,"LEFT",-4,0)
+			if button.gameIcon and button.gameIcon:IsShown() then
+				-- Cancel whatever vertical offset the game icon was placed
+				-- with. FG_ApplyGameIcon shifts some icons off the row's
+				-- centre line -- the generic WoW logo is applied at 64px with
+				-- offY=-15 -- and anchoring to the icon inherited that shift,
+				-- dropping the swords into the gap between two rows (reported
+				-- live, on a same-version friend who got the logo instead of a
+				-- crest because their realm hadn't resolved -- see the
+				-- SocialPlusZoneName note in the BNet branch above).
+				--
+				-- Read back from the icon rather than repeated here, so the
+				-- offset stays defined in exactly one place.
+				button.SocialPlusArenaIcon:SetPoint("RIGHT",button.gameIcon,"LEFT",-4,
+					-(button.SocialPlusIconOffY or 0))
 			else
+				-- Also covers a HIDDEN game icon, not just a missing one: a
+				-- hidden texture keeps its last anchor, so a pooled row would
+				-- otherwise place the swords against the previous occupant's
+				-- icon position.
 				button.SocialPlusArenaIcon:SetPoint("LEFT",button.status,"RIGHT",2,0)
 			end
 			-- Re-read the area here rather than using the BNET branch's
