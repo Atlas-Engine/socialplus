@@ -1446,9 +1446,6 @@ SOCIALPLUS_TEXCOORD_BY_ICONPATH={
 	-- changed how big the logo was without ever moving it onto the row's
 	-- centre line.
 	["Interface\\Shop\\CatalogShopProductLogos2x"]={0.370,0.565,0.114,0.514},
-
-	-- Same texture, LEFT logo (used when "different region")
-	["Interface\\Shop\\CatalogShopProductLogos2x_LEFT"]={0.00,0.39,0.10,0.90},
 }
 
 -- Apply a game/faction icon to a button's gameIcon texture
