@@ -1646,10 +1646,17 @@ local function SocialPlus_GetOnlineWoWGameAccounts(bnetIndex)
 		if ga and ga.isOnline and ga.clientProgram==BNET_CLIENT_WOW and ga.characterName and ga.characterName~="" then
 			table.insert(accounts,{
 				characterName=ga.characterName,
-				realmName=ga.realmName,
+				-- Recovered alongside the project ID below: the same broken
+				-- payload drops both, and these entries feed the invite
+				-- submenu's "Character-Realm" labels.
+				realmName=SocialPlus_RepairRealmName(ga.realmName,ga.richPresence),
 				className=ga.className,
 				level=ga.characterLevel,
-				wowProjectID=ga.wowProjectID,
+				-- Repaired at the point of read -- see SocialPlus_RepairProjectID.
+				-- This copy feeds the invite eligibility checks, which reject a
+				-- project mismatch, so a broken 0 here blocks inviting someone
+				-- you can actually play with.
+				wowProjectID=SocialPlus_RepairProjectID(ga.wowProjectID,ga.richPresence),
 				factionName=ga.factionName,
 				regionID=ga.regionID,
 				gameAccountID=ga.gameAccountID,
@@ -2219,6 +2226,17 @@ else
 		end
 	end
 
+	-- Repaired once here, after every branch above has had its chance to set
+	-- the field, so all ~13 downstream "same version?" comparisons keep working
+	-- unchanged -- see SocialPlus_RepairProjectID for why a raw 0 is worse than
+	-- a nil. Deliberately after the assignments and before the return: the
+	-- multi-account branch above can overwrite wowProjectID with its own copy.
+	wowProjectID=SocialPlus_RepairProjectID(wowProjectID,gameText)
+	-- Same broken-payload recovery for the realm, and it must run BEFORE the
+	-- composition below -- that is what puts " - <realm>" on the row's
+	-- location line, so a realm recovered afterwards would never reach it.
+	realmName=SocialPlus_RepairRealmName(realmName,gameText)
+
 	if realmName and realmName~="" then
 		if zoneName and zoneName~="" then
 			zoneName=zoneName.." - "..realmName
@@ -2377,14 +2395,14 @@ function SocialPlus_SampleGroupFriends(headerIndex,maxCount)
 							or (ga and ga.realmName and ga.realmName~="")
 						local friendFaction=ga and ga.factionName or nil
 
+						-- Unknown faction falls through to the client logo, same
+						-- as the real row -- see the note there on why the
+						-- player's own crest is not an acceptable stand-in.
 						if client==BNET_CLIENT_WOW and wowProjectID==WOW_PROJECT_ID and hasRealm then
 							if friendFaction=="Horde" then
 								iconPath="Interface\\FriendsFrame\\plusmanz-horde"
 							elseif friendFaction=="Alliance" then
 								iconPath="Interface\\FriendsFrame\\plusmanz-alliance"
-							end
-							if not iconPath and FACTION_ICON_PATH then
-								iconPath=FACTION_ICON_PATH
 							end
 						end
 						if not iconPath then
@@ -2746,15 +2764,20 @@ local function SocialPlus_UpdateFriendButton(button)
             friendFaction=ga.factionName  -- "Alliance" or "Horde"
         end
 
-        -- If same-project WoW with a real realm, prefer a faction crest
+        -- If same-project WoW with a real realm, prefer a faction crest.
+        --
+        -- Only when the friend's OWN faction is known. This used to fall back
+        -- to FACTION_ICON_PATH -- the PLAYER's faction crest -- for a friend
+        -- whose factionName hadn't resolved, which displayed a Horde friend
+        -- with an Alliance crest (or vice versa) as confidently as a correct
+        -- one. There is no neutral crest to show instead, so an unknown
+        -- faction now falls through to the generic client logo below: saying
+        -- "WoW friend" is honest, saying the wrong faction is not.
         if client==BNET_CLIENT_WOW and wowProjectID==WOW_PROJECT_ID and hasRealm then
             if friendFaction=="Horde" then
                 iconPath="Interface\\FriendsFrame\\plusmanz-horde"
             elseif friendFaction=="Alliance" then
                 iconPath="Interface\\FriendsFrame\\plusmanz-alliance"
-            end
-            if not iconPath and FACTION_ICON_PATH then
-                iconPath=FACTION_ICON_PATH
             end
         end
 
@@ -5130,6 +5153,73 @@ function SocialPlus_GetVersionLabelFromGameText(gameText)
 	return nil
 end
 
+-- Same recovery as the label function above, but yielding the project ID
+-- itself rather than a display string, so a friend whose structured
+-- wowProjectID came back broken can be repaired where it is READ instead of
+-- every comparison site having to learn about it.
+--
+-- No Retail entry on purpose: retail's rich presence carries no "Classic"
+-- marker to match on, so it stays unrecovered rather than guessed at.
+function SocialPlus_GetProjectIDFromGameText(gameText)
+	if not gameText or gameText=="" then return nil end
+	-- Order matters for the same reason as the label list above: longer, more
+	-- specific phrases first.
+	local ids={
+		{"Burning Crusade Classic",WOW_PROJECT_BURNING_CRUSADE_CLASSIC},
+		{"Wrath of the Lich King Classic",WOW_PROJECT_WRATH_CLASSIC},
+		{"Cataclysm Classic",WOW_PROJECT_CATACLYSM_CLASSIC},
+		{"Mists of Pandaria Classic",WOW_PROJECT_MISTS_CLASSIC},
+		{"Classic Era",WOW_PROJECT_CLASSIC},
+	}
+	for _,entry in ipairs(ids) do
+		-- Guarded: these constants are absent on some client families, and an
+		-- absent one must not match everything via a nil comparison later.
+		if entry[2] and gameText:find(entry[1],1,true) then
+			return entry[2]
+		end
+	end
+	return nil
+end
+
+-- Blizzard reports wowProjectID as 0 -- not a real expansion -- for friends
+-- whose structured game-account fields didn't fully resolve (confirmed live:
+-- WOW_PROJECT_ID 19 against a friend reporting 0 while playing that very
+-- client). Because 0 is TRUTHY in Lua, the usual
+-- "wowProjectID and wowProjectID ~= WOW_PROJECT_ID" guards read it as a
+-- genuine mismatch rather than as missing data, so one broken field silently
+-- cost that friend their faction crest, arena swords, prioritise sorting,
+-- class-search matches and invite eligibility all at once.
+--
+-- Returns the value UNCHANGED when nothing can be recovered, so an
+-- unidentifiable friend keeps today's behaviour instead of being optimistically
+-- claimed as your own version.
+function SocialPlus_RepairProjectID(wowProjectID,gameText)
+	if wowProjectID and wowProjectID~=0 then return wowProjectID end
+	return SocialPlus_GetProjectIDFromGameText(gameText) or wowProjectID
+end
+
+-- realmName goes missing on the same friends whose wowProjectID comes back 0,
+-- and the rich presence carries it in the same breath: "Mists of Pandaria
+-- Classic - Pagle". Confirmed live -- Blizzard's own tooltip renders that
+-- string while the structured realmName reads nil.
+--
+-- Deliberately refuses to split anything whose leading half isn't a version
+-- phrase we already recognise. Rich presence is free text and a friend's
+-- status can legitimately contain " - "; without that guard this would
+-- happily report the back half of an arbitrary sentence as a realm name.
+function SocialPlus_GetRealmFromGameText(gameText)
+	if not gameText or gameText=="" then return nil end
+	if not SocialPlus_GetProjectIDFromGameText(gameText) then return nil end
+	local realm=gameText:match("^.+%s+%-%s+(.+)$")
+	if realm and realm~="" then return realm end
+	return nil
+end
+
+function SocialPlus_RepairRealmName(realmName,gameText)
+	if realmName and realmName~="" then return realmName end
+	return SocialPlus_GetRealmFromGameText(gameText) or realmName
+end
+
 function SocialPlus_CreateSettingsPanel()
 	if SocialPlus_SettingsPanel or not FriendsFrame then return end
 
@@ -6807,13 +6897,21 @@ function SocialPlus_ShowRowTooltip(button)
 		end
 	end
 	-- Battle.net "Broadcast" status message (BNGetFriendInfo position 12 --
-	-- separate from the note at position 13). Icon is Blizzard's OWN real
-	-- broadcast-button icon (FriendsFrameBattlenetFrame.BroadcastButton),
-	-- read live via its FileDataID rather than guessed -- the two guessed
-	-- string paths tried before this were blank/black respectively.
+	-- separate from the note at position 13).
+	--
+	-- The icon is read live from Blizzard's own tooltip broadcast texture. It
+	-- used to come from FriendsFrameBattlenetFrame.BroadcastButton, which is
+	-- the button you click to set YOUR OWN broadcast -- different art from the
+	-- icon Blizzard shows against a FRIEND's broadcast line, so this line never
+	-- matched the default tooltip (reported live). Guessed string paths came
+	-- out blank/black before that, which is why this reads a real widget
+	-- rather than naming a texture.
 	local function AddBroadcastLine(messageText)
 		if messageText and messageText~="" then
-			GameTooltip:AddLine("|T628215:14:14:0:0|t "..messageText,0.6,0.8,1,true)
+			-- Falls back to what that widget resolves to today, so a renamed
+			-- frame degrades to the right art instead of losing the icon.
+			local icon=(FriendsTooltipBroadcastIcon and FriendsTooltipBroadcastIcon:GetTexture()) or 374213
+			GameTooltip:AddLine("|T"..icon..":14:14:0:0|t "..messageText,0.6,0.8,1,true)
 		end
 	end
 	-- Same faction crest, same size, as the multi-invite submenu
@@ -6828,6 +6926,38 @@ function SocialPlus_ShowRowTooltip(button)
 		end
 		return ""
 	end
+
+	-- "Zone:" / "Realm:" labels come from Blizzard's own globals so they stay
+	-- localized: this tooltip is shown on every client language, and a
+	-- hardcoded English label would ship to all of them. Which global carries
+	-- the string varies between builds, so several are tried in order. Some
+	-- already include the colon (and in some locales a space before it), so
+	-- one is only appended when absent. A miss returns "" rather than an
+	-- English fallback -- an unlabelled value reads fine in any language,
+	-- a wrong-language label does not.
+	local function Label(...)
+		for i=1,select("#",...) do
+			local s=select(i,...)
+			if type(s)=="string" and s~="" then
+				if s:find(":",1,true) then
+					return (s:gsub("%s+$","")).." "
+				end
+				return s..": "
+			end
+		end
+		return ""
+	end
+	-- Resolved once per session, not per tooltip: these globals never change
+	-- while logged in, and this runs on every mouseover. Cached on a GLOBAL
+	-- rather than a top-level local for the 200-local reason noted above --
+	-- globals don't count towards that ceiling. "" is truthy in Lua, so a
+	-- locale where none of the globals exist still caches instead of retrying.
+	if not SOCIALPLUS_ZONE_LABEL then
+		SOCIALPLUS_ZONE_LABEL =Label(ZONE,LOCATION_COLON)
+		SOCIALPLUS_REALM_LABEL=Label(FRIENDS_LIST_REALM,REALM)
+	end
+	local ZONE_LABEL =SOCIALPLUS_ZONE_LABEL
+	local REALM_LABEL=SOCIALPLUS_REALM_LABEL
 
 	if not (button and GameTooltip) then return end
 	if button.buttonType~=FRIENDS_BUTTON_TYPE_WOW and button.buttonType~=FRIENDS_BUTTON_TYPE_BNET then
@@ -6852,13 +6982,33 @@ function SocialPlus_ShowRowTooltip(button)
 		local info=FG_GetFriendInfoByIndex(button.id)
 		if not info then GameTooltip:Hide() return end
 		local classColor=ClassColourCode(info.className)
-		GameTooltip:SetText(classColor..(info.name or UNKNOWN).."|r",1,1,1)
+		-- These friends carry no realm field at all (see FG_GetFriendInfoByIndex),
+		-- so the realm has to be worked out rather than read. Two cases: on a
+		-- CONNECTED realm Blizzard appends it to the name, and otherwise the
+		-- friend is on your own realm by definition -- a non-Battle.net friend
+		-- list cannot contain anyone else. Taking the suffix first matters:
+		-- assuming the player's realm outright would print the wrong realm for
+		-- every connected-realm friend.
+		--
+		-- Character names cannot contain a hyphen, so splitting on one is
+		-- unambiguous.
+		local wowName,wowRealm=info.name or UNKNOWN,nil
+		local baseName,realmSuffix=wowName:match("^([^%-]+)%-(.+)$")
+		if baseName then
+			wowName,wowRealm=baseName,realmSuffix
+		else
+			wowRealm=GetRealmName and GetRealmName() or nil
+		end
+		GameTooltip:SetText(classColor..wowName.."|r",1,1,1)
 		if info.connected then
 			if info.level and info.level~=0 then
 				GameTooltip:AddLine(format(FRIENDS_LEVEL_TEMPLATE,info.level,info.className or ""),0.8,0.8,0.8)
 			end
 			if info.area and info.area~="" then
-				GameTooltip:AddLine(info.area,0.6,0.6,0.6)
+				GameTooltip:AddLine(ZONE_LABEL..info.area,0.6,0.6,0.6)
+			end
+			if wowRealm and wowRealm~="" then
+				GameTooltip:AddLine(REALM_LABEL..wowRealm,0.6,0.6,0.6)
 			end
 		else
 			GameTooltip:AddLine(FRIENDS_LIST_OFFLINE,0.6,0.6,0.6)
@@ -6886,8 +7036,11 @@ function SocialPlus_ShowRowTooltip(button)
 		if isOnline then
 			if client==BNET_CLIENT_WOW and characterName and characterName~="" then
 				local classColor=ClassColourCode(class)
+				-- Realm deliberately NOT appended to the character name: it
+				-- gets its own labelled line below, matching Blizzard's own
+				-- tooltip. Carrying it here as well showed it twice.
 				local charLabel=characterName
-				if realmName and realmName~="" then charLabel=charLabel.."-"..realmName end
+				local hasRealm=realmName and realmName~=""
 				if wowProjectID==WOW_PROJECT_ID then
 					-- Region goes on the name line here -- there's no separate
 					-- version line in this branch to carry it instead.
@@ -6895,14 +7048,44 @@ function SocialPlus_ShowRowTooltip(button)
 					if level and level~=0 then
 						GameTooltip:AddLine(format(FRIENDS_LEVEL_TEMPLATE,level,class or ""),0.8,0.8,0.8)
 					end
-					if zoneName and zoneName~="" then
+					-- zoneName arrives pre-composed as "<zone> - <realm>":
+					-- GetFriendInfoById builds that for the ROW's location
+					-- line, and substitutes the realm outright when there is
+					-- no zone at all. The tooltip puts the realm on its own
+					-- line below, so undo both here -- otherwise the realm
+					-- shows twice (reported live).
+					local zoneOnly=zoneName
+					if hasRealm and zoneOnly and zoneOnly~="" then
+						if zoneOnly==realmName then
+							-- Realm standing in for a missing zone: there is
+							-- no location to report, so no zone line.
+							zoneOnly=nil
+						else
+							local suffix=" - "..realmName
+							if zoneOnly:sub(-#suffix)==suffix then
+								zoneOnly=zoneOnly:sub(1,#zoneOnly-#suffix)
+							end
+						end
+					end
+
+					-- Mobile is checked before the zone rather than inside it:
+					-- "Mobile App" replaces the location entirely, and it must
+					-- still show for a friend whose zone was the realm
+					-- stand-in above. It stays unlabelled too -- "Zone: Mobile
+					-- App" would claim a location it doesn't describe.
+					if mobile then
+						GameTooltip:AddLine(LOCATION_MOBILE_APP,0.6,0.6,0.6)
+					elseif zoneOnly and zoneOnly~="" then
 						-- No separate "In Arena" line: the zone name already says
 						-- it ("Blade's Edge Arena"), so colouring that line is
 						-- enough. It also avoids translating a status string --
 						-- the zone name arrives already localized by Blizzard.
 						local zr,zg,zb=0.6,0.6,0.6
-						if SocialPlus_IsArenaZone(zoneName) then zr,zg,zb=1,0.4,0.4 end
-						GameTooltip:AddLine(mobile and LOCATION_MOBILE_APP or zoneName,zr,zg,zb)
+						if SocialPlus_IsArenaZone(zoneOnly) then zr,zg,zb=1,0.4,0.4 end
+						GameTooltip:AddLine(ZONE_LABEL..zoneOnly,zr,zg,zb)
+					end
+					if hasRealm then
+						GameTooltip:AddLine(REALM_LABEL..realmName,0.6,0.6,0.6)
 					end
 				else
 					-- Region goes on the version line here instead (e.g.
@@ -6910,6 +7093,11 @@ function SocialPlus_ShowRowTooltip(button)
 					-- a duplicate "(NA) ... (NA)" (reported live).
 					GameTooltip:AddLine(FactionIconPrefix(friendFaction)..classColor..charLabel.."|r",1,1,1)
 					GameTooltip:AddLine(SocialPlus_GetVersionLabelText(wowProjectID)..SocialPlus_FormatRegionText(regionID),0.6,0.6,0.6)
+					-- Same labelled realm line as the branch above, so the two
+					-- kinds of friend don't disagree about where the realm goes.
+					if hasRealm then
+						GameTooltip:AddLine(REALM_LABEL..realmName,0.6,0.6,0.6)
+					end
 				end
 
 				-- A single BattleTag can have more than one WoW client online at
