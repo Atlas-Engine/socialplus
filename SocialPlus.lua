@@ -2787,11 +2787,25 @@ local function SocialPlus_UpdateFriendButton(button)
         end
 
         -- Crest vs game logo?
+        --
+        -- Matched against the faction crest textures themselves rather than
+        -- against FACTION_ICON_PATH, which is the PLAYER's crest: that
+        -- comparison only ever matched a friend who shares your faction, so an
+        -- Alliance player's Horde friends fell through to the game-icon style
+        -- and were drawn 32px at -21 instead of the crest's 30px at -22.
+        -- FACTION_ICON_PATH is itself one of these two textures, so nothing
+        -- that matched before stops matching now.
+        --
+        -- plusmanz-battlenet is deliberately NOT matched despite the shared
+        -- prefix -- it is the Battle.net app logo, not a faction crest.
         local isCrest=false
-        if iconPath==FACTION_ICON_PATH then
-            isCrest=true
-        elseif type(iconPath)=="string" and iconPath:find("UI%-PVP%-") then
-            isCrest=true
+        if type(iconPath)=="string" then
+            if iconPath:find("plusmanz-horde",1,true)
+                or iconPath:find("plusmanz-alliance",1,true) then
+                isCrest=true
+            elseif iconPath:find("UI%-PVP%-") then
+                isCrest=true
+            end
         end
 
         -- Actually place the icon
