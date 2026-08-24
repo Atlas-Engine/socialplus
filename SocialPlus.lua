@@ -2396,7 +2396,10 @@ function SocialPlus_AbbreviateRealName(name)
 	local initial=last:match("^[%z\1-\127\194-\244][\128-\191]*")
 	if not initial or initial=="" then return name end
 
-	return first.." "..initial.."."
+	-- Upper-cased so a lower-case Battle.net name still reads as an initial
+	-- ("karl beaudry-nadeau" -> "karl B."). Only affects ASCII; a multi-byte
+	-- character is left as it is rather than risking a mangled one.
+	return first.." "..initial:upper().."."
 end
 
 local function SocialPlus_GetBNetButtonNameText(accountName,client,canCoop,characterName,class,level,realmName)
