@@ -2133,7 +2133,8 @@ end
 local function GetFriendInfoById(id)
 	local accountName,characterName,class,level,isFavoriteFriend,isOnline,
 		bnetAccountId,client,canCoop,wowProjectID,lastOnline,
-		isAFK,isGameAFK,isDND,isGameBusy,mobile,zoneName,gameText,realmName,regionID
+		isAFK,isGameAFK,isDND,isGameBusy,mobile,zoneName,gameText,realmName,regionID,
+		factionName
 
 	if C_BattleNet and C_BattleNet.GetFriendAccountInfo then
 		local accountInfo=C_BattleNet.GetFriendAccountInfo(id)
@@ -2205,6 +2206,13 @@ local function GetFriendInfoById(id)
 				-- visible friend, which is the cost this function exists to
 				-- avoid.
 				regionID=gameAccountInfo.regionID
+				-- Same reasoning as regionID: this call already holds it. The
+				-- rebuild's per-friend pass otherwise made a SECOND
+				-- C_BattleNet.GetFriendAccountInfo purely to read this one
+				-- field, for every online same-version friend -- and
+				-- "prioritise current client" is on by default, so that was
+				-- most of the list.
+				factionName=gameAccountInfo.factionName
 
 				isOnline=gameAccountInfo.isOnline
 				characterName=gameAccountInfo.characterName
@@ -2310,11 +2318,12 @@ else
 		end
 	end
 
-	-- regionID last, so the callers that unpack only the first nineteen are
-	-- untouched by its arrival.
+	-- regionID and factionName last, so callers that unpack only the first
+	-- nineteen are untouched by their arrival.
 	return accountName,characterName,class,level,isFavoriteFriend,isOnline,
 		bnetAccountId,client,canCoop,wowProjectID,lastOnline,
-		isAFK,isGameAFK,isDND,isGameBusy,mobile,zoneName,gameText,realmName,regionID
+		isAFK,isGameAFK,isDND,isGameBusy,mobile,zoneName,gameText,realmName,regionID,
+		factionName
 end
 
 -- [[ BNet button name text builder ]]
@@ -2632,8 +2641,12 @@ function SocialPlus_HasRecentFriends()
 	return recent~=nil and next(recent)~=nil
 end
 
-local function SocialPlus_IsFavorite(buttonType,id)
-	local key=SocialPlus_GetFavoriteKey(buttonType,id)
+-- key is optional: a caller that already holds this friend's key (the rebuild's
+-- per-friend pass does, from the BNGetFriendInfo it made while bucketing) can
+-- pass it and skip the lookup, which is an API call per friend per rebuild.
+-- Pass false for "known to have no key" so it isn't mistaken for "not supplied".
+local function SocialPlus_IsFavorite(buttonType,id,key)
+	if key==nil then key=SocialPlus_GetFavoriteKey(buttonType,id) end
 	return key and SocialPlus_SavedVars and SocialPlus_SavedVars.favorites and SocialPlus_SavedVars.favorites[key]==true
 end
 
@@ -2644,7 +2657,8 @@ end
 -- which is why moving somebody into a group makes them leave here without any
 -- extra bookkeeping.
 -- Global for the 200-locals reason above.
-function SocialPlus_IsRecent(buttonType,id,groups)
+-- key is optional, for the same reason as SocialPlus_IsFavorite above.
+function SocialPlus_IsRecent(buttonType,id,groups,key)
 	local recent=SocialPlus_SavedVars and SocialPlus_SavedVars.recent
 	if not recent then return false end
 
@@ -2658,7 +2672,7 @@ function SocialPlus_IsRecent(buttonType,id,groups)
 	-- first, which derives the very same key through its own
 	-- BNGetFriendInfo -- so every friend paid for the lookup twice before
 	-- anything had even been decided.
-	local key=SocialPlus_GetFavoriteKey(buttonType,id)
+	if key==nil then key=SocialPlus_GetFavoriteKey(buttonType,id) end
 	if not (key and recent[key]) then return false end
 
 	-- The favourite test, inlined against the key already in hand: a
@@ -4258,6 +4272,14 @@ end
 	local WowSocialPlus={}
 	local FriendReqGroup={}
 	local BNetOnlineStatus={}
+	-- Favourite/recent key per friend, captured from the BNGetFriendInfo call
+	-- the bucketing pass already makes and handed to the per-friend pass below
+	-- so it doesn't call BNGetFriendInfo a second time for the same BattleTag.
+	-- Same discipline as BNetOnlineStatus beside it: filled in one tight pass,
+	-- read in the next, discarded with the rebuild -- never a memo that
+	-- outlives it, which is what previously rendered one friend under another's
+	-- row (see the note above the per-friend pass).
+	local BNetFavKey={}
 
 	local buttonCount=0
 
@@ -4285,12 +4307,19 @@ end
 	for i=1,numBNetTotal do
 		-- Positional destructure instead of a {tuple} wrapper -- same
 		-- per-friend-per-rebuild allocation savings as
-		-- SocialPlus_GetBNetSortName (positions 1=presenceID, 8=isOnline,
-		-- 13=note).
-		local presenceID,_,_,_,_,_,_,isOnline,_,_,_,_,noteText=FG_BNGetFriendInfo(i)
+		-- SocialPlus_GetBNetSortName (positions 1=presenceID, 3=battleTag,
+		-- 8=isOnline, 13=note).
+		local presenceID,_,battleTag,_,_,_,_,isOnline,_,_,_,_,noteText=FG_BNGetFriendInfo(i)
 		isOnline=isOnline and true or false
 
 		BNetOnlineStatus[i]=isOnline
+		-- The favourite key is just "BNET:"..battleTag (see
+		-- SocialPlus_GetFavoriteKey), and the tag is already in hand here.
+		-- Deriving it now saves the per-friend pass a whole BNGetFriendInfo
+		-- call each for the favourite and recent tests. false, not nil, so an
+		-- unresolved tag is a cached "no key" rather than a gap that reads as
+		-- "not looked up yet".
+		BNetFavKey[i]=(battleTag and battleTag~="" and ("BNET:"..battleTag)) or false
 		-- Note/group membership is parsed and kept as-is regardless of
 		-- favorite status -- favoriting only changes where the friend
 		-- renders below, never their stored group assignment. Reuse the
@@ -4468,11 +4497,14 @@ SocialPlus_ApplyGroupOrder()
     local BNetPre={}
     for i=1,numBNetTotal do
         local online=BNetOnlineStatus[i]
-        local pre={fav=SocialPlus_IsFavorite(FRIENDS_BUTTON_TYPE_BNET,i) and true or false,
-            recent=SocialPlus_IsRecent(FRIENDS_BUTTON_TYPE_BNET,i,BnetSocialPlus[i]) and true or false}
+        -- Key handed in from the bucketing pass, so neither of these makes its
+        -- own BNGetFriendInfo call for a BattleTag already read once.
+        local favKey=BNetFavKey[i]
+        local pre={fav=SocialPlus_IsFavorite(FRIENDS_BUTTON_TYPE_BNET,i,favKey) and true or false,
+            recent=SocialPlus_IsRecent(FRIENDS_BUTTON_TYPE_BNET,i,BnetSocialPlus[i],favKey) and true or false}
         if online then
             local accountName,_,_,_,_,_,_,client,_,wowProjectID,_,
-                isAFK,isGameAFK,isDND,isGameBusy=GetFriendInfoById(i)
+                isAFK,isGameAFK,isDND,isGameBusy,_,_,_,_,_,friendFaction=GetFriendInfoById(i)
             -- Reuse the name from the call we just made instead of making a
             -- second one inside the sort-key helper.
             pre.sortKey=SocialPlus_GetBNetSortName(i,accountName or false)
@@ -4485,9 +4517,11 @@ SocialPlus_ApplyGroupOrder()
                 pre.appOnlyRank=0
                 if usePrioritize and wowProjectID==WOW_PROJECT_ID then
                     pre.promoted=true
-                    local acct=C_BattleNet and C_BattleNet.GetFriendAccountInfo and C_BattleNet.GetFriendAccountInfo(i)
-                    local ga=acct and acct.gameAccountInfo
-                    local friendFaction=ga and ga.factionName
+                    -- friendFaction comes from the GetFriendInfoById call
+                    -- above. This used to re-fetch the whole account with a
+                    -- second C_BattleNet.GetFriendAccountInfo just to read
+                    -- factionName off it -- the same account that call had
+                    -- already loaded.
                     pre.factionRank=(friendFaction and playerFaction and friendFaction==playerFaction) and 0 or 1
                 end
             elseif isKnownAppCode then
@@ -4507,9 +4541,13 @@ SocialPlus_ApplyGroupOrder()
     local wowScanTo=needOffline and numWoWTotal or numWoWOnline
     for i=1,wowScanTo do
         local info=FG_GetFriendInfoByIndex(i)
+        -- Built from the info already in hand -- SocialPlus_GetFavoriteKey
+        -- would call FG_GetFriendInfoByIndex again for the very same row, once
+        -- for the favourite test and once more for the recent one.
+        local favKey=(info and info.name and info.name~="" and ("WOW:"..info.name)) or false
         WoWPre[i]={
-            fav=SocialPlus_IsFavorite(FRIENDS_BUTTON_TYPE_WOW,i) and true or false,
-            recent=SocialPlus_IsRecent(FRIENDS_BUTTON_TYPE_WOW,i,WowSocialPlus[i]) and true or false,
+            fav=SocialPlus_IsFavorite(FRIENDS_BUTTON_TYPE_WOW,i,favKey) and true or false,
+            recent=SocialPlus_IsRecent(FRIENDS_BUTTON_TYPE_WOW,i,WowSocialPlus[i],favKey) and true or false,
             sortKey=info and info.name,
             statusRank=SocialPlus_GetStatusRank(info and info.afk,false,info and info.dnd,false),
         }
