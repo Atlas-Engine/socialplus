@@ -2846,11 +2846,11 @@ local function SocialPlus_UpdateFriendButton(button)
 			button.characterName=info.name
 			button.realmName=nil
 
-			-- A plain WoW friend is on your own realm, so their region is
-			-- yours: there is no cross-region friends list. Without this they
-			-- would be the only rows with no flag, which reads as missing data
-			-- rather than as "same region as you".
-			button.SocialPlusRegionID=GetCurrentRegion and GetCurrentRegion() or nil
+			-- Deliberately no region: a plain WoW friend is on your own realm,
+			-- so a flag beside their name can only ever say "same region as
+			-- you", which is the one thing the flag was never needed to tell
+			-- you. It earns its place on Battle.net rows precisely because
+			-- those CAN be elsewhere. Left nil by the reset above.
 		end
 		button.accountName=nil
 
