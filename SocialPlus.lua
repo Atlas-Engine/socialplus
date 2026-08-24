@@ -2780,6 +2780,39 @@ local function SocialPlus_UpdateFriendButton(button)
 	button.characterName=nil
 	button.realmName=nil
 	button.SocialPlusRegionID=nil
+
+	-- Put the name field back the way Blizzard's template had it.
+	--
+	-- Friend rows re-anchor it below, pinning it between the status dot and
+	-- whichever icon is leftmost, so it clips against the icons actually on
+	-- that row. Rows are pooled, and a GROUP HEADER reuses this same field for
+	-- its "(3/5)" counts while relying on the original layout -- so without
+	-- restoring it here, a header landing on a recycled friend row would
+	-- inherit an anchor pointing at a faction crest that is no longer there.
+	--
+	-- Captured once, on first sight, rather than hardcoded: the template owns
+	-- these numbers, not us. The width is only re-applied when the original had
+	-- a single anchor -- with two, the width is derived from them, and forcing
+	-- one would fight the anchors we just restored.
+	if button.name then
+		if not button.SocialPlusNameAnchors then
+			local pts={}
+			for i=1,(button.name.GetNumPoints and button.name:GetNumPoints() or 0) do
+				pts[i]={button.name:GetPoint(i)}
+			end
+			button.SocialPlusNameAnchors=pts
+			button.SocialPlusNameWidth=(#pts<2) and button.name:GetWidth() or nil
+		end
+		if #button.SocialPlusNameAnchors>0 then
+			button.name:ClearAllPoints()
+			for _,p in ipairs(button.SocialPlusNameAnchors) do
+				button.name:SetPoint(unpack(p))
+			end
+			if button.SocialPlusNameWidth then
+				button.name:SetWidth(button.SocialPlusNameWidth)
+			end
+		end
+	end
 	button.SocialPlusGroupName=nil -- only used on divider (group header) rows
 
 	if button.SocialPlusGroupGearButton then
@@ -3608,8 +3641,41 @@ local function SocialPlus_UpdateFriendButton(button)
 				and button.SocialPlusZoneName or nil
 			if SocialPlus_IsArenaZone(arenaZone) then
 				button.SocialPlusArenaIcon:Show()
+				rightOf,rightOfShown=button.SocialPlusArenaIcon,true
 			else
 				button.SocialPlusArenaIcon:Hide()
+			end
+
+			-- Pin the name between the status dot and whatever icon is
+			-- leftmost on THIS row, instead of leaving it at the fixed width
+			-- Blizzard's template gives it.
+			--
+			-- That fixed width knows nothing about what the row is actually
+			-- carrying, so a long BattleTag was cut off well before the icons
+			-- began -- wasting the gap -- while a row with no icons at all was
+			-- cut off at the same place despite having the whole width free.
+			-- Adding the region flag made it worse by putting one more thing in
+			-- that space.
+			--
+			-- Two anchors instead of a width is what genuinely clips the text
+			-- rather than letting it run underneath the icons; it is the same
+			-- treatment the drag-ghost row already gets, and for the same
+			-- reason. SetWidth(0) first because an explicit width would win
+			-- over the anchors and nothing would change.
+			--
+			-- Done here rather than earlier because the swords' visibility is
+			-- only settled just above, and they can be the leftmost thing.
+			if button.name then
+				button.name:ClearAllPoints()
+				button.name:SetWidth(0)
+				button.name:SetPoint("LEFT",button.status,"RIGHT",6,0)
+				if rightOfShown and rightOf then
+					button.name:SetPoint("RIGHT",rightOf,"LEFT",-4,0)
+				else
+					-- No icons on this row: clip against the row itself so a
+					-- long name still stops before the edge.
+					button.name:SetPoint("RIGHT",button,"RIGHT",-8,0)
+				end
 			end
 
 			nameText=prefix..nameText
@@ -3621,7 +3687,17 @@ local function SocialPlus_UpdateFriendButton(button)
 		if isFavoriteFriend and button.Favorite then
 			button.Favorite:Show()
 			button.Favorite:ClearAllPoints()
-			button.Favorite:SetPoint("TOPLEFT",button.name,"TOPLEFT",button.name:GetStringWidth(),0)
+			-- Placed just after the text ENDS, but never past the field.
+			--
+			-- GetStringWidth reports the width the name would need if nothing
+			-- clipped it, so on a long BattleTag it reported well past the
+			-- field's own edge and put the star out beyond the icons -- or off
+			-- the row entirely. Clamped to the field, it lands against the
+			-- truncation instead.
+			local textW=button.name:GetStringWidth() or 0
+			local fieldW=button.name:GetWidth() or 0
+			if fieldW>0 and textW>fieldW then textW=fieldW end
+			button.Favorite:SetPoint("TOPLEFT",button.name,"TOPLEFT",textW,0)
 		elseif button.Favorite then
 			button.Favorite:Hide()
 		end
