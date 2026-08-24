@@ -3627,6 +3627,19 @@ end
 -- [[ Full friends list rebuild ]]
 local SocialPlus_InUpdateFriends=false
 local function SocialPlus_UpdateFriends()
+	-- Counts every actual rebuild, for /spsim rate to sample.
+	--
+	-- It has to live HERE rather than on SocialPlus_Update, which is what an
+	-- outside hook can reach: SocialPlus_Update bails early when the panel is
+	-- hidden (counting work that never happened), and the scroll handler calls
+	-- this function DIRECTLY without going through it (missing work that did).
+	-- Measuring the wrong one reported "no bursts" while every scroll was
+	-- quietly running a full rebuild.
+	--
+	-- One increment on a global. Left in the shipped build deliberately: it
+	-- costs nothing measurable, and the alternative is that this can only ever
+	-- be measured by first editing the addon.
+	SOCIALPLUS_REBUILD_COUNT=(SOCIALPLUS_REBUILD_COUNT or 0)+1
 	-- Defensive reentrancy guard: this function calls
 	-- scrollFrame.scrollBar:SetValue() below, which could plausibly
 	-- re-enter this function synchronously via the scrollbar's own

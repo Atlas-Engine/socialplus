@@ -913,57 +913,80 @@ lands on. GetTime() is constant within a frame, so equal timestamps mean the
 same frame -- that is what makes a burst visible as opposed to a busy second.
 --------------------------------------------------------------------------]]
 
-local RATE = { on=false, total=0, maxFrame=0, curFrame=0, lastT=-1, busy=0, started=0 }
-local rateHooked = false
+local RATE = { on=false, total=0, maxFrame=0, maxWindow=0, last=0, started=0, recent=nil, frame=nil }
 
-local function RateCount()
-	if not RATE.on then return end
-	RATE.total = RATE.total + 1
+-- Sampled once per frame rather than hooked.
+--
+-- SOCIALPLUS_REBUILD_COUNT is bumped inside SocialPlus_UpdateFriends itself,
+-- so it sees every rebuild whatever called it -- including the scroll handler,
+-- which calls that function directly and is invisible to a hook on
+-- SocialPlus_Update. Reading the delta once per OnUpdate also makes
+-- "same frame" exact instead of inferred from timestamps.
+--
+-- WINDOW is what actually corresponds to a felt stall. Bursts here are often
+-- not same-frame: the settle pass spaces its rebuilds with timers on purpose,
+-- so three rebuilds over three consecutive frames report as "no bursts" while
+-- still costing ~110ms back to back at 800 friends.
+local WINDOW = 0.25
 
-	local t = (GetTime and GetTime()) or 0
-	if t == RATE.lastT then
-		RATE.curFrame = RATE.curFrame + 1
+local function RateStop()
+	RATE.on = false
+	if RATE.frame then RATE.frame:SetScript("OnUpdate", nil) end
+
+	local secs = math.max(((GetTime and GetTime()) or 0) - RATE.started, 0.001)
+	Say("rebuilds: |cffffffff%d|r over %.1fs (%.2f/s)", RATE.total, secs, RATE.total / secs)
+	Say("  most in one frame: |cffffffff%d|r    most within %dms: |cffffffff%d|r",
+		RATE.maxFrame, WINDOW * 1000, RATE.maxWindow)
+
+	-- Turned into the number that matters, using the per-rebuild cost /spsim
+	-- bench just measured on this same list.
+	if RATE.maxWindow > 1 then
+		Say("  |cffffff00%d rebuilds back to back is the stall to chase|r -- multiply by the ms from /spsim bench.",
+			RATE.maxWindow)
 	else
-		if RATE.curFrame > 1 then RATE.busy = RATE.busy + 1 end
-		if RATE.curFrame > RATE.maxFrame then RATE.maxFrame = RATE.curFrame end
-		RATE.lastT, RATE.curFrame = t, 1
+		Say("  no clustering -- rebuilds are arriving spread out, so cost per rebuild is the only lever.")
 	end
 end
 
 local function ToggleRate()
-	if not rateHooked then
-		if type(SocialPlus_Update) ~= "function" then
-			Say("|cffff2020SocialPlus_Update unavailable|r -- is SocialPlus loaded?")
-			return
-		end
-		-- Secure hook: observes, never replaces. The counter must not be able
-		-- to change what it is measuring.
-		hooksecurefunc("SocialPlus_Update", RateCount)
-		rateHooked = true
-	end
+	if RATE.on then return RateStop() end
 
-	if RATE.on then
-		-- Close out the frame in progress so its rebuilds are not lost.
-		if RATE.curFrame > 1 then RATE.busy = RATE.busy + 1 end
-		if RATE.curFrame > RATE.maxFrame then RATE.maxFrame = RATE.curFrame end
-		RATE.on = false
-
-		local secs = math.max(((GetTime and GetTime()) or 0) - RATE.started, 0.001)
-		Say("rebuilds: |cffffffff%d|r over %.1fs (%.2f/s)", RATE.total, secs, RATE.total / secs)
-		Say("  most in one frame: |cffffffff%d|r    frames with more than one: |cffffffff%d|r",
-			RATE.maxFrame, RATE.busy)
-		if RATE.maxFrame > 1 then
-			Say("  bursts ARE happening -- coalescing has something to collapse.")
-		else
-			Say("  no bursts seen -- every rebuild had a frame to itself.")
-		end
+	if SOCIALPLUS_REBUILD_COUNT == nil then
+		Say("|cffff2020SOCIALPLUS_REBUILD_COUNT missing|r -- SocialPlus.lua is older than this tool.")
 		return
 	end
 
-	RATE.total, RATE.maxFrame, RATE.curFrame, RATE.lastT, RATE.busy = 0, 0, 0, -1, 0
+	RATE.total, RATE.maxFrame, RATE.maxWindow = 0, 0, 0
+	RATE.last = SOCIALPLUS_REBUILD_COUNT
 	RATE.started = (GetTime and GetTime()) or 0
+	RATE.recent = {}
 	RATE.on = true
-	Say("counting rebuilds. Open/scroll the friends list as usual, then |cffffffff/spsim rate|r again to stop.")
+
+	RATE.frame = RATE.frame or CreateFrame("Frame")
+	RATE.frame:SetScript("OnUpdate", function()
+		local now = SOCIALPLUS_REBUILD_COUNT or 0
+		local delta = now - RATE.last
+		if delta <= 0 then return end
+		RATE.last = now
+		RATE.total = RATE.total + delta
+		if delta > RATE.maxFrame then RATE.maxFrame = delta end
+
+		-- Sliding window: drop anything older than WINDOW, then total what is
+		-- left. Kept as one entry per frame that rebuilt, so this stays short.
+		local t = (GetTime and GetTime()) or 0
+		RATE.recent[#RATE.recent + 1] = { t = t, n = delta }
+		local sum, keep = 0, {}
+		for _, e in ipairs(RATE.recent) do
+			if t - e.t <= WINDOW then
+				keep[#keep + 1] = e
+				sum = sum + e.n
+			end
+		end
+		RATE.recent = keep
+		if sum > RATE.maxWindow then RATE.maxWindow = sum end
+	end)
+
+	Say("counting rebuilds. Open the list, scroll it, collapse a group -- then |cffffffff/spsim rate|r again.")
 end
 
 local function DiagnoseRows()
