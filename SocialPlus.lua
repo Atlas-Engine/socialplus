@@ -5823,7 +5823,11 @@ function SocialPlus_CreateSettingsPanel()
 	local f=CreateFrame("Frame","SocialPlus_SettingsPanel",UIParent,"BackdropTemplate")
 	-- Slightly larger box to fit icon preset controls (+26 for the new
 	-- "play sound" notification checkbox)
-	f:SetSize(350,380)
+	-- Remembered because UpdatePvPRatingsState shrinks the panel when the PvP
+	-- block is hidden, and needs the full height to subtract from -- reading
+	-- the live height there would compound each time it ran.
+	SOCIALPLUS_PVP_PANEL_H=380
+	f:SetSize(350,SOCIALPLUS_PVP_PANEL_H)
 
 	-- Right side of Friends frame
 	f:SetPoint("TOPLEFT",FriendsFrame,"TOPRIGHT",8,0)
@@ -6074,50 +6078,69 @@ function SocialPlus_CreateSettingsPanel()
 		SocialPlus_Update()
 	end)
 
-	pvpRatings:SetScript("OnEnter",function(self)
-		if _G.ArenaPlusAPI and _G.ArenaPlusAPI.GetLadder then return end
-		GameTooltip:SetOwner(self,"ANCHOR_RIGHT")
-		GameTooltip:SetText(L.SETTING_PVP_RATINGS_NEEDS,1,1,1,1,true)
-		GameTooltip:Show()
-	end)
-	pvpRatings:SetScript("OnLeave",function() GameTooltip:Hide() end)
+	-- No "requires ArenaPlus" hover hint any more: it only ever appeared on the
+	-- greyed checkbox, and the checkbox is now hidden outright in exactly that
+	-- case, so the script could never run. L.SETTING_PVP_RATINGS_NEEDS is left
+	-- in Locales.lua unused rather than deleted across three languages, in case
+	-- the hint is wanted somewhere that can actually be seen.
 
-	-- Dead unless ArenaPlus is there to answer.
+	-- Hidden outright unless ArenaPlus is there to answer, rather than greyed.
 	--
-	-- The tick does nothing at all without it -- the tooltip guards every call
-	-- and simply draws no block -- so a live checkbox would be offering a choice
-	-- with no consequence. Greyed, it says the feature exists and what it needs.
+	-- These two settings cannot do anything without it: the tooltip guards
+	-- every call into ArenaPlusAPI and simply draws no block. A greyed tick
+	-- still takes up a line and still asks to be read before it can be
+	-- dismissed, on a panel where most people will never install that addon.
+	-- Absent, it is simply not part of the panel.
+	--
+	-- The bracket ticks go with the ratings block they belong to. The region
+	-- flag does NOT -- it needs no other addon -- so it stays, and re-anchors
+	-- upward to close the gap the hidden rows leave behind. Everything below
+	-- it is chained off it and follows automatically.
 	--
 	-- Tested on the published table rather than on the addon being loaded: an
 	-- ArenaPlus that is installed but disabled never runs its files and never
 	-- creates it, which is the same thing as absent from here.
 	function UpdatePvPRatingsState()
 		local ready=_G.ArenaPlusAPI and _G.ArenaPlusAPI.GetLadder
-		local label=_G[pvpRatings:GetName().."Text"]
 
-		if ready then
-			pvpRatings:Enable()
-			if label then label:SetTextColor(1,0.82,0) end
-		else
-			pvpRatings:Disable()
-			if label then label:SetTextColor(0.5,0.5,0.5) end
+		-- Measured while the block is on screen, and only then: once hidden
+		-- these have no position to report. Cached so the panel can still be
+		-- resized correctly on a client that never had ArenaPlus loaded.
+		if ready and not SOCIALPLUS_PVP_BLOCK_H then
+			local top,bottom=pvpRatings:GetTop(),regionFlag:GetTop()
+			if top and bottom and top>bottom then
+				SOCIALPLUS_PVP_BLOCK_H=top-bottom
+			end
 		end
 
-		-- Needs ArenaPlus, but not the block: it is its own feature.
-		local specLabel=_G[specIcon:GetName().."Text"]
+		pvpRatings:SetShown(ready and true or false)
+		specIcon:SetShown(ready and true or false)
+		for _,check in ipairs(bracketChecks) do
+			check:SetShown(ready and true or false)
+		end
+
+		-- Re-anchored, not just moved: a hidden frame keeps its anchor, so
+		-- without this the region flag would stay where it was and leave the
+		-- hidden rows' space blank.
+		regionFlag:ClearAllPoints()
+		if ready then
+			regionFlag:SetPoint("TOPLEFT",specIcon,"BOTTOMLEFT",0,-4)
+		else
+			regionFlag:SetPoint("TOPLEFT",prioritizeCurrent,"BOTTOMLEFT",0,-6)
+		end
+
+		-- Shrink the panel by exactly what was removed, so hiding the rows
+		-- does not simply trade a greyed block for an empty one.
+		if SOCIALPLUS_PVP_BLOCK_H then
+			f:SetHeight(SOCIALPLUS_PVP_PANEL_H-(ready and 0 or SOCIALPLUS_PVP_BLOCK_H))
+		end
+
 		specIcon:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.pvp_spec_icon)
 		regionFlag:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.region_flag)
-		if ready then
-			specIcon:Enable()
-			if specLabel then specLabel:SetTextColor(1,0.82,0) end
-		else
-			specIcon:Disable()
-			if specLabel then specLabel:SetTextColor(0.5,0.5,0.5) end
-		end
 
-		-- The bracket ticks depend on two things above them: ArenaPlus being
-		-- there at all, and the block being switched on. Greyed for either,
-		-- because a tick that changes nothing is a tick that lies.
+		-- With ArenaPlus present the bracket ticks still depend on the block
+		-- above them being switched on: a tick that changes nothing is a tick
+		-- that lies.
 		local live=ready and SocialPlus_SavedVars and SocialPlus_SavedVars.pvp_ratings
 		for _,check in ipairs(bracketChecks) do
 			local wanted=SocialPlus_SavedVars and SocialPlus_SavedVars.pvp_brackets
