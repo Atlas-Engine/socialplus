@@ -2365,72 +2365,20 @@ end
 
 -- [[ BNet button name text builder ]]
 
--- "Sacha Bourassa-Beaudoin" -> "Sacha B."
---
--- Battle.net shows a REAL NAME rather than a BattleTag for Real ID friends,
--- and those run far longer than a row has space for: the surname was cut
--- mid-word and took the character name in brackets with it, which is the half
--- worth reading. A first name and a surname initial is how these are written
--- by hand anyway.
---
--- Only names containing a space are touched. A BattleTag has none, so it comes
--- through untouched.
---
--- The initial is taken as a UTF-8 CHARACTER, not a byte: "Émile" begins with a
--- two-byte character, and slicing one byte off it yields a broken glyph rather
--- than an E. This addon ships French and Spanish locales, so that is a real
--- case and not a hypothetical one.
---
--- Row display only. The tooltip, notifications and search all keep the full
--- name -- there is room for it there, and it is what you would search for.
--- Global rather than a file-local: this chunk is at Lua's 200-local ceiling.
-function SocialPlus_AbbreviateRealName(name)
-	if type(name)~="string" or name=="" then return name end
-
-	local first,rest=name:match("^(%S+)%s+(.+)$")
-	if not (first and rest) then return name end
-
-	-- The surname is the LAST word, not the second: otherwise a middle name
-	-- supplies the initial ("Jean Claude Van Damme" would give "Jean C.").
-	local last=rest:match("(%S+)%s*$") or rest
-	local initial=last:match("^[%z\1-\127\194-\244][\128-\191]*")
-	if not initial or initial=="" then return name end
-
-	-- Upper-cased so a lower-case Battle.net name still reads as an initial
-	-- ("karl beaudry-nadeau" -> "karl B."). Only affects ASCII; a multi-byte
-	-- character is left as it is rather than risking a mangled one.
-	return first.." "..initial:upper().."."
-end
-
 local function SocialPlus_GetBNetButtonNameText(accountName,client,canCoop,characterName,class,level,realmName)
 	local nameText
 
-	-- Abbreviated for the row only; every other use of accountName keeps the
-	-- full name (see SocialPlus_AbbreviateRealName).
-	local beforeAbbrev=accountName
-	accountName=SocialPlus_AbbreviateRealName(accountName)
-
-	-- TEMPORARY: proves whether this builder runs, and what it did.
+	-- NOT abbreviated, and it cannot be.
 	--
-	-- Filtered on LENGTH, not on containing a space. The previous version
-	-- tested find(" ") and printed nothing at all -- which was itself the
-	-- clue, but it also hid the string. Long names are the real-name ones;
-	-- BattleTags are short, so this stays quiet on a normal list.
+	-- Real ID friends do not arrive as a name at all: Blizzard hands out an
+	-- opaque substitution token ("|Kj58|k", seven characters) and the CLIENT
+	-- swaps the real name in when the font string is drawn. Confirmed live by
+	-- printing the raw value. So "Sacha Bourassa-Beaudoin" never exists as a
+	-- Lua string here, and no amount of pattern matching can shorten it to
+	-- "Sacha B." -- the addon never sees those characters.
 	--
-	-- Reports whether %s matches and the byte at the separator, because the
-	-- suspicion is that it is not a plain space (a non-breaking space is two
-	-- bytes and %s does not match it in Lua 5.1).
-	-- Remove once the question is answered.
-	-- Counted, not filtered. Every previous version had a CONDITION on the
-	-- string, and every one printed nothing -- which cannot distinguish "the
-	-- condition was wrong" from "this function never runs". The first eight
-	-- calls print unconditionally, so silence now means exactly one thing.
-	SOCIALPLUS_TRACE_N=(SOCIALPLUS_TRACE_N or 0)+1
-	if SOCIALPLUS_TRACE_N<=8 then
-		print(("|cff33ff99SP|r #%d acct=[%s] char=[%s] -> [%s]"):format(
-			SOCIALPLUS_TRACE_N,tostring(beforeAbbrev),
-			tostring(characterName),tostring(accountName)))
-	end
+	-- Anything that prints the token appears to disprove this, because print
+	-- goes through the same substitution. Compare #accountName, not its text.
 
 	-- Class color, when known and enabled, applies to the WHOLE line --
 	-- the Battle.net name too, not just the "(CharacterName)" part -- so
