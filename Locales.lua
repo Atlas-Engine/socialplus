@@ -60,6 +60,8 @@ L.ARENA_ZONES = {
 L.GROUP_UNGROUPED         = "General"
 L.GROUP_FAVORITES         = "Favorites"
 L.GROUP_INGAME            = "In-game Friends"
+L.GROUP_RECENT              = "Recently Added"
+L.GROUP_RECENT_CLEAR        = "Clear the recently added list"
 
 ----------------------------------------------------------------
 -- Group menu (header right-click)
@@ -82,6 +84,14 @@ L.SETTING_PRIORITIZE_PREFIX  = "Show "
 L.SETTING_PRIORITIZE_SUFFIX  = " friends first"
 L.SETTING_SCROLL_SPEED       = "Scroll speed"
 L.SETTING_SCROLL_SPEED_DESC  = "Adjust the scroll speed for the friends list."
+L.SETTING_PVP_RATINGS        = "Show PvP ratings in tooltips (needs ArenaPlus)"
+L.SETTING_PVP_SPEC_ICON      = "Show spec icon beside friend names (needs ArenaPlus)"
+L.SETTING_REGION_FLAG        = "Show a region flag beside friend names"
+L.SETTING_PVP_RATINGS_NEEDS  = "Requires the ArenaPlus addon, which supplies the ladder data. Install and enable it, then reload."
+L.TOOLTIP_PVP_HEADER         = "Ladder Standing"
+-- bracket, rating, rank. The rating arrives already coloured by title.
+L.TOOLTIP_PVP_LINE           = "%s  %s  |cff808080#%d|r"
+L.TOOLTIP_PVP_CYCLE          = "Tab: next character (%d of %d)"
 L.SETTING_SECTION_NOTIFICATIONS = "Notifications"
 L.SETTING_NOTIFY_ENABLE      = "Notify when friends come online"
 L.SETTING_NOTIFY_OFFLINE     = "Notify when friends go offline"
@@ -198,6 +208,14 @@ if locale == "frFR" then
     L.SETTING_SCROLL_SPEED       = "Vitesse de défilement"
     L.SETTING_SCROLL_SPEED_DESC  = "Ajuste la vitesse de défilement de la liste d’amis."
     L.SETTING_SECTION_NOTIFICATIONS = "Notifications"
+    L.SETTING_PVP_RATINGS        = "Afficher les cotes JcJ dans les infobulles (nécessite ArenaPlus)"
+L.SETTING_PVP_SPEC_ICON      = "Afficher l'icône de spécialisation à côté des noms (nécessite ArenaPlus)"
+L.SETTING_REGION_FLAG        = "Afficher le drapeau de la région à côté des noms"
+    L.SETTING_PVP_RATINGS_NEEDS  = "Nécessite l'addon ArenaPlus, qui fournit les données du classement. Installez-le et activez-le, puis rechargez l'interface."
+
+    L.TOOLTIP_PVP_HEADER         = "Classement"
+    L.TOOLTIP_PVP_CYCLE          = "Tab : personnage suivant (%d sur %d)"
+
     L.SETTING_NOTIFY_ENABLE      = "Notifier quand un ami se connecte"
     L.SETTING_NOTIFY_OFFLINE     = "Notifier quand un ami se déconnecte"
     L.SETTING_NOTIFY_SAME_VERSION_PREFIX = "Notifier uniquement pour les amis "
@@ -308,6 +326,14 @@ elseif locale == "esES" or locale == "esMX" then
     L.SETTING_SCROLL_SPEED       = "Velocidad de desplazamiento"
     L.SETTING_SCROLL_SPEED_DESC  = "Ajusta la velocidad de desplazamiento de la lista de amigos."
     L.SETTING_SECTION_NOTIFICATIONS = "Notificaciones"
+    L.SETTING_PVP_RATINGS        = "Mostrar la clasificación JcJ en las descripciones (requiere ArenaPlus)"
+L.SETTING_PVP_SPEC_ICON      = "Mostrar el icono de especialización junto a los nombres (requiere ArenaPlus)"
+L.SETTING_REGION_FLAG        = "Mostrar la bandera de la región junto a los nombres"
+    L.SETTING_PVP_RATINGS_NEEDS  = "Requiere el addon ArenaPlus, que proporciona los datos de la clasificación. Instálalo y actívalo, y luego recarga la interfaz."
+
+    L.TOOLTIP_PVP_HEADER         = "Clasificación"
+    L.TOOLTIP_PVP_CYCLE          = "Tab: siguiente personaje (%d de %d)"
+
     L.SETTING_NOTIFY_ENABLE      = "Notificar cuando un amigo se conecta"
     L.SETTING_NOTIFY_OFFLINE     = "Notificar cuando un amigo se desconecta"
     L.SETTING_NOTIFY_SAME_VERSION_PREFIX = "Notificar solo a los amigos de "

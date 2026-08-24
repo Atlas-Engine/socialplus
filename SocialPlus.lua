@@ -80,6 +80,12 @@ local SocialPlus_NAME_COLOR=NORMAL_FONT_COLOR
 
 -- Forward declaration for invite helper so early functions can reference it
 local SocialPlus_GetInviteStatus
+
+-- Declared here and defined much further down, because the invite fallback
+-- calls it some hundred and seventy lines before its definition. Without this
+-- the name resolved to a global nil there, so BNInviteFriend never got a
+-- presence ID and that fallback silently did nothing.
+local FG_BNGetFriendInfo
 local SocialPlus_GetGroupKeyFromRow
 local SocialPlus_EnsureSavedVars
 local SocialPlus_SetCustomGroupOrderFromMove
@@ -140,6 +146,33 @@ function SocialPlus_EnsureSavedVars()
     end
     if type(SocialPlus_SavedVars.scrollSpeed)~="number" then
         SocialPlus_SavedVars.scrollSpeed=SCROLL_BASE
+    end
+
+    -- Default ON, but it shows nothing at all unless ArenaPlus is installed
+    -- and the friend is on the ladder, so it cannot clutter a tooltip for
+    -- somebody who has neither.
+    if SocialPlus_SavedVars.pvp_ratings==nil then
+        SocialPlus_SavedVars.pvp_ratings=true
+    end
+
+    -- Which brackets the block lists, keyed by the same 1-4 ArenaPlus uses.
+    -- All of them until told otherwise: someone who only cares about 3v3 can
+    -- say so, but guessing that for them would be worse than showing all four.
+    -- Separate from the block below it on purpose: the icon beside a name and
+    -- the ratings under the tooltip are two different things to want, and one
+    -- can be useful without the other.
+    -- On by default: it replaces text that was already there rather than
+    -- adding something new to a crowded line.
+    if SocialPlus_SavedVars.region_flag==nil then
+        SocialPlus_SavedVars.region_flag=true
+    end
+
+    if SocialPlus_SavedVars.pvp_spec_icon==nil then
+        SocialPlus_SavedVars.pvp_spec_icon=true
+    end
+
+    if type(SocialPlus_SavedVars.pvp_brackets)~="table" then
+        SocialPlus_SavedVars.pvp_brackets={ [1]=true,[2]=true,[3]=true,[4]=true }
     end
 
     -- Default ON for "Prioritize [current client] friends"
@@ -359,6 +392,20 @@ local SP_FAVORITES_GROUP="\001FAVORITES"
 -- only -- no cogwheel, no context menu, not draggable, never a submenu
 -- target.
 local SP_INGAME_GROUP="\001INGAME"
+
+-- Friends added during this play session, shown in their own group under
+-- Favorites until you file them or log out.
+--
+-- The client has no "added at" for a friend, so this is worked out by diffing
+-- against a snapshot rather than read. The snapshot is retaken at every real
+-- login, which is what makes the group mean "this session" exactly, instead of
+-- "recently" for some arbitrary value of recently.
+--
+-- Kept in saved variables rather than in memory so that /reload does not empty
+-- it: PLAYER_ENTERING_WORLD says whether it was a login or a reload, and only a
+-- login starts a new session.
+-- Global, not a file-local: this chunk is at Lua's 200-locals ceiling.
+SocialPlus_RECENT_GROUP=string.char(1).."RECENT"
 
 -- Blizzard ships a global FAVORITES string (Mount/Pet Journal use it) --
 -- prefer it so the label matches the client's own language/terminology
@@ -734,6 +781,7 @@ local function SocialPlus_ApplyGroupOrder()
 	local hasFriendReq=false
 	local hasGeneral=false
 	local hasFavorites=false
+	local hasRecent=false
 	local hasInGame=false
 	local others={}
 
@@ -742,6 +790,8 @@ local function SocialPlus_ApplyGroupOrder()
 			hasFriendReq=true
 		elseif groupName==SP_FAVORITES_GROUP then
 			hasFavorites=true
+		elseif groupName==SocialPlus_RECENT_GROUP then
+			hasRecent=true
 		elseif groupName==SP_INGAME_GROUP then
 			hasInGame=true
 		elseif groupName=="" then
@@ -784,6 +834,12 @@ local function SocialPlus_ApplyGroupOrder()
 	end
 	if hasFavorites then
 		table.insert(GroupSorted,SP_FAVORITES_GROUP)
+	end
+	-- Directly under Favorites, and like Favorites never enters the
+	-- user-reorderable list: it is not a group you made, and it will be gone by
+	-- tomorrow, so a persisted position for it would mean nothing.
+	if hasRecent then
+		table.insert(GroupSorted,SocialPlus_RECENT_GROUP)
 	end
 	for _,name in ipairs(others) do
 		table.insert(GroupSorted,name)
@@ -1897,7 +1953,9 @@ local function FG_BNGetNumFriends()
 	return 0
 end
 
-local function FG_BNGetFriendInfo(idx)
+-- Assigns to the local declared at the top of the file rather than making a
+-- second one, which is what lets the earlier caller see it.
+function FG_BNGetFriendInfo(idx)
 	if BNGetFriendInfo then
 		return BNGetFriendInfo(idx)
 	end
@@ -2075,7 +2133,7 @@ end
 local function GetFriendInfoById(id)
 	local accountName,characterName,class,level,isFavoriteFriend,isOnline,
 		bnetAccountId,client,canCoop,wowProjectID,lastOnline,
-		isAFK,isGameAFK,isDND,isGameBusy,mobile,zoneName,gameText,realmName
+		isAFK,isGameAFK,isDND,isGameBusy,mobile,zoneName,gameText,realmName,regionID
 
 	if C_BattleNet and C_BattleNet.GetFriendAccountInfo then
 		local accountInfo=C_BattleNet.GetFriendAccountInfo(id)
@@ -2141,6 +2199,13 @@ local function GetFriendInfoById(id)
 			end
 
 			if gameAccountInfo then
+				-- Which region that character plays in, for the row's flag.
+				-- Taken here because this call already has it: reading it again
+				-- from the row would be a second GetFriendAccountInfo per
+				-- visible friend, which is the cost this function exists to
+				-- avoid.
+				regionID=gameAccountInfo.regionID
+
 				isOnline=gameAccountInfo.isOnline
 				characterName=gameAccountInfo.characterName
 				class=gameAccountInfo.className
@@ -2245,9 +2310,11 @@ else
 		end
 	end
 
+	-- regionID last, so the callers that unpack only the first nineteen are
+	-- untouched by its arrival.
 	return accountName,characterName,class,level,isFavoriteFriend,isOnline,
 		bnetAccountId,client,canCoop,wowProjectID,lastOnline,
-		isAFK,isGameAFK,isDND,isGameBusy,mobile,zoneName,gameText,realmName
+		isAFK,isGameAFK,isDND,isGameBusy,mobile,zoneName,gameText,realmName,regionID
 end
 
 -- [[ BNet button name text builder ]]
@@ -2457,9 +2524,94 @@ local function SocialPlus_GetFavoriteKey(buttonType,id)
 	return nil
 end
 
+----------------------------------------------------------------
+-- Recently added
+----------------------------------------------------------------
+
+-- Everyone on the list right now, by the same stable key favourites use.
+-- Global for the 200-locals reason above.
+function SocialPlus_CollectFriendKeys()
+	local keys={}
+
+	for i=1,(FG_BNGetNumFriends and FG_BNGetNumFriends() or 0) do
+		local key=SocialPlus_GetFavoriteKey(FRIENDS_BUTTON_TYPE_BNET,i)
+		if key then keys[key]=true end
+	end
+
+	local wow=C_FriendList and C_FriendList.GetNumFriends and C_FriendList.GetNumFriends() or 0
+	for i=1,wow do
+		local key=SocialPlus_GetFavoriteKey(FRIENDS_BUTTON_TYPE_WOW,i)
+		if key then keys[key]=true end
+	end
+
+	return keys
+end
+
+-- A fresh session: everyone here now counts as already known, and nobody is
+-- recent. Without this the entire friends list would show up as newly added
+-- the first time the feature ran.
+function SocialPlus_StartFriendSession()
+	if not SocialPlus_SavedVars then return end
+	SocialPlus_SavedVars.recent={}
+	SocialPlus_SavedVars.known=SocialPlus_CollectFriendKeys()
+end
+
+-- Anyone on the list who was not there at login. Called from the rebuild, so an
+-- addition is noticed as soon as anything redraws.
+function SocialPlus_NoteNewFriends()
+	if not (SocialPlus_SavedVars and SocialPlus_SavedVars.known) then return end
+
+	SocialPlus_SavedVars.recent=type(SocialPlus_SavedVars.recent)=="table"
+		and SocialPlus_SavedVars.recent or {}
+
+	for key in pairs(SocialPlus_CollectFriendKeys()) do
+		if not SocialPlus_SavedVars.known[key] then
+			SocialPlus_SavedVars.known[key]=true
+			SocialPlus_SavedVars.recent[key]=true
+		end
+	end
+end
+
+function SocialPlus_ClearRecentFriends()
+	if not SocialPlus_SavedVars then return end
+	SocialPlus_SavedVars.recent={}
+	SocialPlus_Update(true)
+end
+
+function SocialPlus_HasRecentFriends()
+	local recent=SocialPlus_SavedVars and SocialPlus_SavedVars.recent
+	return recent~=nil and next(recent)~=nil
+end
+
 local function SocialPlus_IsFavorite(buttonType,id)
 	local key=SocialPlus_GetFavoriteKey(buttonType,id)
 	return key and SocialPlus_SavedVars and SocialPlus_SavedVars.favorites and SocialPlus_SavedVars.favorites[key]==true
+end
+
+-- In the recently-added group: added this session, not favourited, and not yet
+-- filed into a group of your own.
+--
+-- Filing is the same intent as pressing the X, so it dismisses on its own --
+-- which is why moving somebody into a group makes them leave here without any
+-- extra bookkeeping.
+-- Global for the 200-locals reason above.
+function SocialPlus_IsRecent(buttonType,id,groups)
+	if SocialPlus_IsFavorite(buttonType,id) then return false end
+
+	local recent=SocialPlus_SavedVars and SocialPlus_SavedVars.recent
+	if not recent then return false end
+
+	local key=SocialPlus_GetFavoriteKey(buttonType,id)
+	if not (key and recent[key]) then return false end
+
+	-- groups carries "" alone when the friend has no tags at all.
+	if groups then
+		for name in pairs(groups) do
+			if name~="" then return false end
+		end
+	end
+
+	return true
 end
 
 function SocialPlus_ToggleFavorite(buttonType,id)
@@ -2514,6 +2666,7 @@ local function SocialPlus_UpdateFriendButton(button)
 	button.accountName=nil
 	button.characterName=nil
 	button.realmName=nil
+	button.SocialPlusRegionID=nil
 	button.SocialPlusGroupName=nil -- only used on divider (group header) rows
 
 	if button.SocialPlusGroupGearButton then
@@ -2530,6 +2683,10 @@ local function SocialPlus_UpdateFriendButton(button)
 	-- showing it after being recycled as a divider or a non-arena friend.
 	if button.SocialPlusArenaIcon then
 		button.SocialPlusArenaIcon:Hide()
+	end
+	-- The same pooling hazard for the flag beside it.
+	if button.SocialPlusRegionFlag then
+		button.SocialPlusRegionFlag:Hide()
 	end
 	-- Stale-state hazard again: a recycled row must not inherit the previous
 	-- friend's zone, or a non-arena friend can show the swords.
@@ -2626,6 +2783,12 @@ local function SocialPlus_UpdateFriendButton(button)
 			button.rawName=info.name
 			button.characterName=info.name
 			button.realmName=nil
+
+			-- A plain WoW friend is on your own realm, so their region is
+			-- yours: there is no cross-region friends list. Without this they
+			-- would be the only rows with no flag, which reads as missing data
+			-- rather than as "same region as you".
+			button.SocialPlusRegionID=GetCurrentRegion and GetCurrentRegion() or nil
 		end
 		button.accountName=nil
 
@@ -2633,7 +2796,7 @@ local function SocialPlus_UpdateFriendButton(button)
 		local id=FriendButtons[index].id
 		local accountName,characterName,class,level,isFavorite,
 			isOnline,bnetAccountId,client,canCoop,wowProjectID,lastOnline,
-			isAFK,isGameAFK,isDND,isGameBusy,mobile,zoneName,gameText,realmName=
+			isAFK,isGameAFK,isDND,isGameBusy,mobile,zoneName,gameText,realmName,regionID=
 			GetFriendInfoById(id)
 
 		-- Stashed for the shared section further down, which needs the area but
@@ -2663,6 +2826,7 @@ local function SocialPlus_UpdateFriendButton(button)
 		button.accountName=accountName
 		button.characterName=characterName
 		button.realmName=realmName
+		button.SocialPlusRegionID=regionID
 		button.rawName=nameText
 
 		isFavoriteFriend=isFavorite
@@ -2884,6 +3048,8 @@ local function SocialPlus_UpdateFriendButton(button)
 		-- low against the label (confirmed live).
 		local reqIcon="|TInterface\\FriendsFrame\\UI-Toast-FriendRequestIcon:14:14:0:-1|t"
 		title=reqIcon.." "..group.." "..reqIcon
+		elseif group==SocialPlus_RECENT_GROUP then
+		title=L.GROUP_RECENT
 		elseif group==SP_INGAME_GROUP then
 		title=L.GROUP_INGAME
 		else
@@ -2919,6 +3085,29 @@ local function SocialPlus_UpdateFriendButton(button)
 		-- same axis instead of wherever Blizzard's template placed it.
 		button.status:ClearAllPoints()
 		button.status:SetPoint("LEFT",button,"LEFT",4,0)
+
+		-- An X on the recently-added header, and only there.
+		--
+		-- Rows are pooled and reused for whatever lands on them next, so this
+		-- is created once per row and shown or hidden every rebuild -- a button
+		-- left visible from a previous draw would sit on somebody else's group.
+		if not button.spRecentClear then
+			local clear=CreateFrame("Button",nil,button,"UIPanelCloseButton")
+			clear:SetSize(20,20)
+			clear:SetPoint("RIGHT",button,"RIGHT",-4,0)
+			clear:SetScript("OnClick",function()
+				if SocialPlus_ClearRecentFriends then SocialPlus_ClearRecentFriends() end
+			end)
+			clear:SetScript("OnEnter",function(self)
+				GameTooltip:SetOwner(self,"ANCHOR_LEFT")
+				GameTooltip:SetText(L.GROUP_RECENT_CLEAR,1,1,1,1,true)
+				GameTooltip:Show()
+			end)
+			clear:SetScript("OnLeave",function() GameTooltip:Hide() end)
+			button.spRecentClear=clear
+		end
+
+		button.spRecentClear:SetShown(FriendButtons[index].text==SocialPlus_RECENT_GROUP)
 
 		infoText=group
 		button.info:Hide()
@@ -3182,6 +3371,40 @@ local function SocialPlus_UpdateFriendButton(button)
 				button.SocialPlusNoteIcon:Hide()
 			end
 
+			-- The spec icon and the region flag, to the left of the faction
+			-- crest.
+			--
+			-- Textures on the row rather than characters in the name string:
+			-- the name is a fixed-width truncating field, and anything put
+			-- inside it silently vanishes for long character and realm names.
+			-- That is the same reason the note icon and the swords live out
+			-- here, and it is written down twice because it keeps being
+			-- rediscovered the hard way.
+			if not button.SocialPlusRegionFlag then
+				local icon=button:CreateTexture(nil,"OVERLAY")
+				button.SocialPlusRegionFlag=icon
+			end
+
+			button.SocialPlusRegionFlag:Hide()
+
+			-- The spec belongs on the tooltip, not here.
+			--
+			-- It was on the row for a version and taken off: the row already
+			-- carries an arena mark, a flag and a faction crest, and a fourth
+			-- picture past a truncated name is where a list stops being read
+			-- and starts being decoded.
+			local rowFlag=SocialPlus_RowRegionFlag(button)
+
+			if rowFlag then
+				local art=SocialPlus_RegionFlagArt
+				button.SocialPlusRegionFlag:SetTexture(rowFlag.texture)
+				button.SocialPlusRegionFlag:SetTexCoord(
+					rowFlag.texels[1]/128,rowFlag.texels[2]/128,
+					rowFlag.texels[3]/64,rowFlag.texels[4]/64)
+				button.SocialPlusRegionFlag:SetSize(math.floor(13*art.aspect+0.5),13)
+				button.SocialPlusRegionFlag:Show()
+			end
+
 			-- Crossed swords for a friend on an arena map. Anchored to the
 			-- status icon like the note icon, NOT appended to the name string:
 			-- the name is a fixed-width truncating field, and anything put
@@ -3203,8 +3426,37 @@ local function SocialPlus_UpdateFriendButton(button)
 			-- faction crest) may not exist yet the first time a pooled row is
 			-- built, and a SetPoint against a missing frame silently leaves the
 			-- icon unanchored in the corner.
+			-- Right to left, each against the last one actually shown.
+			--
+			-- Three things now want the space beside the crest -- the flag, the
+			-- spec icon and the swords -- and anchoring each of them to the
+			-- crest put all three in one place on any row that had more than
+			-- one. Chained, a row shows whichever it has, in a fixed order,
+			-- with no gaps for the ones it does not.
+			--
+			-- Rebuilt every pass rather than once: rows are pooled, and the
+			-- previous occupant's chain is not this one's.
+			local rightOf=button.gameIcon
+			local rightOfShown=rightOf and rightOf:IsShown()
+
+			local function Chain(icon,gap)
+				if not (icon and icon:IsShown()) then return end
+
+				icon:ClearAllPoints()
+				if rightOfShown then
+					icon:SetPoint("RIGHT",rightOf,"LEFT",-(gap or 3),
+						-(button.SocialPlusIconOffY or 0))
+				else
+					icon:SetPoint("RIGHT",button,"RIGHT",-8,0)
+				end
+
+				rightOf,rightOfShown=icon,true
+			end
+
+			Chain(button.SocialPlusRegionFlag,3)
+
 			button.SocialPlusArenaIcon:ClearAllPoints()
-			if button.gameIcon and button.gameIcon:IsShown() then
+			if rightOfShown then
 				-- Cancel whatever vertical offset the game icon was placed
 				-- with. FG_ApplyGameIcon shifts some icons off the row's
 				-- centre line -- the generic WoW logo is applied at 64px with
@@ -3216,7 +3468,7 @@ local function SocialPlus_UpdateFriendButton(button)
 				--
 				-- Read back from the icon rather than repeated here, so the
 				-- offset stays defined in exactly one place.
-				button.SocialPlusArenaIcon:SetPoint("RIGHT",button.gameIcon,"LEFT",-4,
+				button.SocialPlusArenaIcon:SetPoint("RIGHT",rightOf,"LEFT",-4,
 					-(button.SocialPlusIconOffY or 0))
 			else
 				-- Also covers a HIDDEN game icon, not just a missing one: a
@@ -3996,6 +4248,17 @@ end
 					AddButtonInfo(FRIENDS_BUTTON_TYPE_BNET,i)
 				end
 			end
+		elseif SocialPlus_IsRecent(FRIENDS_BUTTON_TYPE_BNET,i,BnetSocialPlus[i]) then
+			-- Move semantics, exactly as Favorites has: somebody added this
+			-- session shows here and not also under General, or the point of a
+			-- "look at these" group is lost to a duplicate.
+			IncrementGroup(SocialPlus_RECENT_GROUP,isOnline)
+			if not SocialPlus_IsCollapsedForDisplay(SocialPlus_RECENT_GROUP) then
+				if isOnline or not(SocialPlus_SavedVars.hide_offline) then
+					buttonCount=buttonCount+1
+					AddButtonInfo(FRIENDS_BUTTON_TYPE_BNET,i)
+				end
+			end
 		else
 			for group in pairs(BnetSocialPlus[i]) do
 				IncrementGroup(group,isOnline)
@@ -4035,6 +4298,12 @@ end
 		if SocialPlus_IsFavorite(FRIENDS_BUTTON_TYPE_WOW,i) then
 			IncrementGroup(SP_FAVORITES_GROUP,true)
 			if not SocialPlus_IsCollapsedForDisplay(SP_FAVORITES_GROUP) then
+				buttonCount=buttonCount+1
+				AddButtonInfo(FRIENDS_BUTTON_TYPE_WOW,i)
+			end
+		elseif SocialPlus_IsRecent(FRIENDS_BUTTON_TYPE_WOW,i,WowSocialPlus[i]) then
+			IncrementGroup(SocialPlus_RECENT_GROUP,true)
+			if not SocialPlus_IsCollapsedForDisplay(SocialPlus_RECENT_GROUP) then
 				buttonCount=buttonCount+1
 				AddButtonInfo(FRIENDS_BUTTON_TYPE_WOW,i)
 			end
@@ -4100,6 +4369,7 @@ end
     table.insert(GroupSorted,group)
 end
 
+SocialPlus_NoteNewFriends()
 SocialPlus_ApplyGroupOrder()
 
     ----------------------------------------------------------------------
@@ -4127,7 +4397,8 @@ SocialPlus_ApplyGroupOrder()
     local BNetPre={}
     for i=1,numBNetTotal do
         local online=BNetOnlineStatus[i]
-        local pre={fav=SocialPlus_IsFavorite(FRIENDS_BUTTON_TYPE_BNET,i) and true or false}
+        local pre={fav=SocialPlus_IsFavorite(FRIENDS_BUTTON_TYPE_BNET,i) and true or false,
+            recent=SocialPlus_IsRecent(FRIENDS_BUTTON_TYPE_BNET,i,BnetSocialPlus[i]) and true or false}
         if online then
             local accountName,_,_,_,_,_,_,client,_,wowProjectID,_,
                 isAFK,isGameAFK,isDND,isGameBusy=GetFriendInfoById(i)
@@ -4167,6 +4438,7 @@ SocialPlus_ApplyGroupOrder()
         local info=FG_GetFriendInfoByIndex(i)
         WoWPre[i]={
             fav=SocialPlus_IsFavorite(FRIENDS_BUTTON_TYPE_WOW,i) and true or false,
+            recent=SocialPlus_IsRecent(FRIENDS_BUTTON_TYPE_WOW,i,WowSocialPlus[i]) and true or false,
             sortKey=info and info.name,
             statusRank=SocialPlus_GetStatusRank(info and info.afk,false,info and info.dnd,false),
         }
@@ -4227,7 +4499,7 @@ SocialPlus_ApplyGroupOrder()
     -- Safe because rows are read-only once built (the comparators and the
     -- push loop only read them, table.sort only reorders the array), and it
     -- replaces the old one-allocation-per-friend-per-group churn.
-    local function BucketFriend(byGroup,groups,fav,row)
+    local function BucketFriend(byGroup,groups,fav,row,recent)
         if fav then
             -- Membership in the virtual Favorites group comes from the
             -- favorite flag, never from the friend's note tags, and it is a
@@ -4238,6 +4510,14 @@ SocialPlus_ApplyGroupOrder()
             -- pre-sized in the first pass (which correctly skips them) and
             -- index past the end of FriendButtons -- confirmed live.
             BucketRow(byGroup,SP_FAVORITES_GROUP,row)
+        elseif recent then
+            -- The same move, for the same reason, and it was missing here
+            -- while the counting pass above already did it: a recent friend
+            -- was counted once under Recently Added and then rendered under
+            -- every group their note carries. A friend in two groups is one
+            -- row more than was pre-sized, which indexes past the end of
+            -- FriendButtons -- the very overrun the note above describes.
+            BucketRow(byGroup,SocialPlus_RECENT_GROUP,row)
         elseif groups then
             for group in pairs(groups) do
                 -- The converse of that move: a NON-favorited friend whose
@@ -4261,10 +4541,10 @@ SocialPlus_ApplyGroupOrder()
                 {buttonType=FRIENDS_BUTTON_TYPE_BNET,id=i,
                 sortKey=pre.sortKey,statusRank=pre.statusRank,
                 promoted=pre.promoted,factionRank=pre.factionRank,
-                groupKey=pre.groupKey,appOnlyRank=pre.appOnlyRank})
+                groupKey=pre.groupKey,appOnlyRank=pre.appOnlyRank},pre.recent)
         elseif needOffline and online==false then
             BucketFriend(OfflineRowsByGroup,BnetSocialPlus[i],pre.fav,
-                {buttonType=FRIENDS_BUTTON_TYPE_BNET,id=i,sortKey=pre.sortKey})
+                {buttonType=FRIENDS_BUTTON_TYPE_BNET,id=i,sortKey=pre.sortKey},pre.recent)
         end
     end
 
@@ -4278,7 +4558,7 @@ SocialPlus_ApplyGroupOrder()
                 sortKey=wpre.sortKey,statusRank=wpre.statusRank,
                 groupKey="WoW:"..tostring(WOW_PROJECT_ID or "?"),
                 appOnlyRank=0,promoted=usePrioritize and true or false,
-                factionRank=0})
+                factionRank=0},wpre.recent)
         end
     end
 
@@ -4287,12 +4567,40 @@ SocialPlus_ApplyGroupOrder()
             local wopre=WoWPre[i]
             if wopre then
                 BucketFriend(OfflineRowsByGroup,WowSocialPlus[i],wopre.fav,
-                    {buttonType=FRIENDS_BUTTON_TYPE_WOW,id=i,sortKey=wopre.sortKey})
+                    {buttonType=FRIENDS_BUTTON_TYPE_WOW,id=i,sortKey=wopre.sortKey},wopre.recent)
             end
         end
     end
 
     local index=0
+    -- The rendering pass must never write past what the counting pass reserved.
+    --
+    -- The two passes have to agree about every group with "move" semantics --
+    -- one where a friend renders under that group INSTEAD of their own. Recently
+    -- Added was counted as a move and rendered as a copy, so a friend in two
+    -- groups produced one row more than was booked and the write ran off the end
+    -- of FriendButtons. Favorites had the same bug before it.
+    --
+    -- Nothing enforces that agreement, so this says which group was being
+    -- rendered when the count ran out, once per rebuild rather than every row.
+    -- The slot is created so the list still draws: a friends list that is one
+    -- row wrong beats one that stops rendering.
+    local overranAt
+    local function TakeButton(at,group)
+        local button=FriendButtons[at]
+        if not button then
+            if not overranAt then
+                overranAt=group
+                DEFAULT_CHAT_FRAME:AddMessage(("|cff4da6ff[SocialPlus]|r more rows than counted, "
+                    .."from group '%s' -- please report this")
+                    :format((group==nil or group=="") and "General" or tostring(group)))
+            end
+            button={}
+            FriendButtons[at]=button
+        end
+        return button
+    end
+
     for _,group in ipairs(GroupSorted) do
         -- During a group-name search focus, skip the header ROW entirely
         -- for every other group instead of just collapsing it -- on
@@ -4300,16 +4608,18 @@ SocialPlus_ApplyGroupOrder()
         local showGroup=not (SocialPlus_SearchFocusGroup and group~=SocialPlus_SearchFocusGroup)
         if showGroup then
         index=index+1
-        FriendButtons[index].buttonType=FRIENDS_BUTTON_TYPE_DIVIDER
-        FriendButtons[index].text=group
+        local divider=TakeButton(index,group)
+        divider.buttonType=FRIENDS_BUTTON_TYPE_DIVIDER
+        divider.text=group
 
         if not SocialPlus_IsCollapsedForDisplay(group) then
             -- 1) Friend invites bucket (always same behavior)
             if group==FriendRequestString then
                 for i=1,#FriendReqGroup do
                     index=index+1
-                    FriendButtons[index].buttonType=FRIENDS_BUTTON_TYPE_INVITE
-                    FriendButtons[index].id=i
+                    local invite=TakeButton(index,group)
+                    invite.buttonType=FRIENDS_BUTTON_TYPE_INVITE
+                    invite.id=i
                 end
             end
 
@@ -4362,8 +4672,9 @@ SocialPlus_ApplyGroupOrder()
             -- Push sorted online rows
             for _,row in ipairs(onlineRows) do
                 index=index+1
-                FriendButtons[index].buttonType=row.buttonType
-                FriendButtons[index].id=row.id
+                local slot=TakeButton(index,group)
+                slot.buttonType=row.buttonType
+                slot.id=row.id
             end
 
             -- Offline at the bottom, unaffected by any of the above --
@@ -4388,8 +4699,9 @@ SocialPlus_ApplyGroupOrder()
 
                 for _,row in ipairs(offlineRows) do
                     index=index+1
-                    FriendButtons[index].buttonType=row.buttonType
-                    FriendButtons[index].id=row.id
+                    local slot=TakeButton(index,group)
+                    slot.buttonType=row.buttonType
+                    slot.id=row.id
                 end
             end
         end
@@ -5357,7 +5669,7 @@ function SocialPlus_CreateSettingsPanel()
 	-- out of date on a new release. Right-aligned on the same axis as the
 	-- title, just left of the close button. SocialPlus_GetAddonVersion
 	-- handles both the C_AddOns/global API split and the unpackaged
-	-- "@project-version@" sentinel (returning nil for a dev build) -- see
+	-- "1.13c" sentinel (returning nil for a dev build) -- see
 	-- it for the full story on why that token can't be written literally.
 	local addonVersion=SocialPlus_GetAddonVersion()
 	if addonVersion then
@@ -5421,11 +5733,165 @@ function SocialPlus_CreateSettingsPanel()
 		SocialPlus_Update(true)
 	end)
 
+	-- Both declared here, above everything that reads them.
+	--
+	-- UpdatePvPRatingsState is referred to by the tick's click handler, and
+	-- bracketChecks is read inside UpdatePvPRatingsState -- a local declared
+	-- further down is not the same name at all from up here, it is a global
+	-- that happens to be nil, and the failure lands at runtime rather than at
+	-- load. The same shape as calling a function before its definition, which
+	-- is why ordercheck does not see it: nothing is being called.
+	local UpdatePvPRatingsState
+	local bracketChecks={}
+
+	-- Rated PvP in the tooltip, which needs ArenaPlus to supply the ladder.
+	local pvpRatings=CreateFrame("CheckButton","SocialPlus_PvPRatingsCheck",f,"UICheckButtonTemplate")
+	pvpRatings:SetPoint("TOPLEFT",prioritizeCurrent,"BOTTOMLEFT",0,-6)
+	_G[pvpRatings:GetName().."Text"]:SetText(L.SETTING_PVP_RATINGS)
+	pvpRatings:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.pvp_ratings)
+	pvpRatings:SetScript("OnClick",function()
+		SocialPlus_SavedVars.pvp_ratings=not SocialPlus_SavedVars.pvp_ratings
+		UpdatePvPRatingsState()
+		-- Nothing to rebuild: the tooltip reads the setting when it is next
+		-- built, and the list itself is unchanged.
+	end)
+
+
+	-- One tick per bracket, indented under the switch they depend on.
+	--
+	-- Built in a loop rather than written out four times: the labels come from
+	-- ArenaPlus's own BRACKETS table where it is installed, so the two cannot
+	-- disagree about what bracket 4 is called.
+	local previousCheck=pvpRatings
+
+	for bracket=1,4 do
+		local check=CreateFrame("CheckButton",nil,f,"UICheckButtonTemplate")
+		check:SetSize(20,20)
+		check:SetPoint("TOPLEFT",previousCheck,"BOTTOMLEFT",bracket==1 and 18 or 0,-2)
+		check.bracket=bracket
+
+		local names=_G.ArenaPlusAPI and _G.ArenaPlusAPI.BRACKETS
+		local label=check:CreateFontString(nil,"OVERLAY","GameFontNormalSmall")
+		label:SetPoint("LEFT",check,"RIGHT",2,0)
+		label:SetText((names and names[bracket]) or tostring(bracket))
+		check.label=label
+
+		check:SetScript("OnClick",function(self)
+			SocialPlus_SavedVars.pvp_brackets=type(SocialPlus_SavedVars.pvp_brackets)=="table"
+				and SocialPlus_SavedVars.pvp_brackets or {}
+			SocialPlus_SavedVars.pvp_brackets[self.bracket]=self:GetChecked() and true or nil
+		end)
+
+		bracketChecks[bracket]=check
+		previousCheck=check
+	end
+
+	local specIcon=CreateFrame("CheckButton","SocialPlus_PvPSpecIconCheck",f,"UICheckButtonTemplate")
+	specIcon:SetPoint("TOPLEFT",bracketChecks[4] or pvpRatings,"BOTTOMLEFT",
+		bracketChecks[4] and -18 or 0,-4)
+	_G[specIcon:GetName().."Text"]:SetText(L.SETTING_PVP_SPEC_ICON)
+	specIcon:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.pvp_spec_icon)
+	specIcon:SetScript("OnClick",function()
+		SocialPlus_SavedVars.pvp_spec_icon=not SocialPlus_SavedVars.pvp_spec_icon
+	end)
+
+	-- Under the spec icon, since the two decide what sits beside a name.
+	--
+	-- Unlike that one this needs no other addon: the flags ship here, so the
+	-- tick is never offered against something that cannot happen.
+	local regionFlag=CreateFrame("CheckButton","SocialPlus_RegionFlagCheck",f,"UICheckButtonTemplate")
+	regionFlag:SetPoint("TOPLEFT",specIcon,"BOTTOMLEFT",0,-4)
+	_G[regionFlag:GetName().."Text"]:SetText(L.SETTING_REGION_FLAG)
+	regionFlag:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.region_flag)
+	regionFlag:SetScript("OnClick",function()
+		SocialPlus_SavedVars.region_flag=not SocialPlus_SavedVars.region_flag
+
+		-- Redraw the list, or nothing changes until the rows happen to be
+		-- rebuilt: they are pooled, and a row keeps whatever it was last given
+		-- until something recycles it. Without this the tick appeared to do
+		-- nothing until you scrolled far enough to reuse every row.
+		SocialPlus_Update()
+	end)
+
+	pvpRatings:SetScript("OnEnter",function(self)
+		if _G.ArenaPlusAPI and _G.ArenaPlusAPI.GetLadder then return end
+		GameTooltip:SetOwner(self,"ANCHOR_RIGHT")
+		GameTooltip:SetText(L.SETTING_PVP_RATINGS_NEEDS,1,1,1,1,true)
+		GameTooltip:Show()
+	end)
+	pvpRatings:SetScript("OnLeave",function() GameTooltip:Hide() end)
+
+	-- Dead unless ArenaPlus is there to answer.
+	--
+	-- The tick does nothing at all without it -- the tooltip guards every call
+	-- and simply draws no block -- so a live checkbox would be offering a choice
+	-- with no consequence. Greyed, it says the feature exists and what it needs.
+	--
+	-- Tested on the published table rather than on the addon being loaded: an
+	-- ArenaPlus that is installed but disabled never runs its files and never
+	-- creates it, which is the same thing as absent from here.
+	function UpdatePvPRatingsState()
+		local ready=_G.ArenaPlusAPI and _G.ArenaPlusAPI.GetLadder
+		local label=_G[pvpRatings:GetName().."Text"]
+
+		if ready then
+			pvpRatings:Enable()
+			if label then label:SetTextColor(1,0.82,0) end
+		else
+			pvpRatings:Disable()
+			if label then label:SetTextColor(0.5,0.5,0.5) end
+		end
+
+		-- Needs ArenaPlus, but not the block: it is its own feature.
+		local specLabel=_G[specIcon:GetName().."Text"]
+		specIcon:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.pvp_spec_icon)
+		regionFlag:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.region_flag)
+		if ready then
+			specIcon:Enable()
+			if specLabel then specLabel:SetTextColor(1,0.82,0) end
+		else
+			specIcon:Disable()
+			if specLabel then specLabel:SetTextColor(0.5,0.5,0.5) end
+		end
+
+		-- The bracket ticks depend on two things above them: ArenaPlus being
+		-- there at all, and the block being switched on. Greyed for either,
+		-- because a tick that changes nothing is a tick that lies.
+		local live=ready and SocialPlus_SavedVars and SocialPlus_SavedVars.pvp_ratings
+		for _,check in ipairs(bracketChecks) do
+			local wanted=SocialPlus_SavedVars and SocialPlus_SavedVars.pvp_brackets
+			check:SetChecked(wanted and wanted[check.bracket] and true or false)
+
+			if live then check:Enable() else check:Disable() end
+			check.label:SetTextColor(live and 0.8 or 0.4,live and 0.8 or 0.4,live and 0.8 or 0.4)
+		end
+	end
+
+	-- Defined here rather than above, deliberately.
+	--
+	-- It reads every widget in this block, and three times now a widget has
+	-- been added after it and come out nil -- a local declared below its
+	-- reader is not that local at all. Sitting after everything it touches,
+	-- the next widget added cannot repeat that. The forward declaration at
+	-- the top is what lets the tick's own click handler still reach it.
+
+	UpdatePvPRatingsState()
+
 	-- Separator + section header ahead of the notification checkboxes, same
 	-- style as the existing separator below them.
 	local preNotifyLine=f:CreateTexture(nil,"ARTWORK")
 	preNotifyLine:SetSize(f:GetWidth()-24,1)
-	preNotifyLine:SetPoint("TOPLEFT",prioritizeCurrent,"BOTTOMLEFT",0,-10)
+	-- Below the bracket ticks, not below their parent.
+	--
+	-- Anchored to pvpRatings it stayed where it was and the four new rows drew
+	-- straight through the notifications section. The -18 undoes the indent the
+	-- bracket ticks carry, so this returns to the left margin the rest of the
+	-- panel uses.
+	-- Below the last tick of the block above, whichever that is. It used to
+	-- name specIcon, and adding one under it put the divider and the whole
+	-- Notifications section straight through the new row -- everything down
+	-- here hangs off this one line, so it has to hang off the real last tick.
+	preNotifyLine:SetPoint("TOPLEFT",regionFlag,"BOTTOMLEFT",0,-12)
 	preNotifyLine:SetColorTexture(0.6,0.6,0.6,0.4)
 
 	local notifySectionHeader=f:CreateFontString(nil,"ARTWORK","GameFontNormal")
@@ -5550,6 +6016,9 @@ function SocialPlus_CreateSettingsPanel()
 		showLevel:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.show_level)
 		colourNames:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.colour_classes)
 		prioritizeCurrent:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.prioritize_current_client)
+		pvpRatings:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.pvp_ratings)
+		-- Re-tested every time the panel opens, in case ArenaPlus was enabled.
+		UpdatePvPRatingsState()
 		notifyEnable:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.notifications and SocialPlus_SavedVars.notifications.enabled)
 		notifyOffline:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.notifications and SocialPlus_SavedVars.notifications.offline_too)
 		notifySameVersion:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.notifications and SocialPlus_SavedVars.notifications.same_version_only)
@@ -6733,6 +7202,9 @@ end
 -- [[ FriendsFrame button hooks (click / tooltip / invite tooltip) ]]
 local frame=CreateFrame("Frame")
 frame:RegisterEvent("PLAYER_LOGIN")
+-- Tells a login apart from a /reload, which is the whole basis of the
+-- recently-added group: only a login starts a new session and clears it.
+frame:RegisterEvent("PLAYER_ENTERING_WORLD")
 frame:RegisterEvent("BN_FRIEND_ACCOUNT_ONLINE")
 frame:RegisterEvent("BN_FRIEND_ACCOUNT_OFFLINE")
 frame:RegisterEvent("FRIENDLIST_UPDATE")
@@ -6888,6 +7360,17 @@ end
 -- Owning the whole pipeline ourselves -- Blizzard's FriendsFrame code never
 -- touches GameTooltip -- sidesteps that entire class of bug instead of
 -- continuing to patch around it.
+-- Which of a Battle.net friend's characters the PvP block is describing.
+--
+-- One BattleTag can have several WoW sessions online at once -- the "Also
+-- online" line already lists them -- and each is a different character with a
+-- different rating. Showing one set of numbers without saying whose they were
+-- made the block quietly wrong for anyone playing two accounts.
+--
+-- A global on purpose: this file has already tripped Lua's 200-local ceiling
+-- once, and its own comments say so.
+SocialPlus_PvPCycle = SocialPlus_PvPCycle or { key=nil, index=1, count=1, button=nil }
+
 function SocialPlus_ShowRowTooltip(button)
 	-- Small helpers local to this function only (not top-level locals) --
 	-- Lua caps the main chunk at 200 locals total, and this file was
@@ -6910,6 +7393,7 @@ function SocialPlus_ShowRowTooltip(button)
 			GameTooltip:AddLine("|TInterface\\Buttons\\UI-GuildButton-PublicNote-Up:14:14:0:0|t "..note,1,0.82,0,true)
 		end
 	end
+
 	-- Battle.net "Broadcast" status message (BNGetFriendInfo position 12 --
 	-- separate from the note at position 13).
 	--
@@ -6932,13 +7416,227 @@ function SocialPlus_ShowRowTooltip(button)
 	-- (SocialPlus_BuildInviteAccountSubmenu) -- prepended to a character
 	-- name line, on request, including each additional simultaneous
 	-- session line for a friend with more than one WoW license online.
-	local function FactionIconPrefix(factionName)
+	-- The three marks that follow a name, in one place so both branches below
+	-- cannot drift apart on their order.
+	--
+	-- Order is name, spec, region, faction -- deliberately, and it used to be
+	-- faction, spec, name with the region trailing as text at the end. The spec
+	-- is the thing being looked for, so it sits against the name; the flag says
+	-- which ladder that spec was read from, so it comes next; and the faction
+	-- crest, which almost never changes anything, goes last.
+	local function FactionIconSuffix(factionName)
 		if factionName=="Horde" then
-			return "|TInterface\\FriendsFrame\\plusmanz-horde:14:14:0:0|t "
+			return " |TInterface\\FriendsFrame\\plusmanz-horde:14:14:0:0|t"
 		elseif factionName=="Alliance" then
-			return "|TInterface\\FriendsFrame\\plusmanz-alliance:14:14:0:0|t "
+			return " |TInterface\\FriendsFrame\\plusmanz-alliance:14:14:0:0|t"
 		end
 		return ""
+	end
+
+	-- The flag, or the letters when the flag is switched off. Either way this
+	-- carries its own leading space, so a friend whose region is unknown adds
+	-- nothing rather than a gap.
+	-- No flag in the tooltip. It is a picture where there is room for words,
+	-- and the row already carries one -- pointing at a friend to be told the
+	-- same thing a second way is not worth a line's width.
+	--
+	-- The flag setting governs the list, not this: hovering a row must say the
+	-- region whether or not the row is drawing it.
+
+	-- The spec icon for one character, for the name line at the top.
+	--
+	-- Separate from the Ladder Standing block below because that block runs
+	-- last, and this is needed while the identity line is still being written.
+	-- Cheap to ask twice: the lookup is an indexed hash, not a scan.
+	local function SpecIconFor(charName,charRealm,regionID)
+		if not (SocialPlus_SavedVars and SocialPlus_SavedVars.pvp_spec_icon) then return "" end
+		if not (charName and charName~="") then return "" end
+
+		local api=_G.ArenaPlusAPI
+		if not (api and api.GetLadder and api.GetSpecIcon) then return "" end
+
+		local full=charName
+		if charRealm and charRealm~="" then full=charName.."-"..charRealm end
+
+		local region
+		if api.RegionFromID then region=api.RegionFromID(regionID) end
+
+		local ok,found=pcall(api.GetLadder,full,region)
+		if not (ok and found) then return "" end
+
+		-- Any bracket will do: the site stores one spec per character, measured
+		-- across 888 players in more than one bracket with no disagreement.
+		for bracket=1,4 do
+			if found[bracket] then
+				local okIcon,path=pcall(api.GetSpecIcon,found[bracket])
+				if okIcon and path then
+					return (" |T%s:14:14:0:0:64:64:5:59:5:59|t"):format(path)
+				end
+				break
+			end
+		end
+
+		return ""
+	end
+
+	-- Below FactionIconSuffix on purpose: that helper is a local, and a call
+	-- to it from above this line resolves to a global nil rather than to the
+	-- function -- which is how the faction crest broke this block outright.
+	-- A friend's rated PvP, when ArenaPlus is installed and has them.
+	--
+	-- Local to this function for the 200-local reason above.
+	--
+	-- ArenaPlus is optional and absent for most people, so every step is
+	-- guarded: a tooltip that errors because a PvP addon is missing is a worse
+	-- failure than one that quietly says nothing. Nothing here reaches into
+	-- ArenaPlus itself -- only the ArenaPlusAPI table it publishes, which is
+	-- the part it promises not to change under us.
+	--
+	-- Most friends produce nothing: the ladder stops at the Rival cutoff, so
+	-- anybody below it is simply absent and the section is skipped entirely.
+	-- `who` is a list of {name=,realm=}; one entry for a plain WoW friend, and
+	-- one per online session for a BattleTag playing several at once.
+	local function AddPvPLines(who,key)
+		if not (SocialPlus_SavedVars and SocialPlus_SavedVars.pvp_ratings) then return end
+		if not (who and #who>0) then return end
+
+		local api=_G.ArenaPlusAPI
+		if not (api and api.GetLadder) then return end
+
+		-- Looked up first, drawn second.
+		--
+		-- Only characters actually on a ladder are kept, and with none of them
+		-- ranked nothing is drawn at all -- no header, no name, no "not on the
+		-- ladder". A section that exists only to say it has nothing to say is
+		-- worse than no section.
+		--
+		-- Filtering here rather than at the point of drawing also keeps the
+		-- cycle honest: Tab moves between characters that have something to
+		-- show, instead of stepping through blanks.
+		local ranked={}
+		for _,person in ipairs(who) do
+			local full=person.name
+			if person.realm and person.realm~="" then full=person.name.."-"..person.realm end
+
+			-- Their region, not ours. A friend playing EU is on the EU ladder,
+			-- and looking them up in ours finds nothing, which is a different
+			-- thing from being unranked.
+			local region=person.region
+			if not region and api.RegionFromID then region=api.RegionFromID(person.regionID) end
+
+			-- Regions we never scraped cannot answer either way.
+			local usable=not (region and api.HasRegion and not api.HasRegion(region))
+
+			if usable then
+				local ok,found=pcall(api.GetLadder,full,region)
+
+				-- Filtered here, not at drawing time, so a friend ranked only
+				-- in brackets you have switched off counts as having nothing to
+				-- show -- no header, and no place in the Tab cycle.
+				if ok and found then
+					local wanted=SocialPlus_SavedVars.pvp_brackets or {}
+					local kept,any=nil,false
+
+					for bracket=1,4 do
+						if found[bracket] and wanted[bracket] then
+							kept=kept or {}
+							kept[bracket]=found[bracket]
+							any=true
+						end
+					end
+
+					if any then
+						person.ladder=kept
+						ranked[#ranked+1]=person
+					end
+				end
+			end
+		end
+
+		if #ranked==0 then return end
+
+		-- The cycle belongs to one friend. Hovering somebody else starts again
+		-- at their first character rather than carrying an index across.
+		local cycle=SocialPlus_PvPCycle
+		if cycle.key~=key then
+			cycle.key,cycle.index=key,1
+		end
+		cycle.count=#ranked
+		cycle.index=((cycle.index-1)%#ranked)+1
+
+		local pick=ranked[cycle.index]
+
+		-- The spec once, on the heading, rather than against every bracket.
+		--
+		-- Measured before deciding: of 888 players appearing in more than one
+		-- bracket across both regions, *none* carried a different spec between
+		-- them. One spec is stored per character, whichever the profile showed
+		-- so a per-bracket icon was the same picture repeated down the column
+		-- while implying it meant something per line.
+		--
+		-- Any entry will do, since they all carry that one spec.
+		local icon=""
+		if api.GetSpecIcon then
+			for bracket=1,4 do
+				local entry=pick.ladder[bracket]
+				if entry then
+					local okIcon,path=pcall(api.GetSpecIcon,entry)
+					if okIcon and path then
+						icon=("|T%s:14:14:0:0:64:64:5:59:5:59|t"):format(path)
+					end
+					break
+				end
+			end
+		end
+
+		GameTooltip:AddLine(" ")
+
+		-- The spec icon rides with the name where there is a name line, and
+		-- falls back to the heading where there is not.
+		--
+		-- On the name line it sits between the faction crest and the name, so
+		-- the three read as one identity: who, what, where. The heading only
+		-- carries it in the single-character case, where there is no name line
+		-- to put it on and it would otherwise have nowhere to go.
+		local named=#ranked>1
+
+		GameTooltip:AddLine(L.TOOLTIP_PVP_HEADER,1,0.82,0)
+
+		-- Named only when there is a choice to be confused about.
+		--
+		-- With one ranked character the tooltip has already said who this is,
+		-- three lines up -- repeating it under the header is the same name
+		-- twice for no reason. It earns its place only when Tab can change
+		-- which character the ratings below belong to.
+		if named then
+			GameTooltip:AddLine(
+				ClassColourCode(pick.className)..pick.name.."|r"
+				.." "..icon
+				..SocialPlus_FormatRegionText(pick.regionID)
+				..FactionIconSuffix(pick.factionName),1,1,1)
+
+			GameTooltip:AddLine(L.TOOLTIP_PVP_CYCLE:format(cycle.index,#ranked),0.5,0.5,0.5)
+		end
+
+		for bracket=1,4 do
+			local entry=pick.ladder[bracket]
+			if entry then
+				-- Coloured by the title the rating is worth, which only
+				-- ArenaPlus can work out -- it holds the cutoffs.
+				local hex
+				if api.GetRankColour then
+					local okColour,result=pcall(api.GetRankColour,bracket,entry)
+					if okColour then hex=result end
+				end
+
+				local rating=tostring(entry.rating or 0)
+				if hex then rating=("|cff%s%s|r"):format(hex,rating) end
+
+				GameTooltip:AddLine(L.TOOLTIP_PVP_LINE:format(
+					(api.BRACKETS and api.BRACKETS[bracket]) or "?",
+					rating,entry.rank or 0),0.8,0.8,0.8)
+			end
+		end
 	end
 
 	-- "Zone:" / "Realm:" labels come from Blizzard's own globals so they stay
@@ -7028,6 +7726,14 @@ function SocialPlus_ShowRowTooltip(button)
 			GameTooltip:AddLine(FRIENDS_LIST_OFFLINE,0.6,0.6,0.6)
 		end
 		AddNoteLine(info.notes)
+		AddPvPLines({ {
+			name=wowName, realm=wowRealm, className=info.className,
+			regionID=GetCurrentRegion and GetCurrentRegion() or nil,
+			-- A friends-list friend is on your realm and so your faction; the
+			-- game does not report one for them because there is nothing to
+			-- report.
+			factionName=UnitFactionGroup and UnitFactionGroup("player") or nil,
+		} },"wow:"..tostring(button.id))
 	else
 		local accountName,characterName,class,level,_,isOnline,_,client,canCoop,wowProjectID,lastOnline,
 			isAFK,isGameAFK,isDND,isGameBusy,mobile,zoneName,gameText,realmName=GetFriendInfoById(button.id)
@@ -7058,7 +7764,10 @@ function SocialPlus_ShowRowTooltip(button)
 				if wowProjectID==WOW_PROJECT_ID then
 					-- Region goes on the name line here -- there's no separate
 					-- version line in this branch to carry it instead.
-					GameTooltip:AddLine(FactionIconPrefix(friendFaction)..classColor..charLabel..SocialPlus_FormatRegionText(regionID).."|r",1,1,1)
+					GameTooltip:AddLine(classColor..charLabel.."|r"
+						..SpecIconFor(characterName,realmName,regionID)
+						..SocialPlus_FormatRegionText(regionID)
+						..FactionIconSuffix(friendFaction),1,1,1)
 					if level and level~=0 then
 						GameTooltip:AddLine(format(FRIENDS_LEVEL_TEMPLATE,level,class or ""),0.8,0.8,0.8)
 					end
@@ -7105,8 +7814,14 @@ function SocialPlus_ShowRowTooltip(button)
 					-- Region goes on the version line here instead (e.g.
 					-- "Retail (EU)") -- putting it on the name line too gave
 					-- a duplicate "(NA) ... (NA)" (reported live).
-					GameTooltip:AddLine(FactionIconPrefix(friendFaction)..classColor..charLabel.."|r",1,1,1)
-					GameTooltip:AddLine(SocialPlus_GetVersionLabelText(wowProjectID)..SocialPlus_FormatRegionText(regionID),0.6,0.6,0.6)
+					GameTooltip:AddLine(classColor..charLabel.."|r"
+						..SpecIconFor(characterName,realmName,regionID)
+						..FactionIconSuffix(friendFaction),1,1,1)
+					-- The region belongs here in this branch, not on the name
+					-- line: this one has a version line to hang it off, and
+					-- saying it in both places gave a duplicate "(NA) ... (NA)".
+					GameTooltip:AddLine(SocialPlus_GetVersionLabelText(wowProjectID)
+						..SocialPlus_FormatRegionText(regionID),0.6,0.6,0.6)
 					-- Same labelled realm line as the branch above, so the two
 					-- kinds of friend don't disagree about where the realm goes.
 					if hasRealm then
@@ -7124,11 +7839,11 @@ function SocialPlus_ShowRowTooltip(button)
 				local otherAccounts=SocialPlus_GetOnlineWoWGameAccounts(button.id)
 				for _,acct in ipairs(otherAccounts) do
 					if not (acct.characterName==characterName and (acct.realmName or "")==(realmName or "")) then
-						local otherLabel=FactionIconPrefix(acct.factionName)..ClassColourCode(acct.className)..(acct.characterName or UNKNOWN).."|r"
+						local otherLabel=ClassColourCode(acct.className)..(acct.characterName or UNKNOWN).."|r"
 						if acct.realmName and acct.realmName~="" then
 							otherLabel=otherLabel.."-"..acct.realmName
 						end
-						otherLabel=otherLabel..SocialPlus_FormatRegionText(acct.regionID)
+						otherLabel=otherLabel..SocialPlus_FormatRegionText(acct.regionID)..FactionIconSuffix(acct.factionName)
 						if acct.wowProjectID and acct.wowProjectID~=WOW_PROJECT_ID then
 							otherLabel=otherLabel.." - "..SocialPlus_GetVersionLabelText(acct.wowProjectID)
 						end
@@ -7149,6 +7864,40 @@ function SocialPlus_ShowRowTooltip(button)
 
 		AddNoteLine(noteText)
 		AddBroadcastLine(messageText)
+
+		-- Only for a character on this same game. A Battle.net friend may be
+		-- playing retail, another classic version, or not WoW at all, and our
+		-- ladder describes none of those -- a name that happened to collide
+		-- would otherwise be given somebody else's rating.
+		-- Every WoW session this BattleTag has online, not merely the one
+		-- Blizzard picked to report. Same enumeration the "Also online" line
+		-- uses, filtered to this game version -- our ladder describes no other.
+		local characters={}
+
+		local function Consider(name,realm,regionID,projectID,className,factionName)
+			if not (name and name~="") then return end
+			if projectID and projectID~=WOW_PROJECT_ID then return end
+
+			for _,had in ipairs(characters) do
+				if had.name==name and (had.realm or "")==(realm or "") then return end
+			end
+
+			characters[#characters+1]={
+				name=name, realm=realm, regionID=regionID,
+				className=className, factionName=factionName,
+			}
+		end
+
+		if client==BNET_CLIENT_WOW then
+			Consider(characterName,realmName,regionID,wowProjectID,class,friendFaction)
+		end
+
+		for _,acct in ipairs(SocialPlus_GetOnlineWoWGameAccounts(button.id)) do
+			Consider(acct.characterName,acct.realmName,acct.regionID,acct.wowProjectID,
+				acct.className,acct.factionName)
+		end
+
+		AddPvPLines(characters,"bnet:"..tostring(button.id))
 	end
 
 	SocialPlus_MakeTooltipOpaque()
@@ -7159,6 +7908,16 @@ function SocialPlus_HideRowTooltip()
 	if GameTooltip then
 		GameTooltip:Hide()
 		GameTooltip.SocialPlusShownKey=nil
+	end
+
+	-- Tab belongs to the game again the moment the tooltip is gone.
+	local cycle=SocialPlus_PvPCycle
+	if cycle and cycle.button then
+		local row=cycle.button
+		cycle.button=nil
+		row:SetScript("OnKeyDown",nil)
+		if row.SetPropagateKeyboardInput then row:SetPropagateKeyboardInput(true) end
+		row:EnableKeyboard(false)
 	end
 end
 
@@ -7188,6 +7947,34 @@ local function SocialPlus_OnEnter(self)
 		SocialPlus_HideRowTooltip()
 	else
 		SocialPlus_ShowRowTooltip(self)
+
+		-- Tab cycles the PvP block through a friend's online characters.
+		--
+		-- Only while the cursor is on a row, and only while that friend has
+		-- more than one: Tab is the targeting key, and taking it for a tooltip
+		-- any longer than that would be indefensible. Everything else is passed
+		-- straight through, so typing is unaffected.
+		-- Without SetPropagateKeyboardInput there is no way to let every other
+		-- key through, and a row that eats the whole keyboard while hovered is
+		-- far worse than one that does not cycle. So on a client without it,
+		-- this simply does not happen -- the tooltip still names the character.
+		local cycle=SocialPlus_PvPCycle
+		if cycle and (cycle.count or 1)>1 and self.SetPropagateKeyboardInput then
+			cycle.button=self
+			self:EnableKeyboard(true)
+			self:SetPropagateKeyboardInput(true)
+
+			self:SetScript("OnKeyDown",function(row,key)
+				if key~="TAB" or not SocialPlus_PvPCycle or (SocialPlus_PvPCycle.count or 1)<=1 then
+					row:SetPropagateKeyboardInput(true)
+					return
+				end
+
+				row:SetPropagateKeyboardInput(false)
+				SocialPlus_PvPCycle.index=SocialPlus_PvPCycle.index+1
+				SocialPlus_ShowRowTooltip(row)
+			end)
+		end
 	end
 
 	-- While a group-header drag is active, track which group the cursor is over
@@ -8004,6 +8791,57 @@ end
 -- SocialPlus_UpdateFriendButton, which is defined earlier in this file, so
 -- a local here wouldn't be visible there as an upvalue (same class of
 -- forward-reference issue as SocialPlus_NormalizeRealmForCompare earlier).
+-- The region as a little flag, or as letters.
+--
+-- Its own copy of the art rather than ArenaPlus's, even though that addon has
+-- the same two files: SocialPlus already treats ArenaPlus as optional -- the
+-- spec icons simply do not appear without it -- and a friends list quietly
+-- losing its flags because a different addon was disabled would be a puzzle
+-- nobody could solve from the outside.
+--
+-- Both flags are drawn at one shape, 1.67 wide to 1 tall, which is neither's
+-- true proportion: the American flag is 19:10 and the European 3:2, and side by
+-- side at the same height that difference reads as a mistake rather than as a
+-- fact about flags.
+-- One table, and a global rather than two more locals.
+--
+-- This file's main chunk sits exactly on Lua's limit of 200 locals, and adding
+-- two went over it: "main function has more than 200 local variables". Anything
+-- declared at file scope here has to earn its slot, and constants do not need
+-- one.
+SocialPlus_RegionFlagArt={
+	aspect=1.67,
+	[1]={ texture="Interface\\AddOns\\SocialPlus\\Media\\region-us", texels={ 23,105,10,54 } },
+	[3]={ texture="Interface\\AddOns\\SocialPlus\\Media\\region-eu", texels={ 23,105,4,59 } },
+}
+
+function SocialPlus_FormatRegionFlag(regionID,height)
+	if not (SocialPlus_SavedVars and SocialPlus_SavedVars.region_flag) then return nil end
+
+	local art=SocialPlus_RegionFlagArt
+	local flag=regionID and art and art[regionID]
+	if not flag then return nil end
+
+	height=height or 12
+
+	return ("|T%s:%d:%d:0:0:128:64:%d:%d:%d:%d|t"):format(
+		flag.texture,height,math.floor(height*art.aspect+0.5),
+		flag.texels[1],flag.texels[2],flag.texels[3],flag.texels[4])
+end
+
+-- What the row draws beside a name: the flag, and the spec icon.
+--
+-- Both answer nil rather than something blank, so the row can tell "nothing to
+-- show" from "something to show" and lay its chain out accordingly.
+
+function SocialPlus_RowRegionFlag(button)
+	if not (SocialPlus_SavedVars and SocialPlus_SavedVars.region_flag) then return nil end
+	if not button then return nil end
+
+	local art=SocialPlus_RegionFlagArt
+	return art and button.SocialPlusRegionID and art[button.SocialPlusRegionID] or nil
+end
+
 function SocialPlus_FormatRegionText(regionID)
 	if regionID==1 then
 		return " ("..L.REGION_NA..")"
@@ -8598,7 +9436,7 @@ SocialPlus_VersionAlertShown=false
 
 -- Our own version, straight from the .toc, or nil when running unpackaged.
 --
--- The packager substitutes "@project-version@" with the real tag across
+-- The packager substitutes "1.13c" with the real tag across
 -- EVERY packaged file -- so the sentinel we compare against has to be built
 -- from pieces, or it gets substituted too and the comparison silently
 -- becomes 'version ~= version' (this exact self-defeating bug shipped once
@@ -8778,6 +9616,22 @@ end
 -- [[ Initialization on PLAYER_LOGIN ]]
 
 frame:SetScript("OnEvent",function(self,event,...)
+	-- A fresh login empties the recently-added group; a /reload does not.
+	--
+	-- The distinction is the whole reason the group can be session-scoped and
+	-- still survive reloading: isInitialLogin and isReloadingUi arrive as the
+	-- two arguments of this event, and nothing else in the client tells them
+	-- apart afterwards.
+	if event=="PLAYER_ENTERING_WORLD" then
+		local isInitialLogin=...
+		if isInitialLogin and SocialPlus_StartFriendSession then
+			-- Late enough that the friends list is readable; the snapshot is
+			-- worthless if taken before the client has filled it in.
+			C_Timer.After(5,SocialPlus_StartFriendSession)
+		end
+		return
+	end
+
 	if event=="PLAYER_LOGIN" then
 		SocialPlus_EnsureSavedVars()
 		SocialPlus_ApplyToastCVars()
