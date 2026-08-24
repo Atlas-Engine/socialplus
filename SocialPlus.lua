@@ -4156,53 +4156,32 @@ end
 	-- After the guards on purpose: a call that bails because the panel is
 	-- hidden costs nothing and must not be counted as work.
 	--
-	-- Skip the whole per-friend derivation while scrolling, when nothing has
-	-- changed.
-	--
-	-- Blizzard's HybridScrollFrame fires FriendsList_Update as you scroll, and
-	-- our hook turned each one into a full rebuild of all 866 friends to
-	-- produce a list identical to the one just built -- only the viewport had
-	-- moved. Measured at ~32ms a time, 35 times in 15 seconds of use, which was
-	-- ~70% of all the CPU this addon spent and arrived as two dropped frames
-	-- each.
-	--
-	-- This enforces the policy the scroll handler already intends rather than
-	-- inventing one: it renders during a scroll and schedules a real
-	-- SocialPlus_Update(true) 0.15s after scrolling stops (see the settle
-	-- ticker). Anything that changes mid-scroll is therefore picked up either
-	-- by the dirty check right here or by that settle pass moments later.
-	--
-	-- BOTH conditions are required, which is what makes it safe: a forced
-	-- caller always rebuilds, and any registered event sets DATA_DIRTY. A
-	-- missed invalidation source degrades to "rebuilt when it needn't have",
-	-- never to a stale list -- which is the failure mode that got an earlier,
-	-- broader dirty-check reverted.
-	-- The three counters record WHY a pass was or wasn't skipped, so a skip
-	-- that never fires can be told apart from one that fires and doesn't help.
-	local sinceScroll=SOCIALPLUS_LAST_SCROLL and ((GetTime and GetTime() or 0)-SOCIALPLUS_LAST_SCROLL)
 	if forceUpdate then
 		SOCIALPLUS_SKIP_FORCED=(SOCIALPLUS_SKIP_FORCED or 0)+1
-		-- Attribution, off unless /spsim rate turns it on. There are 19 forced
-		-- call sites and knowing the count without knowing WHICH has already
-		-- sent two fixes at the wrong one. debugstack is not cheap, hence the
-		-- flag -- but forced passes run about once a second, so when it is on
-		-- the cost is irrelevant next to the 32ms it is measuring.
+		-- Attribution, off unless /spsim rate turns it on. Knowing how many
+		-- passes were forced without knowing WHICH call site forced them sent
+		-- two fixes at the wrong target; naming them found the two settle
+		-- timers in one run. debugstack is not cheap, hence the flag -- but
+		-- forced passes run about once a second, so while it is on the cost is
+		-- irrelevant next to the 32ms it is measuring.
 		if SOCIALPLUS_TRACE_FORCED and debugstack then
 			local where=debugstack(2,1,0)
 			where=where and where:match("([%w_%-%.]+%.lua:%d+)") or "?"
 			SOCIALPLUS_FORCED_CALLERS=SOCIALPLUS_FORCED_CALLERS or {}
 			SOCIALPLUS_FORCED_CALLERS[where]=(SOCIALPLUS_FORCED_CALLERS[where] or 0)+1
 		end
-	elseif SOCIALPLUS_DATA_DIRTY then
-		SOCIALPLUS_SKIP_DIRTY=(SOCIALPLUS_SKIP_DIRTY or 0)+1
-	elseif not (sinceScroll and sinceScroll<0.2) then
-		SOCIALPLUS_SKIP_NOSCROLL=(SOCIALPLUS_SKIP_NOSCROLL or 0)+1
-	else
-		SOCIALPLUS_SKIPPED=(SOCIALPLUS_SKIPPED or 0)+1
-		-- Render only: the rows still have to move.
-		SocialPlus_UpdateFriends()
-		return
 	end
+
+	-- Cleared once the derivation below is about to run, so the two settle
+	-- timers can tell whether anything actually changed while they waited.
+	-- Set by any registered event (see the OnEvent handler).
+	--
+	-- There is deliberately no "skip the pass while scrolling" check here any
+	-- more. One was tried, and measured: it fired 0, 1 and 0 times across three
+	-- runs, because the passes it aimed at were never Blizzard's scroll-driven
+	-- FriendsList_Update -- they were this addon's own settle timers, which the
+	-- attribution above identified. The flag stays because those timers read
+	-- it; the skip went because it did nothing.
 	SOCIALPLUS_DATA_DIRTY=false
 
 	SOCIALPLUS_DATA_PASS_COUNT=(SOCIALPLUS_DATA_PASS_COUNT or 0)+1
@@ -10072,13 +10051,6 @@ frame:SetScript("OnEvent",function(self,event,...)
 			SocialPlus_HideRowTooltip()
 			SocialPlus_ScrollDirty=true
 			SocialPlus_LastScrollTick=GetTime()
-			-- Same instant, but on a global so SocialPlus_Update can read it.
-			-- The local above is scoped to this closure, and the check that
-			-- needs it lives far earlier in the file. See the scroll-window
-			-- skip in SocialPlus_Update: this line is what tells it that a
-			-- FriendsList_Update arriving right now is Blizzard's scroll
-			-- machinery, not a change in the friend list.
-			SOCIALPLUS_LAST_SCROLL=SocialPlus_LastScrollTick
 			SocialPlus_UpdateFriends()
 			-- Cache the value as it settled AFTER rendering, not the value
 			-- that triggered this call -- SocialPlus_UpdateFriends clamps

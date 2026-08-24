@@ -976,15 +976,12 @@ local function RateStop()
 			RATE.total - dataPasses)
 	end
 
-	-- Why the scroll-window skip did or did not fire. A data pass that was
-	-- never a candidate is a different problem from one that was and lost.
-	local skipped = (SOCIALPLUS_SKIPPED or 0) - (RATE.lastSkip or 0)
-	local dirty   = (SOCIALPLUS_SKIP_DIRTY or 0) - (RATE.lastDirty or 0)
-	local noScroll= (SOCIALPLUS_SKIP_NOSCROLL or 0) - (RATE.lastNoScroll or 0)
-	local forced  = (SOCIALPLUS_SKIP_FORCED or 0) - (RATE.lastForced or 0)
-	if skipped + dirty + noScroll + forced > 0 then
-		Say("  data passes: |cff00ff00%d skipped|r, %d blocked by a change, %d not scrolling, %d forced",
-			skipped, dirty, noScroll, forced)
+	-- How many were forced by our own code rather than driven by Blizzard's
+	-- FriendsList_Update. The split matters: the two are fixed differently.
+	local forced = (SOCIALPLUS_SKIP_FORCED or 0) - (RATE.lastForced or 0)
+	if dataPasses > 0 then
+		Say("  of those, |cffffffff%d forced|r by this addon and %d from Blizzard's update",
+			forced, dataPasses - forced)
 	end
 
 	-- Which call sites forced them, busiest first. Counting forced passes
@@ -1036,9 +1033,6 @@ local function ToggleRate()
 	RATE.lastReq = SOCIALPLUS_REBUILD_REQUESTS or 0
 	RATE.lastData = SOCIALPLUS_DATA_PASS_COUNT or 0
 	RATE.lastMs = SOCIALPLUS_RENDER_MS or 0
-	RATE.lastSkip = SOCIALPLUS_SKIPPED or 0
-	RATE.lastDirty = SOCIALPLUS_SKIP_DIRTY or 0
-	RATE.lastNoScroll = SOCIALPLUS_SKIP_NOSCROLL or 0
 	RATE.lastForced = SOCIALPLUS_SKIP_FORCED or 0
 	-- Fresh attribution table each run, and tracing on only while counting.
 	SOCIALPLUS_FORCED_CALLERS = {}
