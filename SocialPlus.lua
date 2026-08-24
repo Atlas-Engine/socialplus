@@ -2153,15 +2153,27 @@ local function GetFriendInfoById(id)
 			-- the original unconditional fallback: BNGetFriendInfo (pos
 			-- 10/11) and BNGetGameAccountInfo (pos 18/19) are what actually
 			-- reflect true AFK/DND for most friends on this client family.
+			--
+			-- Positional destructure rather than {tuple} wrappers. These two
+			-- calls run once per online friend per rebuild, and wrapping each
+			-- in a table threw away two ~19-slot tables per friend every time
+			-- -- roughly 1700 of them per rebuild on an 800-friend list. That
+			-- is the same GC churn SocialPlus_GetBNetSortName was rewritten to
+			-- avoid ("reported live as GC-churn memory peaks"), and collecting
+			-- it is exactly what a lag SPIKE looks like.
+			--
+			-- Same positions as before: BNGetFriendInfo 6=gameAccountID,
+			-- 10=isAFK, 11=isDND; BNGetGameAccountInfo 18=isGameAFK,
+			-- 19=isGameBusy.
 			if BNGetFriendInfo then
-				local ft={BNGetFriendInfo(id)}
-				isAFK=ft[10] or false
-				isDND=ft[11] or false
-				local gameAcctId=ft[6]
+				local _,_,_,_,_,gameAcctId,_,_,_,ftAFK,ftDND=BNGetFriendInfo(id)
+				isAFK=ftAFK or false
+				isDND=ftDND or false
 				if gameAcctId and BNGetGameAccountInfo then
-					local g={BNGetGameAccountInfo(gameAcctId)}
-					isGameAFK=g[18] or false
-					isGameBusy=g[19] or false
+					local _,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,gAFK,gBusy=
+						BNGetGameAccountInfo(gameAcctId)
+					isGameAFK=gAFK or false
+					isGameBusy=gBusy or false
 				end
 			end
 			mobile=accountInfo.isWowMobile
