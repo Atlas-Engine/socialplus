@@ -2407,7 +2407,15 @@ local function SocialPlus_GetBNetButtonNameText(accountName,client,canCoop,chara
 
 	-- Abbreviated for the row only; every other use of accountName keeps the
 	-- full name (see SocialPlus_AbbreviateRealName).
+	local beforeAbbrev=accountName
 	accountName=SocialPlus_AbbreviateRealName(accountName)
+
+	-- TEMPORARY: proves whether this builder runs, and what it did.
+	-- Only fires for names with a space, so it cannot spam a normal list.
+	-- Remove once the question is answered.
+	if SOCIALPLUS_TRACE_NAMES and type(beforeAbbrev)=="string" and beforeAbbrev:find(" ") then
+		print(("|cff33ff99SP|r builder: %s -> %s"):format(tostring(beforeAbbrev),tostring(accountName)))
+	end
 
 	-- Class color, when known and enabled, applies to the WHOLE line --
 	-- the Battle.net name too, not just the "(CharacterName)" part -- so
