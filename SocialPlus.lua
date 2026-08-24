@@ -4168,6 +4168,17 @@ end
 	local sinceScroll=SOCIALPLUS_LAST_SCROLL and ((GetTime and GetTime() or 0)-SOCIALPLUS_LAST_SCROLL)
 	if forceUpdate then
 		SOCIALPLUS_SKIP_FORCED=(SOCIALPLUS_SKIP_FORCED or 0)+1
+		-- Attribution, off unless /spsim rate turns it on. There are 19 forced
+		-- call sites and knowing the count without knowing WHICH has already
+		-- sent two fixes at the wrong one. debugstack is not cheap, hence the
+		-- flag -- but forced passes run about once a second, so when it is on
+		-- the cost is irrelevant next to the 32ms it is measuring.
+		if SOCIALPLUS_TRACE_FORCED and debugstack then
+			local where=debugstack(2,1,0)
+			where=where and where:match("([%w_%-%.]+%.lua:%d+)") or "?"
+			SOCIALPLUS_FORCED_CALLERS=SOCIALPLUS_FORCED_CALLERS or {}
+			SOCIALPLUS_FORCED_CALLERS[where]=(SOCIALPLUS_FORCED_CALLERS[where] or 0)+1
+		end
 	elseif SOCIALPLUS_DATA_DIRTY then
 		SOCIALPLUS_SKIP_DIRTY=(SOCIALPLUS_SKIP_DIRTY or 0)+1
 	elseif not (sinceScroll and sinceScroll<0.2) then

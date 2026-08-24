@@ -987,6 +987,20 @@ local function RateStop()
 			skipped, dirty, noScroll, forced)
 	end
 
+	-- Which call sites forced them, busiest first. Counting forced passes
+	-- without naming them has already misdirected two fixes.
+	SOCIALPLUS_TRACE_FORCED = false
+	local callers = SOCIALPLUS_FORCED_CALLERS
+	if type(callers) == "table" and next(callers) then
+		local list = {}
+		for where, n in pairs(callers) do list[#list + 1] = { where = where, n = n } end
+		table.sort(list, function(a, b) return a.n > b.n end)
+		Say("  forced by:")
+		for i = 1, math.min(#list, 6) do
+			print(("    |cffffffff%3d|r  %s"):format(list[i].n, list[i].where))
+		end
+	end
+
 	-- The number that was missing: what a render actually costs.
 	local renderMs = (SOCIALPLUS_RENDER_MS or 0) - (RATE.lastMs or 0)
 	if renderMs > 0 and RATE.total > 0 then
@@ -1026,6 +1040,9 @@ local function ToggleRate()
 	RATE.lastDirty = SOCIALPLUS_SKIP_DIRTY or 0
 	RATE.lastNoScroll = SOCIALPLUS_SKIP_NOSCROLL or 0
 	RATE.lastForced = SOCIALPLUS_SKIP_FORCED or 0
+	-- Fresh attribution table each run, and tracing on only while counting.
+	SOCIALPLUS_FORCED_CALLERS = {}
+	SOCIALPLUS_TRACE_FORCED = true
 	RATE.started = (GetTime and GetTime()) or 0
 	RATE.recent = {}
 	RATE.on = true
