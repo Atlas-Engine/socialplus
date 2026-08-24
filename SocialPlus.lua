@@ -2554,12 +2554,61 @@ function SocialPlus_StartFriendSession()
 	if not SocialPlus_SavedVars then return end
 	SocialPlus_SavedVars.recent={}
 	SocialPlus_SavedVars.known=SocialPlus_CollectFriendKeys()
+	-- Primed to match the snapshot so the first rebuild afterwards does not
+	-- see a changed count and rescan the list it was just handed.
+	local bnet=(FG_BNGetNumFriends and FG_BNGetNumFriends()) or 0
+	local wow=(C_FriendList and C_FriendList.GetNumFriends and C_FriendList.GetNumFriends()) or 0
+	SOCIALPLUS_LAST_FRIEND_COUNT=bnet+wow
+end
+
+-- Waits for the list to STOP GROWING rather than trusting a fixed delay.
+--
+-- BNGetFriendInfo answers nothing for a friend whose account data has not
+-- streamed in yet, so a snapshot taken mid-stream records only part of the
+-- list. Everyone arriving afterwards is then absent from `known`, and the next
+-- rebuild files them all under "Recently Added" -- exactly what the snapshot
+-- exists to prevent, just moved later. A fixed five seconds was a guess that a
+-- slow login or a large Battle.net list can beat.
+--
+-- Two consecutive reads agreeing is the signal. Bounded so that a genuinely
+-- empty list (which never grows) still starts a session promptly, and a list
+-- that somehow never settles cannot poll forever.
+function SocialPlus_StartFriendSessionWhenReady(tries,lastCount)
+	tries=(tries or 0)+1
+
+	local count=0
+	for _ in pairs(SocialPlus_CollectFriendKeys()) do count=count+1 end
+
+	if (lastCount and count==lastCount) or tries>=10 then
+		SocialPlus_StartFriendSession()
+		return
+	end
+
+	C_Timer.After(2,function()
+		SocialPlus_StartFriendSessionWhenReady(tries,count)
+	end)
 end
 
 -- Anyone on the list who was not there at login. Called from the rebuild, so an
 -- addition is noticed as soon as anything redraws.
 function SocialPlus_NoteNewFriends()
 	if not (SocialPlus_SavedVars and SocialPlus_SavedVars.known) then return end
+
+	-- Gated on the friend count changing, because the scan below costs one
+	-- BNGetFriendInfo per friend and this is called from every rebuild --
+	-- including collapsing a group, scrolling, and toggling offline friends,
+	-- none of which can add anybody. On a large list that was hundreds of API
+	-- calls to re-answer a question whose inputs had not moved.
+	--
+	-- Counts are the cheap gate: nobody can appear without the total changing.
+	-- The one case this misses is a removal and an addition between the same
+	-- two rebuilds, which leaves the total equal -- that friend simply is not
+	-- flagged as recent, which is a far better trade than rescanning always.
+	local bnet=(FG_BNGetNumFriends and FG_BNGetNumFriends()) or 0
+	local wow=(C_FriendList and C_FriendList.GetNumFriends and C_FriendList.GetNumFriends()) or 0
+	local total=bnet+wow
+	if SOCIALPLUS_LAST_FRIEND_COUNT==total then return end
+	SOCIALPLUS_LAST_FRIEND_COUNT=total
 
 	SocialPlus_SavedVars.recent=type(SocialPlus_SavedVars.recent)=="table"
 		and SocialPlus_SavedVars.recent or {}
@@ -2596,13 +2645,26 @@ end
 -- extra bookkeeping.
 -- Global for the 200-locals reason above.
 function SocialPlus_IsRecent(buttonType,id,groups)
-	if SocialPlus_IsFavorite(buttonType,id) then return false end
-
 	local recent=SocialPlus_SavedVars and SocialPlus_SavedVars.recent
 	if not recent then return false end
 
+	-- Nothing recent at all is the normal state, and it is answerable without
+	-- touching the friend APIs. Checked FIRST because this runs once per friend
+	-- per rebuild in two separate loops, and every step below costs a
+	-- BNGetFriendInfo.
+	if not next(recent) then return false end
+
+	-- One key derivation, not two. This used to call SocialPlus_IsFavorite
+	-- first, which derives the very same key through its own
+	-- BNGetFriendInfo -- so every friend paid for the lookup twice before
+	-- anything had even been decided.
 	local key=SocialPlus_GetFavoriteKey(buttonType,id)
 	if not (key and recent[key]) then return false end
+
+	-- The favourite test, inlined against the key already in hand: a
+	-- favourited friend belongs in Favorites rather than here.
+	local favorites=SocialPlus_SavedVars.favorites
+	if favorites and favorites[key]==true then return false end
 
 	-- groups carries "" alone when the friend has no tags at all.
 	if groups then
@@ -7677,6 +7739,15 @@ function SocialPlus_ShowRowTooltip(button)
 		return
 	end
 
+	-- Cleared before anything is drawn, and re-set by AddPvPLines only if it
+	-- actually draws a block. Every one of that function's early exits -- the
+	-- setting off, ArenaPlus absent, nobody ranked -- used to leave the
+	-- PREVIOUS friend's count in place, and the OnEnter handler reads it to
+	-- decide whether to capture Tab. So hovering someone with several ranked
+	-- characters and then hovering anyone else armed the capture on a row with
+	-- nothing to cycle, and Tab -- the targeting key -- was swallowed there.
+	SocialPlus_PvPCycle.count=0
+
 	-- ANCHOR_RIGHT on a pooled HybridScrollFrame row anchored the tooltip
 	-- near the top of the screen instead of next to the actual row
 	-- (reported live) -- these buttons don't always report reliable
@@ -9624,10 +9695,12 @@ frame:SetScript("OnEvent",function(self,event,...)
 	-- apart afterwards.
 	if event=="PLAYER_ENTERING_WORLD" then
 		local isInitialLogin=...
-		if isInitialLogin and SocialPlus_StartFriendSession then
-			-- Late enough that the friends list is readable; the snapshot is
-			-- worthless if taken before the client has filled it in.
-			C_Timer.After(5,SocialPlus_StartFriendSession)
+		if isInitialLogin and SocialPlus_StartFriendSessionWhenReady then
+			-- Deliberately NOT a fixed delay -- see that function: it retries
+			-- until the friend list stops growing, because a snapshot taken
+			-- while Battle.net is still streaming marks the remainder of the
+			-- list as newly added.
+			C_Timer.After(2,SocialPlus_StartFriendSessionWhenReady)
 		end
 		return
 	end
