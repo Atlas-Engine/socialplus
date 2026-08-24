@@ -10067,7 +10067,20 @@ frame:SetScript("OnEvent",function(self,event,...)
 		C_Timer.NewTicker(0.1,function()
 			if SocialPlus_ScrollDirty and (GetTime()-SocialPlus_LastScrollTick)>=0.15 then
 				SocialPlus_ScrollDirty=false
-				SocialPlus_Update(true)
+				-- A full data pass ONLY if something actually changed while
+				-- scrolling. Measured: this settle was 36 of 41 data passes in
+				-- a 16-second run -- ~32ms each, re-deriving all 866 friends to
+				-- rebuild a list that scrolling cannot have altered.
+				--
+				-- What the settle is for is finishing the render once the rows
+				-- have stopped moving, and SocialPlus_UpdateFriends is that.
+				-- The per-friend derivation was only ever coming along for the
+				-- ride because SocialPlus_Update(true) is the whole pipeline.
+				if SOCIALPLUS_DATA_DIRTY then
+					SocialPlus_Update(true)
+				else
+					SocialPlus_UpdateFriends()
+				end
 			end
 		end)
 
