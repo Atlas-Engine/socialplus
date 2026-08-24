@@ -934,7 +934,12 @@ local function RateStop()
 	if RATE.frame then RATE.frame:SetScript("OnUpdate", nil) end
 
 	local secs = math.max(((GetTime and GetTime()) or 0) - RATE.started, 0.001)
+	local requests = (SOCIALPLUS_REBUILD_REQUESTS or 0) - (RATE.lastReq or 0)
 	Say("rebuilds: |cffffffff%d|r over %.1fs (%.2f/s)", RATE.total, secs, RATE.total / secs)
+	if requests > RATE.total then
+		Say("  asked for %d, coalesced away |cff00ff00%d|r (%.0f%%)",
+			requests, requests - RATE.total, (requests - RATE.total) / requests * 100)
+	end
 	Say("  most in one frame: |cffffffff%d|r    most within %dms: |cffffffff%d|r",
 		RATE.maxFrame, WINDOW * 1000, RATE.maxWindow)
 
@@ -958,6 +963,7 @@ local function ToggleRate()
 
 	RATE.total, RATE.maxFrame, RATE.maxWindow = 0, 0, 0
 	RATE.last = SOCIALPLUS_REBUILD_COUNT
+	RATE.lastReq = SOCIALPLUS_REBUILD_REQUESTS or 0
 	RATE.started = (GetTime and GetTime()) or 0
 	RATE.recent = {}
 	RATE.on = true

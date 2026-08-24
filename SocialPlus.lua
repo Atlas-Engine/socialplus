@@ -3639,7 +3639,11 @@ local function SocialPlus_UpdateFriends()
 	-- One increment on a global. Left in the shipped build deliberately: it
 	-- costs nothing measurable, and the alternative is that this can only ever
 	-- be measured by first editing the addon.
-	SOCIALPLUS_REBUILD_COUNT=(SOCIALPLUS_REBUILD_COUNT or 0)+1
+	--
+	-- REQUESTS counts every call, REBUILD_COUNT further down counts the ones
+	-- that actually did the work. The gap between them is what the coalescing
+	-- below is saving.
+	SOCIALPLUS_REBUILD_REQUESTS=(SOCIALPLUS_REBUILD_REQUESTS or 0)+1
 	-- Defensive reentrancy guard: this function calls
 	-- scrollFrame.scrollBar:SetValue() below, which could plausibly
 	-- re-enter this function synchronously via the scrollbar's own
@@ -3649,7 +3653,42 @@ local function SocialPlus_UpdateFriends()
 	-- calls below, now made conditional / removed) -- kept anyway as cheap
 	-- insurance against genuine synchronous reentrancy from any source.
 	if SocialPlus_InUpdateFriends then return end
+
+	-- Same-frame coalescing.
+	--
+	-- Measured with /spsim rate over an 800-friend list: up to 3 rebuilds
+	-- landed in ONE frame and 10 within 250ms, at ~32ms each -- roughly 95ms
+	-- spent in a single frame. The guard above does not catch those: they are
+	-- separate sequential calls from different sources (the FriendsList_Update
+	-- hook and the scroll handler, which calls this directly), not nested ones.
+	--
+	-- Only the SAME frame is collapsed, and that limit is deliberate. Rebuilds
+	-- spaced ACROSS frames are load-bearing here -- the panel-open settle pass
+	-- depends on running again after the content height has moved, and dropping
+	-- one of those previously took the open path from 3 rebuilds to 15. A
+	-- general debounce was tried in this area before and reverted.
+	--
+	-- The first call in a frame still runs immediately, so nothing renders a
+	-- frame late. Every later call in that same frame folds into ONE catch-up
+	-- rebuild next frame: deferred, never dropped, so no state change is lost.
+	--
+	-- Placed BEFORE SocialPlus_InUpdateFriends is set: returning after that
+	-- flag is raised would leave it stuck true and kill every future rebuild.
+	local nowFrame=(GetTime and GetTime()) or 0
+	if SocialPlus_LastRebuildFrame==nowFrame and C_Timer and C_Timer.After then
+		if not SocialPlus_RebuildQueued then
+			SocialPlus_RebuildQueued=true
+			C_Timer.After(0,function()
+				SocialPlus_RebuildQueued=false
+				SocialPlus_UpdateFriends()
+			end)
+		end
+		return
+	end
+	SocialPlus_LastRebuildFrame=nowFrame
+
 	SocialPlus_InUpdateFriends=true
+	SOCIALPLUS_REBUILD_COUNT=(SOCIALPLUS_REBUILD_COUNT or 0)+1
 
 	local scrollFrame=FriendsScrollFrame
 	local buttons=scrollFrame.buttons
