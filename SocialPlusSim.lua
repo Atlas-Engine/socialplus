@@ -547,6 +547,26 @@ local function InstallShims()
 			if not rec or n ~= 1 then return nil end
 			return GameAccountInfo(rec)
 		end
+
+		-- Resolves a game account ID back to its info, which the shims above
+		-- cannot cover: they are all indexed by friend position, and this one
+		-- takes the ID handed out by BNGetFriendInfo.
+		--
+		-- Needed because Blizzard's own FriendsFrame_UpdateFriendButton calls
+		-- it and then indexes the result without a nil check. Clicking a
+		-- simulated friend ran Blizzard's update path, which asked about a fake
+		-- game account ID, got nil from the real function, and threw
+		-- "attempt to index local 'gameAccountInfo'" -- 181 times in one test
+		-- run, which is noise in the log and cost inside the very numbers the
+		-- run was measuring.
+		if C_BattleNet.GetGameAccountInfoByID then
+			orig.GetGameAccountInfoByID = C_BattleNet.GetGameAccountInfoByID
+			C_BattleNet.GetGameAccountInfoByID = function(id, ...)
+				local rec = FindByGameAccountID(id)
+				if rec then return GameAccountInfo(rec) end
+				return orig.GetGameAccountInfoByID(id, ...)
+			end
+		end
 	end
 
 	if C_FriendList then
@@ -582,6 +602,7 @@ local function RemoveShims()
 		if orig.GetFriendAccountInfo     then C_BattleNet.GetFriendAccountInfo = orig.GetFriendAccountInfo end
 		if orig.GetFriendNumGameAccounts then C_BattleNet.GetFriendNumGameAccounts = orig.GetFriendNumGameAccounts end
 		if orig.GetFriendGameAccountInfo then C_BattleNet.GetFriendGameAccountInfo = orig.GetFriendGameAccountInfo end
+		if orig.GetGameAccountInfoByID   then C_BattleNet.GetGameAccountInfoByID   = orig.GetGameAccountInfoByID end
 	end
 	if C_FriendList then
 		if orig.GetNumFriends        then C_FriendList.GetNumFriends = orig.GetNumFriends end
