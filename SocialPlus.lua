@@ -3666,7 +3666,25 @@ local function SocialPlus_UpdateFriends()
 	-- the unconditional SetValue/SetMinMaxValues/HybridScrollFrame_Update
 	-- calls below, now made conditional / removed) -- kept anyway as cheap
 	-- insurance against genuine synchronous reentrancy from any source.
-	if SocialPlus_InUpdateFriends then return end
+	local nowFrame=(GetTime and GetTime()) or 0
+
+	if SocialPlus_InUpdateFriends then
+		-- Stuck-flag recovery.
+		--
+		-- The body below is not wrapped in pcall, so a Lua error anywhere
+		-- inside it returns WITHOUT clearing this flag. Every later rebuild
+		-- then bails right here, and the friends list silently stops updating
+		-- -- it renders empty and stays empty until a /reload (seen live). One
+		-- transient error should not permanently disable the list.
+		--
+		-- Genuine reentrancy is synchronous: it happens inside this same frame
+		-- and unwinds before the next one. So a flag still set on a LATER frame
+		-- cannot be reentrancy -- it is a leak from an error, and clearing it
+		-- is the correct recovery.
+		if SocialPlus_InUpdateFrame==nowFrame then return end
+		SocialPlus_InUpdateFriends=false
+	end
+	SocialPlus_InUpdateFrame=nowFrame
 
 	-- Same-frame coalescing.
 	--
@@ -3688,7 +3706,6 @@ local function SocialPlus_UpdateFriends()
 	--
 	-- Placed BEFORE SocialPlus_InUpdateFriends is set: returning after that
 	-- flag is raised would leave it stuck true and kill every future rebuild.
-	local nowFrame=(GetTime and GetTime()) or 0
 	if SocialPlus_LastRebuildFrame==nowFrame and C_Timer and C_Timer.After then
 		if not SocialPlus_RebuildQueued then
 			SocialPlus_RebuildQueued=true
