@@ -2421,11 +2421,15 @@ local function SocialPlus_GetBNetButtonNameText(accountName,client,canCoop,chara
 	-- suspicion is that it is not a plain space (a non-breaking space is two
 	-- bytes and %s does not match it in Lua 5.1).
 	-- Remove once the question is answered.
-	if type(beforeAbbrev)=="string" and #beforeAbbrev>12 then
-		local at=beforeAbbrev:find("%s")
-		print(("|cff33ff99SP|r [%s] len=%d %%s@%s byte6=%s -> %s"):format(
-			beforeAbbrev,#beforeAbbrev,tostring(at),
-			tostring(beforeAbbrev:byte(6)),tostring(accountName)))
+	-- Counted, not filtered. Every previous version had a CONDITION on the
+	-- string, and every one printed nothing -- which cannot distinguish "the
+	-- condition was wrong" from "this function never runs". The first eight
+	-- calls print unconditionally, so silence now means exactly one thing.
+	SOCIALPLUS_TRACE_N=(SOCIALPLUS_TRACE_N or 0)+1
+	if SOCIALPLUS_TRACE_N<=8 then
+		print(("|cff33ff99SP|r #%d acct=[%s] char=[%s] -> [%s]"):format(
+			SOCIALPLUS_TRACE_N,tostring(beforeAbbrev),
+			tostring(characterName),tostring(accountName)))
 	end
 
 	-- Class color, when known and enabled, applies to the WHOLE line --
