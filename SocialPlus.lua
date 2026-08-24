@@ -3690,6 +3690,18 @@ local function SocialPlus_UpdateFriends()
 	SocialPlus_InUpdateFriends=true
 	SOCIALPLUS_REBUILD_COUNT=(SOCIALPLUS_REBUILD_COUNT or 0)+1
 
+	-- Times the render itself, accumulated into SOCIALPLUS_RENDER_MS.
+	--
+	-- /spsim bench only ever timed SocialPlus_Update, the full data pass. Most
+	-- calls that reach here are NOT that -- the scroll handler calls this
+	-- directly, skipping every per-friend pass -- so multiplying a render count
+	-- by the bench figure overstates the cost, and there was no number for what
+	-- a render alone costs. There is now.
+	--
+	-- Safe to bracket the whole body: there is no early return between here and
+	-- the accumulate at the end, so the start time can never be stranded.
+	local spRenderT0=debugprofilestop and debugprofilestop() or nil
+
 	local scrollFrame=FriendsScrollFrame
 	local buttons=scrollFrame.buttons
 	local numButtons=#buttons
@@ -3858,6 +3870,10 @@ local function SocialPlus_UpdateFriends()
 		if not GroupTotal[key] then
 			SocialPlus_SavedVars.collapsed[key]=nil
 		end
+	end
+
+	if spRenderT0 then
+		SOCIALPLUS_RENDER_MS=(SOCIALPLUS_RENDER_MS or 0)+(debugprofilestop()-spRenderT0)
 	end
 
 	SocialPlus_InUpdateFriends=false

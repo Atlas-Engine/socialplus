@@ -976,6 +976,18 @@ local function RateStop()
 			RATE.total - dataPasses)
 	end
 
+	-- The number that was missing: what a render actually costs.
+	local renderMs = (SOCIALPLUS_RENDER_MS or 0) - (RATE.lastMs or 0)
+	if renderMs > 0 and RATE.total > 0 then
+		local avg = renderMs / RATE.total
+		Say("  render time: |cffffffff%.0f ms|r total, %.2f ms each (%.1f%% of the %.1fs)",
+			renderMs, avg, renderMs / (secs * 1000) * 100, secs)
+		-- Restated as the thing you actually feel, using the worst cluster
+		-- seen rather than the average.
+		Say("  worst cluster: %d renders in %dms is about |cffffffff%.0f ms|r of that window.",
+			RATE.maxWindow, WINDOW * 1000, RATE.maxWindow * avg)
+	end
+
 	-- Turned into the number that matters, using the per-rebuild cost /spsim
 	-- bench just measured on this same list.
 	if RATE.maxWindow > 1 then
@@ -998,6 +1010,7 @@ local function ToggleRate()
 	RATE.last = SOCIALPLUS_REBUILD_COUNT
 	RATE.lastReq = SOCIALPLUS_REBUILD_REQUESTS or 0
 	RATE.lastData = SOCIALPLUS_DATA_PASS_COUNT or 0
+	RATE.lastMs = SOCIALPLUS_RENDER_MS or 0
 	RATE.started = (GetTime and GetTime()) or 0
 	RATE.recent = {}
 	RATE.on = true
