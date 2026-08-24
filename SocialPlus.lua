@@ -8032,7 +8032,6 @@ function SocialPlus_ShowRowTooltip(button)
 			GameTooltip:AddLine(
 				ClassColourCode(pick.className)..pick.name.."|r"
 				.." "..icon
-				..SocialPlus_FormatRegionText(pick.regionID)
 				..FactionIconSuffix(pick.factionName),1,1,1)
 
 			GameTooltip:AddLine(L.TOOLTIP_PVP_CYCLE:format(cycle.index,#ranked),0.5,0.5,0.5)
@@ -8191,11 +8190,13 @@ function SocialPlus_ShowRowTooltip(button)
 				local charLabel=characterName
 				local hasRealm=realmName and realmName~=""
 				if wowProjectID==WOW_PROJECT_ID then
-					-- Region goes on the name line here -- there's no separate
-					-- version line in this branch to carry it instead.
+					-- No region here. The row already carries a region flag
+					-- beside the name, so repeating it as "(NA)" text put the
+					-- same fact on screen twice -- and squeezed it between the
+					-- spec icon and the faction crest, where it read as clutter
+					-- between two pictures rather than as information.
 					GameTooltip:AddLine(classColor..charLabel.."|r"
 						..SpecIconFor(characterName,realmName,regionID)
-						..SocialPlus_FormatRegionText(regionID)
 						..FactionIconSuffix(friendFaction),1,1,1)
 					if level and level~=0 then
 						GameTooltip:AddLine(format(FRIENDS_LEVEL_TEMPLATE,level,class or ""),0.8,0.8,0.8)
@@ -8246,11 +8247,9 @@ function SocialPlus_ShowRowTooltip(button)
 					GameTooltip:AddLine(classColor..charLabel.."|r"
 						..SpecIconFor(characterName,realmName,regionID)
 						..FactionIconSuffix(friendFaction),1,1,1)
-					-- The region belongs here in this branch, not on the name
-					-- line: this one has a version line to hang it off, and
-					-- saying it in both places gave a duplicate "(NA) ... (NA)".
-					GameTooltip:AddLine(SocialPlus_GetVersionLabelText(wowProjectID)
-						..SocialPlus_FormatRegionText(regionID),0.6,0.6,0.6)
+					-- Version only. The region moved out to the row's flag --
+					-- see the name line above.
+					GameTooltip:AddLine(SocialPlus_GetVersionLabelText(wowProjectID),0.6,0.6,0.6)
 					-- Same labelled realm line as the branch above, so the two
 					-- kinds of friend don't disagree about where the realm goes.
 					if hasRealm then
@@ -8272,7 +8271,7 @@ function SocialPlus_ShowRowTooltip(button)
 						if acct.realmName and acct.realmName~="" then
 							otherLabel=otherLabel.."-"..acct.realmName
 						end
-						otherLabel=otherLabel..SocialPlus_FormatRegionText(acct.regionID)..FactionIconSuffix(acct.factionName)
+						otherLabel=otherLabel..FactionIconSuffix(acct.factionName)
 						if acct.wowProjectID and acct.wowProjectID~=WOW_PROJECT_ID then
 							otherLabel=otherLabel.." - "..SocialPlus_GetVersionLabelText(acct.wowProjectID)
 						end
