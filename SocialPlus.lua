@@ -86,6 +86,17 @@ local SocialPlus_GetInviteStatus
 -- the name resolved to a global nil there, so BNInviteFriend never got a
 -- presence ID and that fallback silently did nothing.
 local FG_BNGetFriendInfo
+
+-- Same reason: the collapse settle timer, ~1900 lines above the definition,
+-- renders instead of re-deriving when nothing changed. Without this
+-- declaration that call resolved to a global nil and threw -- which also
+-- stranded the in-progress flag, so the friends list rendered empty and stayed
+-- that way until a reload (seen live).
+--
+-- Costs no extra local: the definition below becomes an assignment to THIS
+-- name rather than declaring its own, so the file's 200-local ceiling is
+-- unmoved.
+local SocialPlus_UpdateFriends
 local SocialPlus_GetGroupKeyFromRow
 local SocialPlus_EnsureSavedVars
 local SocialPlus_SetCustomGroupOrderFromMove
@@ -3640,7 +3651,10 @@ end
 
 -- [[ Full friends list rebuild ]]
 local SocialPlus_InUpdateFriends=false
-local function SocialPlus_UpdateFriends()
+-- Assigns to the local forward-declared at the top of the file rather than
+-- making a second one, which is what lets the collapse settle timer above see
+-- it.
+function SocialPlus_UpdateFriends()
 	-- Counts every actual rebuild, for /spsim rate to sample.
 	--
 	-- It has to live HERE rather than on SocialPlus_Update, which is what an
