@@ -2365,8 +2365,46 @@ end
 
 -- [[ BNet button name text builder ]]
 
+-- "Sacha Bourassa-Beaudoin" -> "Sacha B."
+--
+-- Battle.net shows a REAL NAME rather than a BattleTag for Real ID friends,
+-- and those run far longer than a row has space for: the surname was cut
+-- mid-word and took the character name in brackets with it, which is the half
+-- worth reading. A first name and a surname initial is how these are written
+-- by hand anyway.
+--
+-- Only names containing a space are touched. A BattleTag has none, so it comes
+-- through untouched.
+--
+-- The initial is taken as a UTF-8 CHARACTER, not a byte: "Émile" begins with a
+-- two-byte character, and slicing one byte off it yields a broken glyph rather
+-- than an E. This addon ships French and Spanish locales, so that is a real
+-- case and not a hypothetical one.
+--
+-- Row display only. The tooltip, notifications and search all keep the full
+-- name -- there is room for it there, and it is what you would search for.
+-- Global rather than a file-local: this chunk is at Lua's 200-local ceiling.
+function SocialPlus_AbbreviateRealName(name)
+	if type(name)~="string" or name=="" then return name end
+
+	local first,rest=name:match("^(%S+)%s+(.+)$")
+	if not (first and rest) then return name end
+
+	-- The surname is the LAST word, not the second: otherwise a middle name
+	-- supplies the initial ("Jean Claude Van Damme" would give "Jean C.").
+	local last=rest:match("(%S+)%s*$") or rest
+	local initial=last:match("^[%z\1-\127\194-\244][\128-\191]*")
+	if not initial or initial=="" then return name end
+
+	return first.." "..initial.."."
+end
+
 local function SocialPlus_GetBNetButtonNameText(accountName,client,canCoop,characterName,class,level,realmName)
 	local nameText
+
+	-- Abbreviated for the row only; every other use of accountName keeps the
+	-- full name (see SocialPlus_AbbreviateRealName).
+	accountName=SocialPlus_AbbreviateRealName(accountName)
 
 	-- Class color, when known and enabled, applies to the WHOLE line --
 	-- the Battle.net name too, not just the "(CharacterName)" part -- so
