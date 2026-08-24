@@ -1682,7 +1682,21 @@ SocialPlus_ScheduleCollapseSettle=function()
 	SocialPlus_CollapseSettleTimer=C_Timer.NewTimer(0.15,function()
 		SocialPlus_CollapseSettleTimer=nil
 		SocialPlus_HardResetScrollRows()
-		SocialPlus_Update(true)
+		-- Render unless something genuinely changed, exactly as the scroll
+		-- settle does. Measured as 9 of 22 forced data passes in one run.
+		--
+		-- Whatever scheduled this -- a collapse click, or the panel opening --
+		-- has already run a full rebuild of its own moments ago, so the friend
+		-- data is current and re-deriving all of it produces the same list at
+		-- ~32ms a time. What the settle is actually for is re-rendering after
+		-- HardResetScrollRows and letting the content height settle, and the
+		-- render does both: the height it clamps against is still right,
+		-- because the data behind it has not moved.
+		if SOCIALPLUS_DATA_DIRTY then
+			SocialPlus_Update(true)
+		else
+			SocialPlus_UpdateFriends()
+		end
 	end)
 end
 
