@@ -2421,7 +2421,7 @@ local function SocialPlus_GetBNetButtonNameText(accountName,client,canCoop,chara
 	-- suspicion is that it is not a plain space (a non-breaking space is two
 	-- bytes and %s does not match it in Lua 5.1).
 	-- Remove once the question is answered.
-	if SOCIALPLUS_TRACE_NAMES and type(beforeAbbrev)=="string" and #beforeAbbrev>12 then
+	if type(beforeAbbrev)=="string" and #beforeAbbrev>12 then
 		local at=beforeAbbrev:find("%s")
 		print(("|cff33ff99SP|r [%s] len=%d %%s@%s byte6=%s -> %s"):format(
 			beforeAbbrev,#beforeAbbrev,tostring(at),
