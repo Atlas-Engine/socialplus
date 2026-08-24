@@ -976,6 +976,17 @@ local function RateStop()
 			RATE.total - dataPasses)
 	end
 
+	-- Why the scroll-window skip did or did not fire. A data pass that was
+	-- never a candidate is a different problem from one that was and lost.
+	local skipped = (SOCIALPLUS_SKIPPED or 0) - (RATE.lastSkip or 0)
+	local dirty   = (SOCIALPLUS_SKIP_DIRTY or 0) - (RATE.lastDirty or 0)
+	local noScroll= (SOCIALPLUS_SKIP_NOSCROLL or 0) - (RATE.lastNoScroll or 0)
+	local forced  = (SOCIALPLUS_SKIP_FORCED or 0) - (RATE.lastForced or 0)
+	if skipped + dirty + noScroll + forced > 0 then
+		Say("  data passes: |cff00ff00%d skipped|r, %d blocked by a change, %d not scrolling, %d forced",
+			skipped, dirty, noScroll, forced)
+	end
+
 	-- The number that was missing: what a render actually costs.
 	local renderMs = (SOCIALPLUS_RENDER_MS or 0) - (RATE.lastMs or 0)
 	if renderMs > 0 and RATE.total > 0 then
@@ -1011,6 +1022,10 @@ local function ToggleRate()
 	RATE.lastReq = SOCIALPLUS_REBUILD_REQUESTS or 0
 	RATE.lastData = SOCIALPLUS_DATA_PASS_COUNT or 0
 	RATE.lastMs = SOCIALPLUS_RENDER_MS or 0
+	RATE.lastSkip = SOCIALPLUS_SKIPPED or 0
+	RATE.lastDirty = SOCIALPLUS_SKIP_DIRTY or 0
+	RATE.lastNoScroll = SOCIALPLUS_SKIP_NOSCROLL or 0
+	RATE.lastForced = SOCIALPLUS_SKIP_FORCED or 0
 	RATE.started = (GetTime and GetTime()) or 0
 	RATE.recent = {}
 	RATE.on = true

@@ -4163,10 +4163,17 @@ end
 	-- missed invalidation source degrades to "rebuilt when it needn't have",
 	-- never to a stale list -- which is the failure mode that got an earlier,
 	-- broader dirty-check reverted.
+	-- The three counters record WHY a pass was or wasn't skipped, so a skip
+	-- that never fires can be told apart from one that fires and doesn't help.
 	local sinceScroll=SOCIALPLUS_LAST_SCROLL and ((GetTime and GetTime() or 0)-SOCIALPLUS_LAST_SCROLL)
-	if not forceUpdate
-		and not SOCIALPLUS_DATA_DIRTY
-		and sinceScroll and sinceScroll<0.2 then
+	if forceUpdate then
+		SOCIALPLUS_SKIP_FORCED=(SOCIALPLUS_SKIP_FORCED or 0)+1
+	elseif SOCIALPLUS_DATA_DIRTY then
+		SOCIALPLUS_SKIP_DIRTY=(SOCIALPLUS_SKIP_DIRTY or 0)+1
+	elseif not (sinceScroll and sinceScroll<0.2) then
+		SOCIALPLUS_SKIP_NOSCROLL=(SOCIALPLUS_SKIP_NOSCROLL or 0)+1
+	else
+		SOCIALPLUS_SKIPPED=(SOCIALPLUS_SKIPPED or 0)+1
 		-- Render only: the rows still have to move.
 		SocialPlus_UpdateFriends()
 		return
