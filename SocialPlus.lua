@@ -178,6 +178,13 @@ function SocialPlus_EnsureSavedVars()
         SocialPlus_SavedVars.region_flag=true
     end
 
+    -- Off by default: the real name is what Blizzard shows and what most
+    -- people expect to see. This is for the case where those names are long
+    -- enough to crowd the row.
+    if SocialPlus_SavedVars.show_battletag==nil then
+        SocialPlus_SavedVars.show_battletag=false
+    end
+
     if SocialPlus_SavedVars.pvp_spec_icon==nil then
         SocialPlus_SavedVars.pvp_spec_icon=true
     end
@@ -2159,7 +2166,7 @@ local function GetFriendInfoById(id)
 	local accountName,characterName,class,level,isFavoriteFriend,isOnline,
 		bnetAccountId,client,canCoop,wowProjectID,lastOnline,
 		isAFK,isGameAFK,isDND,isGameBusy,mobile,zoneName,gameText,realmName,regionID,
-		factionName
+		factionName,battleTag
 
 	if C_BattleNet and C_BattleNet.GetFriendAccountInfo then
 		local accountInfo=C_BattleNet.GetFriendAccountInfo(id)
@@ -2201,6 +2208,12 @@ local function GetFriendInfoById(id)
 					isGameBusy=gBusy or false
 				end
 			end
+			-- Carried so the row can show it instead of a Real ID name, which
+			-- arrives as an opaque token (see SocialPlus_GetBNetButtonNameText).
+			-- This call already holds it; reading it again from the row would be
+			-- another GetFriendAccountInfo per visible friend.
+			battleTag=accountInfo.battleTag
+
 			mobile=accountInfo.isWowMobile
 			zoneName=accountInfo.areaName
 			lastOnline=accountInfo.lastOnlineTime
@@ -2360,13 +2373,27 @@ else
 	return accountName,characterName,class,level,isFavoriteFriend,isOnline,
 		bnetAccountId,client,canCoop,wowProjectID,lastOnline,
 		isAFK,isGameAFK,isDND,isGameBusy,mobile,zoneName,gameText,realmName,regionID,
-		factionName
+		factionName,battleTag
 end
 
 -- [[ BNet button name text builder ]]
 
-local function SocialPlus_GetBNetButtonNameText(accountName,client,canCoop,characterName,class,level,realmName)
+local function SocialPlus_GetBNetButtonNameText(accountName,client,canCoop,characterName,class,level,realmName,battleTag)
 	local nameText
+
+	-- Optionally swap a Real ID name for the BattleTag.
+	--
+	-- Only the part before the "#": a non-Real ID friend already shows exactly
+	-- that, so this makes every row read the same way rather than mixing
+	-- "Rurkk" with "Rurkk#0347".
+	--
+	-- Guarded on the discriminator being present so a BattleTag that somehow
+	-- arrives without one is left alone rather than blanked.
+	if SocialPlus_SavedVars and SocialPlus_SavedVars.show_battletag
+		and type(battleTag)=="string" and battleTag~="" then
+		local short=battleTag:match("^(.-)#") or battleTag
+		if short~="" then accountName=short end
+	end
 
 	-- NOT abbreviated, and it cannot be.
 	--
@@ -2954,7 +2981,8 @@ local function SocialPlus_UpdateFriendButton(button)
 		local id=FriendButtons[index].id
 		local accountName,characterName,class,level,isFavorite,
 			isOnline,bnetAccountId,client,canCoop,wowProjectID,lastOnline,
-			isAFK,isGameAFK,isDND,isGameBusy,mobile,zoneName,gameText,realmName,regionID=
+			isAFK,isGameAFK,isDND,isGameBusy,mobile,zoneName,gameText,realmName,regionID,
+			_,battleTag=
 			GetFriendInfoById(id)
 
 		-- Stashed for the shared section further down, which needs the area but
@@ -2979,7 +3007,7 @@ local function SocialPlus_UpdateFriendButton(button)
 		button.SocialPlusZoneName=(client==BNET_CLIENT_WOW
 			and wowProjectID==WOW_PROJECT_ID) and zoneName or nil
 
-		nameText=SocialPlus_GetBNetButtonNameText(accountName,client,canCoop,characterName,class,level,realmName)
+		nameText=SocialPlus_GetBNetButtonNameText(accountName,client,canCoop,characterName,class,level,realmName,battleTag)
 
 		button.accountName=accountName
 		button.characterName=characterName
@@ -5914,7 +5942,10 @@ function SocialPlus_CreateSettingsPanel()
 	-- Remembered because UpdatePvPRatingsState shrinks the panel when the PvP
 	-- block is hidden, and needs the full height to subtract from -- reading
 	-- the live height there would compound each time it ran.
-	SOCIALPLUS_PVP_PANEL_H=380
+	-- 404, not 380: the BattleTag tick added a row below the region flag, and
+	-- everything under it (the whole notifications section) is chained off
+	-- that, so without the extra height the last option falls off the bottom.
+	SOCIALPLUS_PVP_PANEL_H=404
 	f:SetSize(350,SOCIALPLUS_PVP_PANEL_H)
 
 	-- Right side of Friends frame
@@ -6166,6 +6197,19 @@ function SocialPlus_CreateSettingsPanel()
 		SocialPlus_Update()
 	end)
 
+	-- Under the region flag: both change what the NAME area of a row shows.
+	--
+	-- Needs no other addon, so unlike the two PvP ticks it is always present.
+	local battleTag=CreateFrame("CheckButton","SocialPlus_BattleTagCheck",f,"UICheckButtonTemplate")
+	battleTag:SetPoint("TOPLEFT",regionFlag,"BOTTOMLEFT",0,-4)
+	_G[battleTag:GetName().."Text"]:SetText(L.SETTING_BATTLETAG)
+	battleTag:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.show_battletag)
+	battleTag:SetScript("OnClick",function()
+		SocialPlus_SavedVars.show_battletag=not SocialPlus_SavedVars.show_battletag
+		-- Same pooled-row reason as the flag above.
+		SocialPlus_Update()
+	end)
+
 	-- No "requires ArenaPlus" hover hint any more: it only ever appeared on the
 	-- greyed checkbox, and the checkbox is now hidden outright in exactly that
 	-- case, so the script could never run. L.SETTING_PVP_RATINGS_NEEDS is left
@@ -6225,6 +6269,7 @@ function SocialPlus_CreateSettingsPanel()
 
 		specIcon:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.pvp_spec_icon)
 		regionFlag:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.region_flag)
+		battleTag:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.show_battletag)
 
 		-- With ArenaPlus present the bracket ticks still depend on the block
 		-- above them being switched on: a tick that changes nothing is a tick
@@ -6263,7 +6308,7 @@ function SocialPlus_CreateSettingsPanel()
 	-- name specIcon, and adding one under it put the divider and the whole
 	-- Notifications section straight through the new row -- everything down
 	-- here hangs off this one line, so it has to hang off the real last tick.
-	preNotifyLine:SetPoint("TOPLEFT",regionFlag,"BOTTOMLEFT",0,-12)
+	preNotifyLine:SetPoint("TOPLEFT",battleTag,"BOTTOMLEFT",0,-12)
 	preNotifyLine:SetColorTexture(0.6,0.6,0.6,0.4)
 
 	local notifySectionHeader=f:CreateFontString(nil,"ARTWORK","GameFontNormal")

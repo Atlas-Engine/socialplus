@@ -87,6 +87,7 @@ L.SETTING_SCROLL_SPEED_DESC  = "Adjust the scroll speed for the friends list."
 L.SETTING_PVP_RATINGS        = "Show PvP ratings in tooltips (needs ArenaPlus)"
 L.SETTING_PVP_SPEC_ICON      = "Show spec icon in tooltips (needs ArenaPlus)"
 L.SETTING_REGION_FLAG        = "Show a region flag beside friend names"
+L.SETTING_BATTLETAG          = "Show BattleTags instead of real names"
 L.SETTING_PVP_RATINGS_NEEDS  = "Requires the ArenaPlus addon, which supplies the ladder data. Install and enable it, then reload."
 L.TOOLTIP_PVP_HEADER         = "Ladder Standing"
 -- bracket, rating, rank. The rating arrives already coloured by title.
@@ -211,6 +212,7 @@ if locale == "frFR" then
     L.SETTING_PVP_RATINGS        = "Afficher les cotes JcJ dans les infobulles (nécessite ArenaPlus)"
     L.SETTING_PVP_SPEC_ICON      = "Afficher l'icône de spécialisation dans les infobulles (nécessite ArenaPlus)"
 L.SETTING_REGION_FLAG        = "Afficher le drapeau de la région à côté des noms"
+    L.SETTING_BATTLETAG          = "Afficher les BattleTags au lieu des vrais noms"
     L.SETTING_PVP_RATINGS_NEEDS  = "Nécessite l'addon ArenaPlus, qui fournit les données du classement. Installez-le et activez-le, puis rechargez l'interface."
 
     L.TOOLTIP_PVP_HEADER         = "Classement"
@@ -329,6 +331,7 @@ elseif locale == "esES" or locale == "esMX" then
     L.SETTING_PVP_RATINGS        = "Mostrar la clasificación JcJ en las descripciones (requiere ArenaPlus)"
     L.SETTING_PVP_SPEC_ICON      = "Mostrar el icono de especialización en las descripciones (requiere ArenaPlus)"
 L.SETTING_REGION_FLAG        = "Mostrar la bandera de la región junto a los nombres"
+    L.SETTING_BATTLETAG          = "Mostrar BattleTags en lugar de nombres reales"
     L.SETTING_PVP_RATINGS_NEEDS  = "Requiere el addon ArenaPlus, que proporciona los datos de la clasificación. Instálalo y actívalo, y luego recarga la interfaz."
 
     L.TOOLTIP_PVP_HEADER         = "Clasificación"
