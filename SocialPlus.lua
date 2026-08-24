@@ -2888,7 +2888,16 @@ local function SocialPlus_UpdateFriendButton(button)
 		button.accountName=accountName
 		button.characterName=characterName
 		button.realmName=realmName
-		button.SocialPlusRegionID=regionID
+		-- Only for a friend actually in WoW -- any version of it, since the
+		-- region is just as true on Classic Era as on this client. A friend
+		-- sitting in the Battle.net app or playing another game has a region
+		-- too, but a flag beside their name reads as "playing WoW over here",
+		-- which is exactly what they are not doing.
+		--
+		-- client is nil for an offline friend (it comes from the online game
+		-- account), so this drops their flag as well, matching the game icon
+		-- that is already hidden on those rows.
+		button.SocialPlusRegionID=(client==BNET_CLIENT_WOW) and regionID or nil
 		button.rawName=nameText
 
 		isFavoriteFriend=isFavorite
