@@ -3700,38 +3700,23 @@ function SocialPlus_UpdateFriends()
 	end
 	SocialPlus_InUpdateFrame=nowFrame
 
-	-- Same-frame coalescing.
+	-- No same-frame coalescing here, deliberately.
 	--
-	-- Measured with /spsim rate over an 800-friend list: up to 3 rebuilds
-	-- landed in ONE frame and 10 within 250ms, at ~32ms each -- roughly 95ms
-	-- spent in a single frame. The guard above does not catch those: they are
-	-- separate sequential calls from different sources (the FriendsList_Update
-	-- hook and the scroll handler, which calls this directly), not nested ones.
+	-- It was tried: a second render in the same frame was deferred to the next
+	-- one. It worked -- 3-per-frame became 1 -- but it caused visible
+	-- flickering, and the reason is structural rather than tunable. Callers
+	-- like the collapse settle run HardResetScrollRows() first, which HIDES
+	-- every row, and then render. Deferring that render leaves one whole frame
+	-- with the rows hidden and nothing drawn in their place: a blank flash.
 	--
-	-- Only the SAME frame is collapsed, and that limit is deliberate. Rebuilds
-	-- spaced ACROSS frames are load-bearing here -- the panel-open settle pass
-	-- depends on running again after the content height has moved, and dropping
-	-- one of those previously took the open path from 3 rebuilds to 15. A
-	-- general debounce was tried in this area before and reverted.
+	-- And it was not worth defending. Measured on an 800-friend list it
+	-- collapsed about 20 calls in 15 seconds, and a render costs ~2.5ms -- some
+	-- 51ms, or 0.34% of wall time. The real wins came from the two settle
+	-- timers no longer re-deriving unchanged friend data (~-50% of data
+	-- passes) and from the cheaper pass itself (~-28%), neither of which
+	-- touches what is on screen mid-frame.
 	--
-	-- The first call in a frame still runs immediately, so nothing renders a
-	-- frame late. Every later call in that same frame folds into ONE catch-up
-	-- rebuild next frame: deferred, never dropped, so no state change is lost.
-	--
-	-- Placed BEFORE SocialPlus_InUpdateFriends is set: returning after that
-	-- flag is raised would leave it stuck true and kill every future rebuild.
-	if SocialPlus_LastRebuildFrame==nowFrame and C_Timer and C_Timer.After then
-		if not SocialPlus_RebuildQueued then
-			SocialPlus_RebuildQueued=true
-			C_Timer.After(0,function()
-				SocialPlus_RebuildQueued=false
-				SocialPlus_UpdateFriends()
-			end)
-		end
-		return
-	end
-	SocialPlus_LastRebuildFrame=nowFrame
-
+	-- Renders are cheap; a frame that draws nothing is not.
 	SocialPlus_InUpdateFriends=true
 	SOCIALPLUS_REBUILD_COUNT=(SOCIALPLUS_REBUILD_COUNT or 0)+1
 
