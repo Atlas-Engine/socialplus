@@ -935,13 +935,25 @@ local function RateStop()
 
 	local secs = math.max(((GetTime and GetTime()) or 0) - RATE.started, 0.001)
 	local requests = (SOCIALPLUS_REBUILD_REQUESTS or 0) - (RATE.lastReq or 0)
-	Say("rebuilds: |cffffffff%d|r over %.1fs (%.2f/s)", RATE.total, secs, RATE.total / secs)
+	local dataPasses = (SOCIALPLUS_DATA_PASS_COUNT or 0) - (RATE.lastData or 0)
+
+	Say("renders: |cffffffff%d|r over %.1fs (%.2f/s)", RATE.total, secs, RATE.total / secs)
 	if requests > RATE.total then
 		Say("  asked for %d, coalesced away |cff00ff00%d|r (%.0f%%)",
 			requests, requests - RATE.total, (requests - RATE.total) / requests * 100)
 	end
 	Say("  most in one frame: |cffffffff%d|r    most within %dms: |cffffffff%d|r",
 		RATE.maxFrame, WINDOW * 1000, RATE.maxWindow)
+
+	-- The number /spsim bench actually applies to. Renders are much cheaper
+	-- than a data pass, so multiplying the render count by the bench figure
+	-- overstates the cost -- sometimes by a lot.
+	Say("  full data passes (what |cffffffff/spsim bench|r times): |cffffffff%d|r (%.2f/s)",
+		dataPasses, dataPasses / secs)
+	if RATE.total > dataPasses then
+		Say("  so %d of those renders were scroll-only, with none of the per-friend work.",
+			RATE.total - dataPasses)
+	end
 
 	-- Turned into the number that matters, using the per-rebuild cost /spsim
 	-- bench just measured on this same list.
@@ -964,6 +976,7 @@ local function ToggleRate()
 	RATE.total, RATE.maxFrame, RATE.maxWindow = 0, 0, 0
 	RATE.last = SOCIALPLUS_REBUILD_COUNT
 	RATE.lastReq = SOCIALPLUS_REBUILD_REQUESTS or 0
+	RATE.lastData = SOCIALPLUS_DATA_PASS_COUNT or 0
 	RATE.started = (GetTime and GetTime()) or 0
 	RATE.recent = {}
 	RATE.on = true

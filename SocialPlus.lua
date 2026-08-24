@@ -4114,6 +4114,19 @@ end
 		end
 	end
 
+	-- The EXPENSIVE pass, counted separately from the render.
+	--
+	-- SOCIALPLUS_REBUILD_COUNT in SocialPlus_UpdateFriends counts renders, and
+	-- the scroll handler calls that directly without any of the per-friend work
+	-- below -- so a render is far cheaper than one of these, and the two must
+	-- not be added together or multiplied by the same per-rebuild figure.
+	-- /spsim bench times THIS function, so this is the count that figure
+	-- applies to.
+	--
+	-- After the guards on purpose: a call that bails because the panel is
+	-- hidden costs nothing and must not be counted as work.
+	SOCIALPLUS_DATA_PASS_COUNT=(SOCIALPLUS_DATA_PASS_COUNT or 0)+1
+
 	local numBNetTotal,numBNetOnline=FG_BNGetNumFriends()
 	numBNetTotal=numBNetTotal or 0
 	numBNetOnline=numBNetOnline or 0
