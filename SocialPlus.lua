@@ -2411,10 +2411,21 @@ local function SocialPlus_GetBNetButtonNameText(accountName,client,canCoop,chara
 	accountName=SocialPlus_AbbreviateRealName(accountName)
 
 	-- TEMPORARY: proves whether this builder runs, and what it did.
-	-- Only fires for names with a space, so it cannot spam a normal list.
+	--
+	-- Filtered on LENGTH, not on containing a space. The previous version
+	-- tested find(" ") and printed nothing at all -- which was itself the
+	-- clue, but it also hid the string. Long names are the real-name ones;
+	-- BattleTags are short, so this stays quiet on a normal list.
+	--
+	-- Reports whether %s matches and the byte at the separator, because the
+	-- suspicion is that it is not a plain space (a non-breaking space is two
+	-- bytes and %s does not match it in Lua 5.1).
 	-- Remove once the question is answered.
-	if SOCIALPLUS_TRACE_NAMES and type(beforeAbbrev)=="string" and beforeAbbrev:find(" ") then
-		print(("|cff33ff99SP|r builder: %s -> %s"):format(tostring(beforeAbbrev),tostring(accountName)))
+	if SOCIALPLUS_TRACE_NAMES and type(beforeAbbrev)=="string" and #beforeAbbrev>12 then
+		local at=beforeAbbrev:find("%s")
+		print(("|cff33ff99SP|r [%s] len=%d %%s@%s byte6=%s -> %s"):format(
+			beforeAbbrev,#beforeAbbrev,tostring(at),
+			tostring(beforeAbbrev:byte(6)),tostring(accountName)))
 	end
 
 	-- Class color, when known and enabled, applies to the WHOLE line --
