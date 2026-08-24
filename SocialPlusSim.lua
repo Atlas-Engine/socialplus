@@ -809,6 +809,8 @@ local function ShowHelp()
 	print("  |cffffffff/spsim off|r            stop and restore the real list")
 	print("  |cffffffff/spsim status|r         show what is currently simulated")
 	print("  |cffffffff/spsim bench [n]|r     time n full rebuilds (auto-sized if omitted)")
+	print("  |cffffffff/spsim rate|r         count rebuilds until you run it again; shows")
+	print("                        how many landed in the same frame.")
 	print("  |cffffffff/spsim wdiag|r        dump each visible row's game icon: texture, crop,")
 	print("                        size and anchor -- what it ended up with, not what we set.")
 	print("  Options, any order:  |cffffffff/spsim 400 groups=20 wow=150 seed=7|r")
@@ -891,6 +893,79 @@ local function CropEdges(region)
 	return ULx, URx, ULy, LLy
 end
 
+--[[------------------------------------------------------------------------
+Rebuild rate
+
+/spsim bench measures what ONE rebuild costs. This measures how many actually
+happen, which is the other half of the question and the half that decides
+whether coalescing them is worth anything.
+
+The distinction matters because rebuilds here are not all redundant. The panel
+open path deliberately runs several: content height has to converge, and
+removing one of them previously sent the open path from 3 rebuilds to 15,
+because an unstable height keeps re-entering Blizzard's HybridScrollFrame
+update, which fires FriendsList_Update again. So "fewer rebuilds" is not
+automatically better, and a change meant to reduce them can just as easily
+multiply them -- without a count you cannot tell which happened.
+
+Counts SocialPlus_Update, the entry point Blizzard's FriendsList_Update hook
+lands on. GetTime() is constant within a frame, so equal timestamps mean the
+same frame -- that is what makes a burst visible as opposed to a busy second.
+--------------------------------------------------------------------------]]
+
+local RATE = { on=false, total=0, maxFrame=0, curFrame=0, lastT=-1, busy=0, started=0 }
+local rateHooked = false
+
+local function RateCount()
+	if not RATE.on then return end
+	RATE.total = RATE.total + 1
+
+	local t = (GetTime and GetTime()) or 0
+	if t == RATE.lastT then
+		RATE.curFrame = RATE.curFrame + 1
+	else
+		if RATE.curFrame > 1 then RATE.busy = RATE.busy + 1 end
+		if RATE.curFrame > RATE.maxFrame then RATE.maxFrame = RATE.curFrame end
+		RATE.lastT, RATE.curFrame = t, 1
+	end
+end
+
+local function ToggleRate()
+	if not rateHooked then
+		if type(SocialPlus_Update) ~= "function" then
+			Say("|cffff2020SocialPlus_Update unavailable|r -- is SocialPlus loaded?")
+			return
+		end
+		-- Secure hook: observes, never replaces. The counter must not be able
+		-- to change what it is measuring.
+		hooksecurefunc("SocialPlus_Update", RateCount)
+		rateHooked = true
+	end
+
+	if RATE.on then
+		-- Close out the frame in progress so its rebuilds are not lost.
+		if RATE.curFrame > 1 then RATE.busy = RATE.busy + 1 end
+		if RATE.curFrame > RATE.maxFrame then RATE.maxFrame = RATE.curFrame end
+		RATE.on = false
+
+		local secs = math.max(((GetTime and GetTime()) or 0) - RATE.started, 0.001)
+		Say("rebuilds: |cffffffff%d|r over %.1fs (%.2f/s)", RATE.total, secs, RATE.total / secs)
+		Say("  most in one frame: |cffffffff%d|r    frames with more than one: |cffffffff%d|r",
+			RATE.maxFrame, RATE.busy)
+		if RATE.maxFrame > 1 then
+			Say("  bursts ARE happening -- coalescing has something to collapse.")
+		else
+			Say("  no bursts seen -- every rebuild had a frame to itself.")
+		end
+		return
+	end
+
+	RATE.total, RATE.maxFrame, RATE.curFrame, RATE.lastT, RATE.busy = 0, 0, 0, -1, 0
+	RATE.started = (GetTime and GetTime()) or 0
+	RATE.on = true
+	Say("counting rebuilds. Open/scroll the friends list as usual, then |cffffffff/spsim rate|r again to stop.")
+end
+
 local function DiagnoseRows()
 	local rows = FriendRows()
 	if #rows == 0 then
@@ -940,6 +1015,7 @@ local function HandleCommand(msg)
 	if first == "bench" then return Benchmark(tonumber(args[2])) end
 	-- Deliberately usable while the simulator is off: the logo shows on real
 	-- friends too, so there is no reason to require a fake list to tune it.
+	if first == "rate" then return ToggleRate() end
 	if first == "wdiag" then return DiagnoseRows() end
 	if first == "off" or first == "stop" or first == "0" then return Stop() end
 
