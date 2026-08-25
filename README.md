@@ -40,6 +40,18 @@ Online first, then DND, then away. Grouped by game, Battle.net-app idlers last, 
 ### 🔍 Search that keeps up
 Filters live as you type, accent-insensitive, and matches classes too — "lock" finds every Warlock you know.
 
+### 🏆 Rated PvP at a glance
+With [ArenaPlus](https://github.com/Atlas-Engine/arenaplus) installed, hovering a friend shows where they stand: rating and ladder rank for every bracket, coloured by the title the rating is worth, with their spec icon beside their name. Friends below the ladder cutoff show nothing rather than an empty section, and without ArenaPlus the block — and its settings — stay hidden entirely. Playing several characters at once? **Tab** cycles the tooltip through them.
+
+### 🌍 Region flags
+Battle.net friends actually playing WoW get their region's flag beside their name. Somebody sitting in the Battle.net app, playing another game, or on your own realm doesn't — a flag only appears where it tells you something. Switchable off.
+
+### 🆕 Recently Added
+Friends added this session gather into their own group under Favorites, so a new name doesn't vanish into a long list before you've filed it. Favoriting or grouping them takes them out; the X on the header clears it; it starts empty again next login.
+
+### 🏷️ Names, your way
+Real ID shows real names by default. Prefer BattleTags? One setting swaps every row over.
+
 ### 🎯 One right-click, everything
 Invite, whisper, copy name, set note, favorite, move, remove — no digging.
 
@@ -50,7 +62,7 @@ Class colors, faction crests, consistent game icons, a note indicator at a glanc
 English, French, and Spanish — follows your client automatically.
 
 ## Settings
-Cogwheel next to your Battle.net tag: hide offline friends, class colors, scroll speed, and full notification controls (master, offline lines, same-version only, notification sound). Shows the installed version in the corner.
+Cogwheel next to your Battle.net tag: hide offline friends, class colors, scroll speed, region flags, BattleTags instead of real names, which brackets the PvP block lists, and full notification controls (master, offline lines, same-version only, notification sound). Shows the installed version in the corner.
 
 > 💡 **Tip:** the default **General** group starts muted. Unmute it from its header if you want notifications for ungrouped friends too.
 
