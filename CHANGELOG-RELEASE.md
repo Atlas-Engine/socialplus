@@ -1,9 +1,8 @@
-- Battle.net friends playing your own version of WoW are no longer treated as if they were on a different one. Blizzard sometimes reports a friend's version as 0 instead of a real expansion, and that cost them their faction crest, their arena icon, their place in "prioritise this version" sorting, class search matches and invite eligibility all at once. The version is now recovered from the text Blizzard sends alongside it ("Mists of Pandaria Classic - Pagle"), which stays correct when the structured field doesn't.
-- A friend's realm is recovered from that same text when Blizzard doesn't send it, so their row's location line and their tooltip both show it instead of leaving it blank.
-- The friend tooltip now shows the zone and the realm on their own labelled lines, matching the default Battle.net tooltip, rather than appending the realm to the character name. Regular (non-Battle.net) friends get a realm line too.
-- Friends whose faction hasn't resolved yet no longer show *your* faction's crest -- an Alliance player saw a Horde friend wearing an Alliance crest, stated as confidently as a correct one. They now show the plain WoW logo until the faction is actually known.
-- A friend of the opposite faction now gets their crest drawn at the same size as everyone else's; it was very slightly larger and further left than a same-faction friend's.
-- The broadcast message in the tooltip now uses the same icon Blizzard uses for it, instead of the icon from the button you click to set your own.
+- Battle.net friends playing WoW now show their region's flag beside their name. Only friends actually in WoW get one -- somebody sitting in the Battle.net app or playing another game doesn't, and neither do regular (non-Battle.net) friends, who are always in your own region anyway. Can be turned off in the settings panel.
+- Friends' rated PvP standings now appear in their tooltip when the ArenaPlus addon is installed: rating and ladder rank for each bracket, coloured by the title the rating is worth, with their spec icon beside their name. Friends below the ladder cutoff show nothing at all rather than an empty section, and without ArenaPlus the whole block stays silent.
+- For a friend playing several characters at once, Tab cycles that ratings block through them while their tooltip is up.
+- Which brackets the ratings block lists can be picked in the settings panel; all four to begin with.
+- Friends added during this play session are gathered into their own "Recently Added" group, directly under Favorites, so a new friend doesn't vanish into a long list before you've filed them. Favouriting them or moving them into a group takes them out of it, the X on the group header clears it, and the group starts empty again at your next login.
 
 
 View all changelogs: https://github.com/Atlas-Engine/socialplus/blob/main/CHANGELOG.md
