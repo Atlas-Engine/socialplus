@@ -2877,6 +2877,18 @@ local function SocialPlus_UpdateFriendButton(button)
 	-- friend's zone, or a non-arena friend can show the swords.
 	button.SocialPlusZoneName=nil
 
+	-- And the recently-added X, for the same reason.
+	--
+	-- It is shown or hidden in the DIVIDER branch below, and that branch only
+	-- runs for rows that are headers on THIS draw. A row that was the Recently
+	-- Added header and is now an ordinary friend never reaches the line that
+	-- would hide it, so the X stayed where it was -- which is how it came to sit
+	-- beside a name in Favorites after the last recent friend was given a group
+	-- and the header stopped being drawn at all.
+	if button.spRecentClear then
+		button.spRecentClear:Hide()
+	end
+
 	-- Update based on button type
 	if button.buttonType==FRIENDS_BUTTON_TYPE_WOW then
 		local info=FG_GetFriendInfoByIndex(FriendButtons[index].id)

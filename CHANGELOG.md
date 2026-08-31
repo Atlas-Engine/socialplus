@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.14b
+
+- Fixed the X that clears Recently Added appearing on other rows, and staying after the group had emptied.
+
 ## 1.14a
 
 - Battle.net friends playing WoW now show their region's flag beside their name. Only friends actually in WoW get one -- somebody sitting in the Battle.net app or playing another game doesn't, and neither do regular (non-Battle.net) friends, who are always in your own region anyway. Can be turned off in the settings panel.
