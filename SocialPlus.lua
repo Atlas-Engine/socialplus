@@ -30,6 +30,28 @@ local function SocialPlus_PlayMenuOpenSound()
 	end
 end
 
+-- SetPropagateKeyboardInput, but only when the client will accept it.
+--
+-- It is protected in combat. Called during a lockdown it does not quietly fail
+-- -- the client blocks it and names this addon:
+--
+--   AddOn 'SocialPlus' tried to call the protected function
+--   'FriendsFrameFriendsScrollFrameButton6:SetPropagateKeyboardInput()'
+--
+-- which is what hovering a friend row mid-fight produced. Every call in this
+-- file goes through here, because all six had the same hole and only the one on
+-- a Blizzard-owned row happened to be found first.
+--
+-- Returns whether it went through, so a caller that must not arm itself without
+-- the propagate can check rather than assume.
+function SocialPlus_SetPropagate(frame,allow)
+	if not (frame and frame.SetPropagateKeyboardInput) then return false end
+	if InCombatLockdown() then return false end
+
+	frame:SetPropagateKeyboardInput(allow)
+	return true
+end
+
 -- Set true right before showing the click catcher for menus that should
 -- play a close sound when they go away: cogwheel-opened dropdowns
 -- (settings button, group-header gear) and the friend/who right-click
@@ -613,13 +635,13 @@ local function SocialPlus_GetDragGhost()
 		-- swallows the key (stops propagation) when a drag is actually in
 		-- progress; otherwise every key passes through untouched.
 		f:EnableKeyboard(true)
-		f:SetPropagateKeyboardInput(true)
+		SocialPlus_SetPropagate(f,true)
 		f:SetScript("OnKeyDown",function(self,key)
 			if key=="ESCAPE" and SocialPlus_DragSourceGroup then
-				self:SetPropagateKeyboardInput(false)
+				SocialPlus_SetPropagate(self,false)
 				SocialPlus_CancelGroupDrag()
 			else
-				self:SetPropagateKeyboardInput(true)
+				SocialPlus_SetPropagate(self,true)
 			end
 		end)
 
@@ -4794,7 +4816,7 @@ SocialPlus_ApplyGroupOrder()
             local isKnownAppCode=(not client) or client==(BNET_CLIENT_APP or "App") or client=="BSAp"
             if client==BNET_CLIENT_WOW then
                 pre.groupKey="WoW:"..tostring(wowProjectID or "?")
-                pre.appOnlyRank=0
+                pre.clusterRank=0
                 if usePrioritize and wowProjectID==WOW_PROJECT_ID then
                     pre.promoted=true
                     -- friendFaction comes from the GetFriendInfoById call
@@ -4806,10 +4828,18 @@ SocialPlus_ApplyGroupOrder()
                 end
             elseif isKnownAppCode then
                 pre.groupKey="AppOnly"
-                pre.appOnlyRank=1
+                pre.clusterRank=2
             else
+                -- A different game, not WoW. groupKey used to be all this
+                -- needed -- "Client:x" against "WoW:y" -- but that was a
+                -- plain string compare, and 'C' sorts before 'W'. It read as
+                -- Overwatch friends bubbling above every WoW friend on a big
+                -- Battle.net list, which is backwards for an addon that is
+                -- specifically about WoW's friends list. clusterRank is the
+                -- explicit ordering; groupKey goes back to only ever
+                -- clustering rows that are already in the same tier.
                 pre.groupKey="Client:"..client
-                pre.appOnlyRank=0
+                pre.clusterRank=1
             end
         elseif needOffline then
             pre.sortKey=SocialPlus_GetBNetSortName(i)
@@ -4930,7 +4960,7 @@ SocialPlus_ApplyGroupOrder()
                 {buttonType=FRIENDS_BUTTON_TYPE_BNET,id=i,
                 sortKey=pre.sortKey,statusRank=pre.statusRank,
                 promoted=pre.promoted,factionRank=pre.factionRank,
-                groupKey=pre.groupKey,appOnlyRank=pre.appOnlyRank},pre.recent)
+                groupKey=pre.groupKey,clusterRank=pre.clusterRank},pre.recent)
         elseif needOffline and online==false then
             BucketFriend(OfflineRowsByGroup,BnetSocialPlus[i],pre.fav,
                 {buttonType=FRIENDS_BUTTON_TYPE_BNET,id=i,sortKey=pre.sortKey},pre.recent)
@@ -4946,7 +4976,7 @@ SocialPlus_ApplyGroupOrder()
                 {buttonType=FRIENDS_BUTTON_TYPE_WOW,id=i,
                 sortKey=wpre.sortKey,statusRank=wpre.statusRank,
                 groupKey="WoW:"..tostring(WOW_PROJECT_ID or "?"),
-                appOnlyRank=0,promoted=usePrioritize and true or false,
+                clusterRank=0,promoted=usePrioritize and true or false,
                 factionRank=0},wpre.recent)
         end
     end
@@ -5013,9 +5043,10 @@ SocialPlus_ApplyGroupOrder()
             end
 
             ----------------------------------------------------------------
-            -- Base order, always applied: status (online > DND > away),
-            -- then same game/client clustered together (app-idle last),
-            -- then alphabetical within each cluster.
+            -- Base order, always applied: WoW friends before friends playing
+            -- something else before app-idle, same game/client clustered
+            -- together within that, then status (online > DND > away) and
+            -- alphabetical within each cluster.
             --
             -- "Prioritize <version> friends" adds one thing on top: friends
             -- on this exact WoW version bubble to the very top, ordered by
@@ -5028,9 +5059,9 @@ SocialPlus_ApplyGroupOrder()
                 for _,row in ipairs(onlineRows) do
                     if row.buttonType==FRIENDS_BUTTON_TYPE_BNET then
                         print(string.format(
-                            "|cff33ff99[ROWDEBUG]|r group=%q sortKey=%q promoted=%s statusRank=%s appOnlyRank=%s groupKey=%q factionRank=%s id=%s",
+                            "|cff33ff99[ROWDEBUG]|r group=%q sortKey=%q promoted=%s statusRank=%s clusterRank=%s groupKey=%q factionRank=%s id=%s",
                             tostring(group),tostring(row.sortKey),tostring(row.promoted),
-                            tostring(row.statusRank),tostring(row.appOnlyRank),tostring(row.groupKey),
+                            tostring(row.statusRank),tostring(row.clusterRank),tostring(row.groupKey),
                             tostring(row.factionRank),tostring(row.id)
                         ))
                     end
@@ -5041,13 +5072,19 @@ SocialPlus_ApplyGroupOrder()
                 -- Favorites is now its own dedicated group (rendered
                 -- separately above, never mixed with non-favorites in the
                 -- same onlineRows set), so it uses the exact same rule as
-                -- any other group: status -> game cluster -> alphabetical,
+                -- any other group: game cluster -> status -> alphabetical,
                 -- with the "Prioritize" promoted block on top when enabled.
+                --
+                -- Game cluster outranks status on purpose: an Away WoW friend
+                -- belongs beside an Online WoW friend, not off in an "Away"
+                -- clump next to somebody Away in a different game entirely.
+                -- Status used to be checked first, which split every game's
+                -- friends across each status instead of keeping them together.
                 if a.promoted~=b.promoted then return a.promoted end
+                if a.clusterRank~=b.clusterRank then return a.clusterRank<b.clusterRank end
+                if a.groupKey~=b.groupKey then return a.groupKey<b.groupKey end
                 if a.statusRank~=b.statusRank then return a.statusRank<b.statusRank end
                 if a.promoted and a.factionRank~=b.factionRank then return a.factionRank<b.factionRank end
-                if a.appOnlyRank~=b.appOnlyRank then return a.appOnlyRank<b.appOnlyRank end
-                if a.groupKey~=b.groupKey then return a.groupKey<b.groupKey end
                 if a.buttonType~=b.buttonType then
                     return a.buttonType==FRIENDS_BUTTON_TYPE_BNET
                 end
@@ -6035,14 +6072,14 @@ function SocialPlus_CreateSettingsPanel()
 	-- used for the click-catcher's menu-Escape handling and the drag
 	-- ghost's cancel-drag handling elsewhere in this file.
 	f:EnableKeyboard(true)
-	f:SetPropagateKeyboardInput(true)
+	SocialPlus_SetPropagate(f,true)
 	f:SetScript("OnKeyDown",function(self,key)
 		if key=="ESCAPE" then
-			self:SetPropagateKeyboardInput(false)
+			SocialPlus_SetPropagate(self,false)
 			SocialPlus_PlayMenuCloseSound()
 			self:Hide()
 		else
-			self:SetPropagateKeyboardInput(true)
+			SocialPlus_SetPropagate(self,true)
 		end
 	end)
 
@@ -6931,13 +6968,13 @@ end)
 -- The catcher is only ever shown while a menu or search interaction is
 -- active, so it naturally only sees Escape when relevant.
 SocialPlus_ClickCatcher:EnableKeyboard(true)
-SocialPlus_ClickCatcher:SetPropagateKeyboardInput(true)
+SocialPlus_SetPropagate(SocialPlus_ClickCatcher,true)
 SocialPlus_ClickCatcher:SetScript("OnKeyDown",function(self,key)
     if key=="ESCAPE" and SocialPlus_IsAnyDropDownOpen() then
-        self:SetPropagateKeyboardInput(false)
+        SocialPlus_SetPropagate(self,false)
         LibDD:CloseDropDownMenus()
     else
-        self:SetPropagateKeyboardInput(true)
+        SocialPlus_SetPropagate(self,true)
     end
 end)
 
@@ -8353,7 +8390,7 @@ function SocialPlus_HideRowTooltip()
 		local row=cycle.button
 		cycle.button=nil
 		row:SetScript("OnKeyDown",nil)
-		if row.SetPropagateKeyboardInput then row:SetPropagateKeyboardInput(true) end
+		SocialPlus_SetPropagate(row,true)
 		row:EnableKeyboard(false)
 	end
 end
@@ -8395,19 +8432,28 @@ local function SocialPlus_OnEnter(self)
 		-- key through, and a row that eats the whole keyboard while hovered is
 		-- far worse than one that does not cycle. So on a client without it,
 		-- this simply does not happen -- the tooltip still names the character.
+		--
+		-- In combat it does not happen either, and for the same reason rather
+		-- than a different one: the call is protected there, so EnableKeyboard
+		-- would arm a row that swallows every key with no way to hand them
+		-- back. Hence the propagate is asked for *first* and the row is only
+		-- armed once it has been granted -- never the other way round.
 		local cycle=SocialPlus_PvPCycle
-		if cycle and (cycle.count or 1)>1 and self.SetPropagateKeyboardInput then
+		if cycle and (cycle.count or 1)>1 and SocialPlus_SetPropagate(self,true) then
 			cycle.button=self
 			self:EnableKeyboard(true)
-			self:SetPropagateKeyboardInput(true)
 
 			self:SetScript("OnKeyDown",function(row,key)
 				if key~="TAB" or not SocialPlus_PvPCycle or (SocialPlus_PvPCycle.count or 1)<=1 then
-					row:SetPropagateKeyboardInput(true)
+					SocialPlus_SetPropagate(row,true)
 					return
 				end
 
-				row:SetPropagateKeyboardInput(false)
+				-- Combat since the row was armed: the keys cannot be taken, so
+				-- Tab goes to the game and the tooltip stays as it is. One lost
+				-- cycle beats a swallowed Tab in an arena.
+				if not SocialPlus_SetPropagate(row,false) then return end
+
 				SocialPlus_PvPCycle.index=SocialPlus_PvPCycle.index+1
 				SocialPlus_ShowRowTooltip(row)
 			end)
