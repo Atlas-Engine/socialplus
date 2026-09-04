@@ -7,6 +7,27 @@
 ## X-Curse-Repository-ID: https://github.com/Atlas-Engine/socialplus
 ## SavedVariables: SocialPlus_SavedVars
 
+## IconTexture: Interface\AddOns\SocialPlus\Media\logo
+
+# Where the in-game AddOn List files this addon. Without a Category it lands
+# under the catch-all at the bottom, which is where every addon that never set
+# one ends up. The per-locale lines are the client's own category names, so a
+# French or German client files it under its own word rather than the English
+# one -- the addon's own translations are a separate thing and cover fewer
+# languages than this does.
+## Category: Chat
+## Category-enUS: Chat
+## Category-deDE: Chat
+## Category-esES: Chat
+## Category-esMX: Chat
+## Category-frFR: Discussion
+## Category-itIT: Chat
+## Category-koKR: 대화
+## Category-ptBR: Bate-papo
+## Category-ruRU: Чат
+## Category-zhCN: 聊天
+## Category-zhTW: 對話
+
 # Libraries
 Libs\LibStub\LibStub.lua
 Libs\CallbackHandler-1.0\CallbackHandler-1.0.lua

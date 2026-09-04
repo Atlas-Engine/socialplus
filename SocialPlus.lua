@@ -329,8 +329,23 @@ end
 -- one containing an accented character. Only touch literal A-Z bytes and
 -- leave everything else untouched, so behavior is deterministic
 -- regardless of the client's locale/accented characters.
+--
+-- Cached by input string. This is the friends-list sort comparator's own
+-- lowercaser -- called twice on every comparison, and table.sort makes
+-- O(n log n) of those per group -- so on a large list (reported live:
+-- ~460 friends, laggy on open and again after every scroll settle) the
+-- same handful of names were being re-scanned and re-closured thousands of
+-- times a rebuild for a result that never changes between one comparison
+-- and the next. The domain is small and stable (friend names, plus search
+-- terms through SocialPlus_NormalizeText below) so nothing here evicts.
+local SocialPlus_AsciiLowerCache={}
 local function SocialPlus_AsciiLower(s)
-    return (s:gsub("[A-Z]",function(c) return c:lower() end))
+    local cached=SocialPlus_AsciiLowerCache[s]
+    if cached then return cached end
+
+    local lowered=(s:gsub("[A-Z]",function(c) return c:lower() end))
+    SocialPlus_AsciiLowerCache[s]=lowered
+    return lowered
 end
 
 -- Determine the player's region ID based on the "portal" CVar
@@ -1394,7 +1409,27 @@ end)
 		-- a term that did not change cost one of the 3-4 rebuilds per open,
 		-- for no visible difference.
 		if termChanged then
-			FriendsList_Update()
+			-- Debounced, because a keystroke is not a decision.
+			--
+			-- The term itself is set above, immediately -- only the rebuild
+			-- waits. Typing "warlock" used to be seven full rebuilds, and the
+			-- search path is the expensive one: it walks every friend rather
+			-- than only the online ones, so on a large list six of those seven
+			-- were work for a string the player was still in the middle of
+			-- typing. Now the last keystroke wins and the rest cost nothing.
+			--
+			-- A generation counter rather than a cancellable timer: each
+			-- keystroke invalidates the pending one by bumping the count, so
+			-- the callback that finally runs is the only one that finds its own
+			-- number still current. One closure per keystroke is affordable at
+			-- human typing speed -- unlike the per-scroll-tick timers this file
+			-- already had to remove -- and each replaces a whole rebuild.
+			SOCIALPLUS_SEARCH_GEN=(SOCIALPLUS_SEARCH_GEN or 0)+1
+			local myGen=SOCIALPLUS_SEARCH_GEN
+			C_Timer.After(0.3,function()
+				if SOCIALPLUS_SEARCH_GEN~=myGen then return end
+				FriendsList_Update()
+			end)
 		end
 	end)
 
@@ -2797,6 +2832,15 @@ function SocialPlus_ToggleFavorite(buttonType,id)
 	else
 		SocialPlus_SavedVars.favorites[key]=true
 	end
+
+	-- Clear search so the full list comes back, matching what every other
+	-- action that moves a row already does (add/remove group). Favoriting
+	-- lifts the friend into the Favorites section at the top, so leaving the
+	-- filter on hides the result of the thing you just asked for.
+	if SocialPlus_ClearSearch then
+		SocialPlus_ClearSearch()
+	end
+
 	SocialPlus_Update(true)
 
 	-- Toggling favorite status can make the whole Favorites divider appear
@@ -4310,6 +4354,70 @@ end
 		end
 	end
 
+	-- At most one full per-friend derivation per frame.
+	--
+	-- This is hooked onto Blizzard's FriendsList_Update, which they call from
+	-- FRIENDLIST_UPDATE and BN_FRIEND_INFO_CHANGED -- and on a large list those
+	-- do not arrive one at a time. Every friend who changes zone, flips AFK,
+	-- switches character or updates a broadcast fires one, so they land in
+	-- bursts of many within a single frame, and each one was paying the whole
+	-- derivation again: measured at ~32ms across 866 friends, so a burst of
+	-- five in one frame is 160ms of one frame spent re-deriving data that
+	-- cannot have changed enough between two calls to be worth it. Reported
+	-- live as heavy lag opening and scrolling a ~460-friend list.
+	--
+	-- Deferred, never dropped. The extras schedule one catch-up pass on the
+	-- next frame instead of each doing their own now, so nothing goes stale --
+	-- a burst of twenty collapses to two derivations rather than twenty. The
+	-- render still runs on every call, because it is the cheap half (~2.5ms)
+	-- and it is what keeps rows and the tooltip in sync.
+	--
+	-- Globals rather than file-locals on purpose: this chunk is at Lua's
+	-- 200-local ceiling (see the notes on the click catcher and tooltip).
+	-- Only the unforced calls coalesce. Forced ones are the deliberate,
+	-- user-initiated passes -- a collapse toggle runs HardResetScrollRows
+	-- (which hides every row) and then forces a pass, so deferring THAT
+	-- derivation would re-render the pre-collapse list for a frame. Bursts
+	-- only ever arrive through the unforced FriendsList_Update hook, so
+	-- exempting forced calls costs nothing and keeps every interaction exact.
+	local nowDataFrame=(GetTime and GetTime()) or 0
+	if not forceUpdate and SOCIALPLUS_LAST_DATA_FRAME==nowDataFrame then
+		SOCIALPLUS_COALESCED_PASSES=(SOCIALPLUS_COALESCED_PASSES or 0)+1
+		if not SOCIALPLUS_DATA_CATCHUP_QUEUED then
+			SOCIALPLUS_DATA_CATCHUP_QUEUED=true
+			C_Timer.After(0,function()
+				SOCIALPLUS_DATA_CATCHUP_QUEUED=false
+				-- Unforced, so the panel-hidden and wrong-tab guards above
+				-- still apply: a burst that ends with the list closed must
+				-- not buy itself one last full pass on the way out.
+				SocialPlus_Update()
+			end)
+		end
+		SocialPlus_UpdateFriends()
+		return
+	end
+	SOCIALPLUS_LAST_DATA_FRAME=nowDataFrame
+
+	-- Not during a fight.
+	--
+	-- The derivation is the single most expensive thing this addon does, and
+	-- combat is when a dropped frame actually costs something. Nothing it
+	-- produces is worth a stutter mid-pull: a friend who came online during a
+	-- boss is news that keeps. The rows still repaint, so what is already on
+	-- screen stays live and correct-looking; only the re-derivation waits.
+	--
+	-- Deferred, not dropped -- PLAYER_REGEN_ENABLED flushes it the moment the
+	-- fight ends, and the dirty flag is set so the settle path knows a real
+	-- pass is still owed. Forced calls are exempt for the same reason they are
+	-- exempt from coalescing: those are somebody clicking something, and a
+	-- click has to answer even in combat.
+	if not forceUpdate and InCombatLockdown and InCombatLockdown() then
+		SOCIALPLUS_DATA_DIRTY=true
+		SOCIALPLUS_COMBAT_DEFERRED=true
+		SocialPlus_UpdateFriends()
+		return
+	end
+
 	-- The EXPENSIVE pass, counted separately from the render.
 	--
 	-- SOCIALPLUS_REBUILD_COUNT in SocialPlus_UpdateFriends counts renders, and
@@ -4365,7 +4473,18 @@ end
 	-- AddButtonInfo shared by both search and normal mode
 	local addButtonIndex=0
 	local totalButtonHeight=0
+
+	-- Which BNet friends actually reach the screen this pass.
+	--
+	-- Recorded here rather than at the three call sites that add a BNet row,
+	-- because this is the one place all of them go through -- favourites,
+	-- recently-added and ordinary groups alike, in search mode as well as out
+	-- of it. A friend whose every group is collapsed never gets here, which is
+	-- exactly the fact the derivation below wants.
+	local BNetShown={}
+
 	local function AddButtonInfo(buttonType,id)
+		if buttonType==FRIENDS_BUTTON_TYPE_BNET then BNetShown[id]=true end
 		addButtonIndex=addButtonIndex+1
 		if not FriendButtons[addButtonIndex] then
 			FriendButtons[addButtonIndex]={}
@@ -4437,7 +4556,7 @@ end
 
 		-- BNet friends: try BattleTag first, then accountName, then character name
 		for i=1,numBNetTotal do
-			local accountName,characterName,class,_,_,isOnline,_,client,_,wowProjectID,_,_,_,_,_,_,_,_,realmName=
+			local accountName,characterName,class,_,_,isOnline,_,client,_,wowProjectID,_,_,_,_,_,_,_,_,realmName,friendRegionID,_,infoBattleTag=
 				GetFriendInfoById(i)
 
 			if isOnline and client==BNET_CLIENT_WOW and wowProjectID==WOW_PROJECT_ID
@@ -4447,17 +4566,22 @@ end
 			end
 
 			if not(SocialPlus_SavedVars and SocialPlus_SavedVars.hide_offline and not isOnline) then
-				local battleTag=nil
-
-				-- Try to grab the real BattleTag from C_BattleNet if it exists
-				local friendRegionID=nil
-				if C_BattleNet and C_BattleNet.GetFriendAccountInfo then
-					local acct=C_BattleNet.GetFriendAccountInfo(i)
-					if acct then
-						battleTag=acct.battleTag or acct.accountName
-						friendRegionID=acct.gameAccountInfo and acct.gameAccountInfo.regionID
-					end
-				end
+				-- BattleTag and region both came back from the
+				-- GetFriendInfoById above (positions 22 and 20).
+				--
+				-- This used to make a SECOND C_BattleNet.GetFriendAccountInfo
+				-- for the same friend purely to read those two fields -- and
+				-- GetFriendInfoById's own first act is that exact call, so
+				-- every friend was paying for the single most expensive lookup
+				-- in this file twice. This is the live search path, walked in
+				-- full on every keystroke, so on a 460-friend list that was 460
+				-- duplicated account lookups per typed character.
+				--
+				-- The old `or acct.accountName` fallback is preserved and is
+				-- the same value either way: GetFriendInfoById reads
+				-- accountName off that very account record, so `accountName`
+				-- here and `acct.accountName` there were always identical.
+				local battleTag=infoBattleTag or accountName
 
 				local primaryName=battleTag
 					or accountName
@@ -4804,7 +4928,27 @@ SocialPlus_ApplyGroupOrder()
         local favKey=BNetFavKey[i]
         local pre={fav=SocialPlus_IsFavorite(FRIENDS_BUTTON_TYPE_BNET,i,favKey) and true or false,
             recent=SocialPlus_IsRecent(FRIENDS_BUTTON_TYPE_BNET,i,BnetSocialPlus[i],favKey) and true or false}
-        if online then
+        -- Everything below this point exists to sort and place a row. A friend
+        -- whose every group is collapsed has no row, so none of it is ever
+        -- read for them -- and GetFriendInfoById is the most expensive call in
+        -- this file, three to five C calls deep (GetFriendAccountInfo, then
+        -- BNGetFriendInfo, then BNGetGameAccountInfo, plus the linked-account
+        -- scan). Paying that for somebody who cannot be seen was most of the
+        -- derivation on a large list, where nearly everything is collapsed.
+        --
+        -- Defaults rather than nothing, deliberately. The comparator guards
+        -- sortKey but does arithmetic on statusRank and clusterRank, so a nil
+        -- reaching a sorted list would be a hard error rather than a wrong
+        -- order. Ranks below every real value keep it total and keep any
+        -- unforeseen path harmless.
+        if online and not BNetShown[i] then
+            pre.promoted=false
+            pre.factionRank=1
+            pre.statusRank=4
+            pre.clusterRank=3
+            pre.groupKey=""
+
+        elseif online then
             local accountName,_,_,_,_,_,_,client,_,wowProjectID,_,
                 isAFK,isGameAFK,isDND,isGameBusy,_,_,_,_,_,friendFaction=GetFriendInfoById(i)
             -- Reuse the name from the call we just made instead of making a
@@ -7683,6 +7827,8 @@ frame:RegisterEvent("BN_FRIEND_INFO_CHANGED")
 frame:RegisterEvent("CHAT_MSG_ADDON")
 frame:RegisterEvent("BN_CHAT_MSG_ADDON")
 frame:RegisterEvent("GROUP_ROSTER_UPDATE")
+-- Flushes the derivation the combat guard in SocialPlus_Update deferred.
+frame:RegisterEvent("PLAYER_REGEN_ENABLED")
 
 -- Forces the tooltip's background fully opaque before it's shown.
 --
@@ -9714,11 +9860,18 @@ local function SocialPlus_ScanFriendsForWoWStateChanges()
 		-- be skipped just because offline_too is off -- character-switch
 		-- detection needs their characterName re-checked regardless, since
 		-- it's gated by the online toggle instead.)
-		local t={FG_BNGetFriendInfo(i)}
-		local presenceID=t[1]
-		local battleTag=t[3]
+		-- Positional destructure, not a {tuple} wrapper.
+		--
+		-- The wrapper allocated a fresh 13-slot table per friend per scan --
+		-- ~460 of them every time this ran on the list this was reported from,
+		-- and this scan runs on a 0.2s coalesce off BN_FRIEND_INFO_CHANGED
+		-- whether or not the friends panel is even open. That is churn the
+		-- collector then has to walk, which is felt as stutter rather than as
+		-- a slow frame. SocialPlus_Update's own BNet loop was already fixed
+		-- this way (see the note on positions there); this one was missed.
+		local presenceID,_,battleTag,_,_,_,_,_,_,_,_,_,noteText=FG_BNGetFriendInfo(i)
 
-		if presenceID and SocialPlus_ShouldNotifyForNote(t[13],battleTag) then
+		if presenceID and SocialPlus_ShouldNotifyForNote(noteText,battleTag) then
 			local _,characterName,_,_,_,isOnline,_,_,_,_,_,_,_,_,_,_,_,_,realmName=GetFriendInfoById(i)
 
 			local prev=SocialPlus_FriendSnapshot[presenceID]
@@ -9975,9 +10128,23 @@ function SocialPlus_BroadcastVersion()
 	if IsInGuild and IsInGuild() then
 		pcall(send,SOCIALPLUS_VERSION_PREFIX,version,"GUILD")
 	end
-	-- RAID covers instance groups too; PARTY would be silently dropped there.
+	-- Dungeon Finder, Raid Finder, scenario and battleground groups route
+	-- party chat to INSTANCE_CHAT, and sending to PARTY inside one is NOT
+	-- silently dropped, as this comment used to claim. The client answers
+	-- with a "You are not in a party." system message that the player sees,
+	-- once per roster change, since GROUP_ROSTER_UPDATE is what queues the
+	-- rebroadcast. The pcall below does not hide it either: it is a chat
+	-- message from the client, not a Lua error.
+	--
+	-- Both instance tests are kept because they do not agree across every
+	-- group type, and INSTANCE_CHAT is accepted whenever either is true.
+	local inInstanceGroup=(IsPartyLFG and IsPartyLFG())
+		or (IsInGroup and LE_PARTY_CATEGORY_INSTANCE
+			and IsInGroup(LE_PARTY_CATEGORY_INSTANCE))
 	local channel
-	if IsInRaid and IsInRaid() then
+	if inInstanceGroup then
+		channel="INSTANCE_CHAT"
+	elseif IsInRaid and IsInRaid() then
 		channel="RAID"
 	elseif IsInGroup and IsInGroup() then
 		channel="PARTY"
@@ -10096,6 +10263,26 @@ function SocialPlus_ResolveBNetSenderName(presenceID)
 	return (GetFriendInfoById(index))
 end
 
+-- One FriendsList_Update per burst, instead of one per event.
+--
+-- Only used while SOCIALPLUS_DRIVING_REFRESH is set -- that is, while the two
+-- high-frequency events have been taken off Blizzard's frame (see the
+-- PLAYER_LOGIN block). Blizzard's function is still what runs; this only
+-- decides how often. A whole burst arriving in one frame collapses to a single
+-- call on the next, which is the same shape as the derivation coalescing in
+-- SocialPlus_Update and for the same reason.
+--
+-- Global rather than a file-local: this chunk is at Lua's 200-local ceiling.
+function SocialPlus_RequestListRefresh()
+	if SOCIALPLUS_REFRESH_QUEUED then return end
+	SOCIALPLUS_REFRESH_QUEUED=true
+
+	C_Timer.After(0,function()
+		SOCIALPLUS_REFRESH_QUEUED=false
+		if type(FriendsList_Update)=="function" then FriendsList_Update() end
+	end)
+end
+
 -- [[ Initialization on PLAYER_LOGIN ]]
 
 frame:SetScript("OnEvent",function(self,event,...)
@@ -10109,7 +10296,19 @@ frame:SetScript("OnEvent",function(self,event,...)
 	--
 	-- Read by the scroll-window skip in SocialPlus_Update: that skip only
 	-- suppresses a data pass when NOTHING here has fired since the last one.
-	SOCIALPLUS_DATA_DIRTY=true
+	--
+	-- GROUP_ROSTER_UPDATE is the one exception, and it is worth the branch.
+	-- Joining or leaving a group changes whether a friend can be invited --
+	-- which is drawn per row, from SocialPlus_GetInviteStatus, at render time
+	-- -- but it cannot move anybody between groups, rename one, or change who
+	-- is online. Nothing the derivation reads. Marking the data dirty for it
+	-- bought a full per-friend pass (~32ms across a large list) for a result
+	-- identical to the one already held, and in a raid this event fires
+	-- constantly, which is exactly when the frames are least affordable.
+	-- The rows still need repainting, so the branch below does that instead.
+	if event~="GROUP_ROSTER_UPDATE" then
+		SOCIALPLUS_DATA_DIRTY=true
+	end
 
 	-- A fresh login empties the recently-added group; a /reload does not.
 	--
@@ -10162,6 +10361,34 @@ frame:SetScript("OnEvent",function(self,event,...)
 
 		Hook("FriendsList_Update",SocialPlus_Update,true)
 
+		-- The two spammy events come off Blizzard's own frame, and this addon
+		-- drives them instead.
+		--
+		-- That hook is a hooksecurefunc, so Blizzard's WHOLE FriendsList_Update
+		-- body runs before ours does -- on every single one of these events. On
+		-- a large list they arrive in bursts (every friend changing zone,
+		-- flipping AFK or switching character sends one), so the burst cost was
+		-- never just this addon's derivation: it was Blizzard's full list
+		-- rebuild too, N times over, and nothing here could throttle that from
+		-- inside a hook that only runs after it has already happened.
+		--
+		-- Deliberately NOT re-implementing what their handler does. The events
+		-- are unregistered, but FriendsList_Update itself is still called --
+		-- once per burst, from SocialPlus_RequestListRefresh -- so every side
+		-- effect it has (tab counts, the rest of the panel) still happens,
+		-- just at a rate somebody chose. Only the two high-frequency events
+		-- move; invites, connects and disconnects stay on Blizzard's frame
+		-- where they are rare and want to be immediate.
+		--
+		-- SOCIALPLUS_DRIVE_REFRESH=false (via /run, before this point) leaves
+		-- Blizzard's registration alone, as an escape hatch if this ever proves
+		-- to have taken something with it.
+		if SOCIALPLUS_DRIVE_REFRESH~=false and FriendsFrame and FriendsFrame.UnregisterEvent then
+			FriendsFrame:UnregisterEvent("FRIENDLIST_UPDATE")
+			FriendsFrame:UnregisterEvent("BN_FRIEND_INFO_CHANGED")
+			SOCIALPLUS_DRIVING_REFRESH=true
+		end
+
 		-- Force a real render on every panel open, in isolation this time
 		-- (no debounce/dirty-check machinery to race against -- both fully
 		-- reverted). If the friend list data hasn't changed since it was
@@ -10188,32 +10415,37 @@ frame:SetScript("OnEvent",function(self,event,...)
 			end)
 		end
 
-		-- Flush accumulated garbage when the Friends panel closes. Heavy
-		-- interaction (fast scrolling, collapse/expand spam) legitimately
-		-- allocates transient garbage that WoW's lazy incremental GC can
-		-- let sit for a long time (reported live: tens of MB parked until
-		-- some later activity happened to nudge a collection). Panel-close
-		-- is the ideal flush point: everything transient is dead by then,
-		-- and a full sweep's tiny hitch is invisible with no interaction
-		-- going on. No cooldown, on request -- the >25 MB threshold below
-		-- already prevents pointless sweeps on its own (a close that
-		-- didn't actually accumulate much just skips), so a separate timer
-		-- gating WHEN it's even allowed to check wasn't needed on top of
-		-- that.
-		if FriendsFrame and FriendsFrame.HookScript then
-			FriendsFrame:HookScript("OnHide",function()
-				-- Only sweep when this addon is actually holding a
-				-- meaningful amount (>25 MB): a full collect isn't free,
-				-- so when there's little to reclaim, skip it.
-				if UpdateAddOnMemoryUsage and GetAddOnMemoryUsage then
-					UpdateAddOnMemoryUsage()
-					if GetAddOnMemoryUsage(ADDON_NAME)<=25*1024 then
-						return
-					end
-				end
-				collectgarbage("collect")
-			end)
-		end
+		-- The panel-close garbage sweep used to live here, and is gone.
+		--
+		-- It forced collectgarbage("collect") when this addon's attributed
+		-- memory passed 25 MB, to flush transient garbage that heavy
+		-- scrolling and collapse spam left parked -- tens of MB of it,
+		-- reported live.
+		--
+		-- Two reasons it went rather than being tuned. The first is that
+		-- the churn it was mopping up is largely gone: the per-friend
+		-- table thrown away for every friend on every notification scan,
+		-- the sort comparator re-lowercasing the same names thousands of
+		-- times a rebuild, a full derivation per event in a burst, a
+		-- rebuild per keystroke, and Blizzard's own list rebuild running
+		-- just as often -- all of those were the source, and all of them
+		-- are fixed. Measured after: a simulated 460-friend list no longer
+		-- climbs anywhere near the threshold that made this fire.
+		--
+		-- The second is that the cure was heavier than it looked. There is
+		-- one Lua state for every addon in the game, so "collect" was never
+		-- this addon tidying up after itself -- it was a stop-the-world
+		-- collection of everyone's garbage, triggered by one addon's own
+		-- accounting. And UpdateAddOnMemoryUsage, the guard meant to avoid
+		-- paying that, walks every loaded addon to recompute attribution --
+		-- so the cheap path still paid a real cost on every single panel
+		-- close, to answer a question that is now always "no".
+		--
+		-- Garbage sitting uncollected is not a leak. Lua's incremental
+		-- collector reclaiming it lazily is the collector working, and the
+		-- number in an addon-memory readout is not memory lost. If that
+		-- number ever climbs like it used to, the fix is to find what is
+		-- allocating -- not to stop the world on the way out.
 
 		FriendsScrollFrame.dynamic=SocialPlus_GetTopButton
 		-- Scrolling only re-rendered the cached FriendButtons[].id indices
@@ -10334,15 +10566,45 @@ frame:SetScript("OnEvent",function(self,event,...)
 		SocialPlus_QueueFriendScan()
 	elseif event=="FRIENDLIST_UPDATE" then
 		SocialPlus_QueueFriendScan()
+		-- Only when Blizzard's frame is no longer listening for this itself --
+		-- otherwise their handler already ran and asking again would double it.
+		if SOCIALPLUS_DRIVING_REFRESH then SocialPlus_RequestListRefresh() end
 	elseif event=="BN_FRIEND_INFO_CHANGED" then
 		SocialPlus_QueueFriendScan()
+		if SOCIALPLUS_DRIVING_REFRESH then SocialPlus_RequestListRefresh() end
 	elseif event=="CHAT_MSG_ADDON" then
 		local prefix,message,_,sender=...
 		SocialPlus_OnVersionMessage(prefix,message,sender)
 	elseif event=="BN_CHAT_MSG_ADDON" then
 		local prefix,message,_,senderPresenceID=...
 		SocialPlus_OnVersionMessage(prefix,message,SocialPlus_ResolveBNetSenderName(senderPresenceID))
+	elseif event=="PLAYER_REGEN_ENABLED" then
+		-- Whatever the combat guard turned away, collected now.
+		--
+		-- Unforced on purpose, so the panel-hidden guard still applies: coming
+		-- out of a fight with the friends list closed owes nobody a rebuild,
+		-- and the dirty flag keeps the debt until it is actually opened.
+		if SOCIALPLUS_COMBAT_DEFERRED then
+			SOCIALPLUS_COMBAT_DEFERRED=false
+			SocialPlus_Update()
+		end
 	elseif event=="GROUP_ROSTER_UPDATE" then
 		SocialPlus_QueueVersionBroadcast()
+
+		-- Repaint, without re-deriving (see the dirty note at the top).
+		--
+		-- The invite icon dims for somebody already in your group, so the rows
+		-- genuinely are stale after this event -- but that state is read per
+		-- row while rendering, so the cheap half is the whole fix. Previously
+		-- this did the opposite of what it needed: it marked the data dirty,
+		-- which bought a full pass later, and never repainted, so the icons
+		-- stayed wrong until something unrelated redrew them.
+		--
+		-- Only while the list is actually up. In combat this event arrives
+		-- constantly and the panel is almost never open, so the guard is what
+		-- keeps a raid from paying for renders nobody is looking at.
+		if FriendsListFrame and FriendsListFrame:IsShown() then
+			SocialPlus_UpdateFriends()
+		end
 	end
 end)
