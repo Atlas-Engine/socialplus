@@ -657,14 +657,23 @@ local function SocialPlus_GetDragGhost()
 		f:SetAlpha(0.80)
 		f:Hide()
 
-		-- Escape cancels an active drag. EnableKeyboard(true) + a default
-		-- SetPropagateKeyboardInput(true) is the same pattern already
-		-- proven working elsewhere in this file (the old scroll-speed
-		-- popup, since removed) -- confirmed legal on this client. Only
-		-- swallows the key (stops propagation) when a drag is actually in
-		-- progress; otherwise every key passes through untouched.
-		f:EnableKeyboard(true)
-		SocialPlus_SetPropagate(f,true)
+		-- Escape cancels an active drag. Only swallows the key (stops
+		-- propagation) when a drag is actually in progress; otherwise every
+		-- key passes through untouched.
+		--
+		-- The propagate is asked for FIRST and the keyboard armed only if it
+		-- was granted. SetPropagateKeyboardInput is protected in combat, so
+		-- the request can be refused -- and a frame holding the keyboard while
+		-- propagating nothing swallows every key, for the rest of the session,
+		-- in an arena. This frame is built the first time somebody drags, so
+		-- combat is a perfectly ordinary time for it to appear.
+		--
+		-- Asked again on every show, because the one built during combat would
+		-- otherwise never get its keyboard at all.
+		f:EnableKeyboard(SocialPlus_SetPropagate(f,true) and true or false)
+		f:HookScript("OnShow",function(self)
+			self:EnableKeyboard(SocialPlus_SetPropagate(self,true) and true or false)
+		end)
 		f:SetScript("OnKeyDown",function(self,key)
 			if key=="ESCAPE" and SocialPlus_DragSourceGroup then
 				SocialPlus_SetPropagate(self,false)
@@ -6227,12 +6236,15 @@ function SocialPlus_CreateSettingsPanel()
 	-- so this also fixes HUD unit frames (target/focus) bleeding through.
 	f:SetFrameStrata("DIALOG")
 
-	-- Escape closes just this panel, not the whole Friends panel behind it
-	-- -- same EnableKeyboard(true) + SetPropagateKeyboardInput(true) pattern
-	-- used for the click-catcher's menu-Escape handling and the drag
-	-- ghost's cancel-drag handling elsewhere in this file.
-	f:EnableKeyboard(true)
-	SocialPlus_SetPropagate(f,true)
+	-- Escape closes just this panel, not the whole Friends panel behind it.
+	--
+	-- Propagate first, keyboard only if granted, and asked again on show --
+	-- see the drag ghost for why. This panel is built the first time it is
+	-- opened, which can just as easily be in combat.
+	f:EnableKeyboard(SocialPlus_SetPropagate(f,true) and true or false)
+	f:HookScript("OnShow",function(self)
+		self:EnableKeyboard(SocialPlus_SetPropagate(self,true) and true or false)
+	end)
 	f:SetScript("OnKeyDown",function(self,key)
 		if key=="ESCAPE" then
 			SocialPlus_SetPropagate(self,false)
@@ -7122,13 +7134,19 @@ end)
 
 -- Escape should close an open menu first, not the whole Friends panel --
 -- only let Escape propagate through to Blizzard's normal panel-close
--- handling when no menu is actually open. Same EnableKeyboard(true) +
--- SetPropagateKeyboardInput(true) pattern already proven working
--- elsewhere in this file (the drag ghost's Escape-to-cancel handler).
--- The catcher is only ever shown while a menu or search interaction is
--- active, so it naturally only sees Escape when relevant.
-SocialPlus_ClickCatcher:EnableKeyboard(true)
-SocialPlus_SetPropagate(SocialPlus_ClickCatcher,true)
+-- handling when no menu is actually open. The catcher is only ever shown while
+-- a menu or search interaction is active, so it naturally only sees Escape when
+-- relevant.
+--
+-- Propagate first, keyboard only if granted, and asked again on show -- see
+-- the drag ghost. This one runs at load rather than in combat, so it is the
+-- safe member of the three; it follows the same order so that the next person
+-- to copy this block copies the right one.
+SocialPlus_ClickCatcher:EnableKeyboard(
+	SocialPlus_SetPropagate(SocialPlus_ClickCatcher,true) and true or false)
+SocialPlus_ClickCatcher:HookScript("OnShow",function(self)
+	self:EnableKeyboard(SocialPlus_SetPropagate(self,true) and true or false)
+end)
 SocialPlus_ClickCatcher:SetScript("OnKeyDown",function(self,key)
     if key=="ESCAPE" and SocialPlus_IsAnyDropDownOpen() then
         SocialPlus_SetPropagate(self,false)

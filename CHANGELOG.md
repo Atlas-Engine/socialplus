@@ -1,5 +1,9 @@
 ﻿# Changelog
 
+## 1.15b
+
+- Fixed keypresses being swallowed for the rest of the session -- including in an arena -- if the settings panel or a friend drag was first used during combat. Nothing typed reached the game after that.
+
 ## 1.15a
 
 - Friends whose name starts with an accented capital can be found again. Élodie was searchable as "lodie" but not as "elodie" or "élodie", because the first letter was being dropped rather than matched.
