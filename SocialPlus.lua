@@ -133,6 +133,15 @@ local SocialPlus_HideRowTooltip
 local CURRENT_DB_VERSION = 2
 
 -- Ensure savedvars exist and set reasonable defaults
+-- Scroll speed base: the slider value is divided by this to get the internal
+-- multiplier.
+--
+-- Declared up here because SocialPlus_EnsureSavedVars below reads it. It used
+-- to sit ~230 lines further down with the other constants, which put it out of
+-- scope at the point of use -- so the read compiled to a global lookup, found
+-- nil, and every fresh install saved a scroll speed of nil rather than 2.5.
+local SCROLL_BASE = 2.5
+
 function SocialPlus_EnsureSavedVars()
     if not SocialPlus_SavedVars then SocialPlus_SavedVars = {} end
     local db = SocialPlus_SavedVars
@@ -338,14 +347,73 @@ end
 -- times a rebuild for a result that never changes between one comparison
 -- and the next. The domain is small and stable (friend names, plus search
 -- terms through SocialPlus_NormalizeText below) so nothing here evicts.
-local SocialPlus_AsciiLowerCache={}
+-- Bounded, because the keys are not a closed set.
+--
+-- This caches names, notes, zones and every search term ever typed, so it grows
+-- for as long as the session lasts and nothing ever removed anything. Emptied
+-- wholesale rather than evicted one at a time: the entries cost a gsub each to
+-- rebuild, there is no ordering to reason about, and the friends actually on
+-- screen refill it within a redraw or two.
+--
+-- The ceiling is generous on purpose. A 460-friend list was measured at roughly
+-- three keys per friend, so this is several times the working set of the
+-- largest list reported and will not clear in ordinary use.
+--
+-- Count and ceiling live ON the cache table rather than beside it as their own
+-- locals. This file's main chunk is at Lua's 200-local limit: two extra names
+-- here took it over, and the client reports that as
+-- "main function has more than 200 local variables" against line 1, which says
+-- nothing about where it came from. The entries hang off `n` and `max` while
+-- the cached strings sit under `map`, so an arbitrary key can never collide
+-- with the bookkeeping.
+local SocialPlus_AsciiLowerCache={ map={}, n=0, max=6000 }
+
 local function SocialPlus_AsciiLower(s)
-    local cached=SocialPlus_AsciiLowerCache[s]
+    local cached=SocialPlus_AsciiLowerCache.map[s]
     if cached then return cached end
 
     local lowered=(s:gsub("[A-Z]",function(c) return c:lower() end))
-    SocialPlus_AsciiLowerCache[s]=lowered
+
+    if SocialPlus_AsciiLowerCache.n>=SocialPlus_AsciiLowerCache.max then
+        SocialPlus_AsciiLowerCache.map={}
+        SocialPlus_AsciiLowerCache.n=0
+    end
+
+    SocialPlus_AsciiLowerCache.map[s]=lowered
+    SocialPlus_AsciiLowerCache.n=SocialPlus_AsciiLowerCache.n+1
     return lowered
+end
+
+-- Whether the mouse is over this frame right now.
+--
+-- GetMouseFocus is gone from this client -- confirmed live, /run print(GetMouseFocus)
+-- answers nil. The single call site guarded itself with "if GetMouseFocus and",
+-- so the tooltip resync has been quietly doing nothing for as long as that has
+-- been true: a guard that turns a missing API into a dead feature leaves
+-- nothing to debug and nothing in the log, which is worse than the error would
+-- have been.
+--
+-- A global rather than a local on purpose. This file's main chunk is at Lua's
+-- 200-local limit and one more name there stops the whole addon loading.
+--
+-- Tried in the order this client is likeliest to have them, and false if it has
+-- none -- which is exactly today's behaviour rather than a new failure.
+function SocialPlus_MouseIsOver(frame)
+	if not frame then return false end
+
+	if frame.IsMouseMotionFocus then
+		return frame:IsMouseMotionFocus() and true or false
+	end
+
+	if GetMouseFoci then
+		for _,focused in ipairs(GetMouseFoci() or {}) do
+			if focused==frame then return true end
+		end
+		return false
+	end
+
+	if GetMouseFocus then return GetMouseFocus()==frame end
+	return false
 end
 
 -- The player's region, as the 1-5 id Battle.net game accounts also use.
@@ -404,8 +472,10 @@ local ONE_DAY=24*ONE_HOUR
 local ONE_MONTH=30*ONE_DAY
 local ONE_YEAR=12*ONE_MONTH
 
--- Scroll speed base: slider value will be divided by this value to get the internal multiplier
-local SCROLL_BASE = 2.5
+-- No notifications until the first scans have settled: a snapshot taken too
+-- early reads as a false transition. Declared here rather than beside its main
+-- users, because a guard far above them needs it in scope.
+local SocialPlus_ScanWarmupUntil=0
 
 -- Friend list state
 local FriendButtons={count=0}
@@ -3861,13 +3931,13 @@ local function SocialPlus_UpdateFriendButton(button)
 	end
 
 	-- Tooltip handling: check whether THIS row is the one the mouse is
-	-- actually over right now (GetMouseFocus()) and, if our own custom
+	-- actually over right now (SocialPlus_MouseIsOver) and, if our own custom
 	-- tooltip (see SocialPlus_ShowRowTooltip) isn't already showing THIS
 	-- friend's identity, refresh it. A rebuild (list reorder, online/
 	-- offline rescan) can reassign which widget-to-friend mapping sits
 	-- under a stationary cursor, so this is what keeps the tooltip in sync
 	-- without needing a real mouse movement.
-	if GetMouseFocus and GetMouseFocus()==button then
+	if SocialPlus_MouseIsOver(button) then
 		local identityKey=SocialPlus_GetRowIdentityKey(button.buttonType,button.id)
 		-- A nil identityKey (lookup momentarily failed) must NOT be treated
 		-- as "unchanged": nil==nil would wrongly count as still matching.
@@ -4249,26 +4319,25 @@ local SocialPlus_SortNameCache={}
 -- renderer above, which would otherwise call it before its declaration.
 -- Accent-insensitive key for zone matching.
 --
--- Blizzard's own strings carry accents ("Arene de Nagrand" is really "Ar958ne
--- de Nagrand"), and any accent that doesn't survive a copy/paste into the locale
--- file turns an exact match into a silent miss -- the icon just never appears,
--- with nothing to debug. Folding both sides removes that whole class of failure.
-SocialPlus_ZoneAccentMap={
-	["95p"]="a",["95r"]="a",["95t"]="a",["95s"]="a",["95q"]="a",
-	["958"]="e",["959"]="e",["95x"]="e",["95y"]="e",
-	["95z"]="i",["95{"]="i",["95|"]="i",["95}"]="i",
-	["958"]="o",["959"]="o",["9580"]="o",["9582"]="o",["9581"]="o",
-	["9585"]="u",["9586"]="u",["9587"]="u",["9588"]="u",
-	["95w"]="c",["95"]="n",
-}
+-- Blizzard's own strings carry accents -- the locale file's "Arene de Nagrand"
+-- is really "Ar\195\168ne de Nagrand" in game -- so both sides have to be
+-- or the arena icon simply never appears, with nothing to debug.
+--
+-- Folded through the search normaliser rather than through a table of its own.
+-- The table that used to live here had its escape sequences mangled at some
+-- point: every key held a control byte and some literal digits where a UTF-8
+-- pair belonged, and two keys collided on top of that. Nothing accented has
+-- ever matched, so French and Spanish arena detection has never worked.
+--
+-- escapecheck does not see this class of damage, and a second copy of a map we
+-- already maintain is what let it rot unnoticed -- so the copy is gone rather
+-- than repaired. SOCIALPLUS_ACCENT_MAP is exercised by every search.
+--
+-- NormalizeText also drops spaces and punctuation. Harmless here: the lookup
+-- table and the query are both built with this same function.
 function SocialPlus_FoldZoneName(text)
 	if type(text)~="string" then return "" end
-	text=text:lower()
-	-- Lowercasing leaves the accented bytes alone, so map them explicitly.
-	for from,to in pairs(SocialPlus_ZoneAccentMap) do
-		text=text:gsub(from,to)
-	end
-	return text
+	return SocialPlus_NormalizeText(text)
 end
 
 SocialPlus_ArenaZoneLookup=nil
@@ -6072,6 +6141,15 @@ function SocialPlus_GetVersionLabelFromGameText(gameText)
 	-- the Lich King Classic" doesn't accidentally get caught by a broader
 	-- pattern first.
 	local patterns={
+		-- Anniversary names itself, and never says "Burning Crusade": its rich
+		-- presence reads "WoW Classic Anniversary - Spineshatter". Matching
+		-- nothing here meant the caller fell through to printing that whole
+		-- string as the row's second line, where "TBC (EU)" belongs.
+		--
+		-- Mapped to TBC because the Anniversary realms are on Burning Crusade;
+		-- the client itself reports WOW_PROJECT_BURNING_CRUSADE_CLASSIC. If
+		-- that line ever moves on, this is the entry that has to move with it.
+		{"Classic Anniversary",L.WOW_VERSION_TBC},
 		{"Burning Crusade Classic",L.WOW_VERSION_TBC},
 		{"Wrath of the Lich King Classic",L.WOW_VERSION_WOTLK},
 		{"Cataclysm Classic",L.WOW_VERSION_CATA},
@@ -6098,6 +6176,9 @@ function SocialPlus_GetProjectIDFromGameText(gameText)
 	-- Order matters for the same reason as the label list above: longer, more
 	-- specific phrases first.
 	local ids={
+		-- See the label list above: Anniversary calls itself "WoW Classic
+		-- Anniversary" and reports the Burning Crusade project id.
+		{"Classic Anniversary",WOW_PROJECT_BURNING_CRUSADE_CLASSIC},
 		{"Burning Crusade Classic",WOW_PROJECT_BURNING_CRUSADE_CLASSIC},
 		{"Wrath of the Lich King Classic",WOW_PROJECT_WRATH_CLASSIC},
 		{"Cataclysm Classic",WOW_PROJECT_CATACLYSM_CLASSIC},
@@ -8021,7 +8102,7 @@ end
 -- Confirmed live via diagnostic that something in Blizzard's own update
 -- path calls FriendsFrameTooltip_Show repeatedly for rows the mouse isn't
 -- even over, for reasons never fully identified despite several targeted
--- fixes (resync-by-identity, GetMouseFocus gating, hide-after-the-fact).
+-- fixes (resync-by-identity, mouse-focus gating, hide-after-the-fact).
 -- Owning the whole pipeline ourselves -- Blizzard's FriendsFrame code never
 -- touches GameTooltip -- sidesteps that entire class of bug instead of
 -- continuing to patch around it.
@@ -9497,7 +9578,11 @@ local SocialPlus_NotifyDebounceTimer={}
 -- level, etc.) streams in gradually rather than arriving all at once, so a
 -- snapshot taken too early can read as a false transition once things
 -- settle. During warmup, only establish baselines -- never announce.
-local SocialPlus_ScanWarmupUntil=0
+--
+-- Declared with the other friend-list state near the top of the file, not here:
+-- a reader ~5,000 lines above this point had it out of scope, so that guard was
+-- reading a nil global and its "or 0" turned the whole warmup check into a
+-- no-op that nothing reported.
 
 -- Find the friend-LIST INDEX for a given presence ID (bnetIDAccount).
 local function SocialPlus_FindFriendIndexByPresenceID(bnetIDAccount)
@@ -10013,12 +10098,38 @@ end
 -- is built. Instead, directly control the two CVars that the Blizzard
 -- Options -> Social "online/offline friends" checkboxes themselves set
 -- (confirmed live via a SetCVar hook): showToastOnline / showToastOffline.
--- This takes over both toasts whenever our own notification is on, and
--- restores Blizzard's default the moment it's off.
+-- This takes over both toasts whenever our own notification is on, and hands
+-- them back the moment it's off.
+--
+-- Hands back what the player had, not what Blizzard ships with. Turning our
+-- notifications off used to write "1" into both, so anybody who had deliberately
+-- switched Blizzard's online/offline toasts off got them switched back on by an
+-- addon they had just told to stop doing things.
+--
+-- The original is captured once, on the way in, while the CVars are still
+-- theirs; capturing on any later call would record our own "0" as their
+-- preference. Cleared again on the way out, so the next time we take over we
+-- read a fresh value rather than a stale one.
 function SocialPlus_ApplyToastCVars()
-	local enabled=SocialPlus_SavedVars and SocialPlus_SavedVars.notifications and SocialPlus_SavedVars.notifications.enabled
-	SetCVar("showToastOnline",enabled and "0" or "1")
-	SetCVar("showToastOffline",enabled and "0" or "1")
+	if not SocialPlus_SavedVars then return end
+
+	local enabled=SocialPlus_SavedVars.notifications and SocialPlus_SavedVars.notifications.enabled
+	local saved=SocialPlus_SavedVars.toastCVars
+
+	if enabled then
+		if not saved then
+			SocialPlus_SavedVars.toastCVars={
+				online=(GetCVar and GetCVar("showToastOnline")) or "1",
+				offline=(GetCVar and GetCVar("showToastOffline")) or "1",
+			}
+		end
+		SetCVar("showToastOnline","0")
+		SetCVar("showToastOffline","0")
+	else
+		SetCVar("showToastOnline",(saved and saved.online) or "1")
+		SetCVar("showToastOffline",(saved and saved.offline) or "1")
+		SocialPlus_SavedVars.toastCVars=nil
+	end
 end
 
 -- [[ Who-list right-click menu ]]
@@ -10504,7 +10615,7 @@ frame:SetScript("OnEvent",function(self,event,...)
 		-- reverted). If the friend list data hasn't changed since it was
 		-- last open, Blizzard's own FriendsList_Update may not fire at all
 		-- on reopen, so our own render pass (which is what keeps the
-		-- tooltip in sync -- see the GetMouseFocus() check above) never
+		-- tooltip in sync -- see the SocialPlus_MouseIsOver check above) never
 		-- ran, and whatever tooltip showed came from Blizzard's own stale
 		-- internal state instead (reported live: closed while hovering one
 		-- friend, reopened without moving the mouse, got a completely
@@ -10611,7 +10722,7 @@ frame:SetScript("OnEvent",function(self,event,...)
 				return
 			end
 			-- Hide outright rather than trust the per-row resync to catch
-			-- it here -- GetMouseFocus() can misreport during/right after a
+			-- it here -- the mouse-focus check can misreport during/right after a
 			-- mouse-wheel scroll event (focus can transiently shift to the
 			-- scroll frame itself), so the resync's "is the cursor over ME"
 			-- check silently failed to match ANY row and the tooltip just
