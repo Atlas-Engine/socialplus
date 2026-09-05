@@ -1,4 +1,4 @@
-local ADDON_NAME, ns = ...
+﻿local ADDON_NAME, ns = ...
 local L = ns.L
 
 local LibDD = LibStub("LibUIDropDownMenu-4.0")
@@ -348,12 +348,26 @@ local function SocialPlus_AsciiLower(s)
     return lowered
 end
 
--- Determine the player's region ID based on the "portal" CVar
+-- The player's region, as the 1-5 id Battle.net game accounts also use.
+--
+-- GetCurrentRegion first: it is the client's own answer, it already returns
+-- exactly this numbering, and it cannot be absent or spelled unexpectedly.
+-- The "portal" CVar is the fallback -- it was the only source here, and it
+-- goes through a list of spellings that has to be kept in step with
+-- whatever Blizzard sets, returning nil for anything unrecognised.
 local playerRegionID=nil
 
 local function SocialPlus_GetClientRegionID()
 	if playerRegionID~=nil then
 		return playerRegionID
+	end
+
+	if GetCurrentRegion then
+		local ok,id=pcall(GetCurrentRegion)
+		if ok and type(id)=="number" and id>=1 and id<=5 then
+			playerRegionID=id
+			return playerRegionID
+		end
 	end
 
 	local portal=nil
@@ -1217,6 +1231,25 @@ local SOCIALPLUS_ACCENT_MAP={
     ["ò"]="o",["ó"]="o",["ô"]="o",["ö"]="o",["õ"]="o",["ō"]="o",
     ["ù"]="u",["ú"]="u",["û"]="u",["ü"]="u",["ū"]="u",
     ["ý"]="y",["ÿ"]="y",
+
+    -- The capitals as well.
+    --
+    -- SocialPlus_AsciiLower only folds [A-Z]: it deliberately leaves every
+    -- non-ASCII byte alone, because :lower() mangles them (see the note on
+    -- the normalizer below). So an accented capital arrives here still
+    -- capitalised, misses a table of lower-case keys, and is then removed
+    -- outright by the [^a-z0-9] strip -- silently losing the letter rather
+    -- than failing. "Élodie" normalised to "lodie" and could not be found by
+    -- typing any prefix of her name; "Ämber" became "mber", "LOÏC" became
+    -- "loc". Reported against 1.14d.
+    ["À"]="a",["Á"]="a",["Â"]="a",["Ä"]="a",["Ã"]="a",["Å"]="a",["Ā"]="a",
+    ["Ç"]="c",
+    ["È"]="e",["É"]="e",["Ê"]="e",["Ë"]="e",["Ē"]="e",
+    ["Ì"]="i",["Í"]="i",["Î"]="i",["Ï"]="i",["Ī"]="i",
+    ["Ñ"]="n",
+    ["Ò"]="o",["Ó"]="o",["Ô"]="o",["Ö"]="o",["Õ"]="o",["Ō"]="o",
+    ["Ù"]="u",["Ú"]="u",["Û"]="u",["Ü"]="u",["Ū"]="u",
+    ["Ý"]="y",["Ÿ"]="y",
 }
 
 -- Normalize text: lowercase, strip accents, remove non-alphanumerics.
@@ -1938,8 +1971,6 @@ end
 local function FG_GetNumFriends()
 	if C_FriendList and C_FriendList.GetNumFriends then
 		return C_FriendList.GetNumFriends()
-	elseif GetNumFriends then
-		return GetNumFriends()
 	end
 	return 0
 end
@@ -1947,39 +1978,50 @@ end
 local function FG_GetNumOnlineFriends()
 	if C_FriendList and C_FriendList.GetNumOnlineFriends then
 		return C_FriendList.GetNumOnlineFriends()
-	elseif GetNumFriends and GetFriendInfo then
-		local total=GetNumFriends()
-		local online=0
-		for i=1,total do
-			local _,_,_,_,connected=GetFriendInfo(i)
-			if connected then
-				online=online+1
-			end
-		end
-		return online
 	end
 	return 0
 end
 
+-- Memoised for the frame it is asked in.
+--
+-- C_FriendList.GetFriendInfoByIndex builds a fresh table on every call, and
+-- one WoW friend is read several times to draw a single row: twice inside
+-- SocialPlus_UpdateFriendButton, and again in the derivation that decides
+-- ordering and grouping. On a list with a few hundred WoW friends that is
+-- hundreds of throwaway tables per repaint.
+--
+-- Keyed on GetTime(), which is constant for the whole of one frame, so the
+-- cache empties itself every frame rather than needing to be told when the
+-- friend list changed. Anything that reads a friend twice in one frame gets
+-- one table; anything reading across frames sees fresh data, same as before.
+--
+-- Not a correctness change: a value cannot move mid-frame, and a note
+-- written by us is not readable back immediately in any case -- which is
+-- what SocialPlus_RefreshAfterNoteWrite already exists to handle.
+SOCIALPLUS_FRIEND_INFO_CACHE={}
+SOCIALPLUS_FRIEND_INFO_FRAME=nil
+
+-- For the rare caller that changes a friend and must re-read inside the same
+-- frame rather than waiting for the next one.
+function SocialPlus_InvalidateFriendInfo()
+	SOCIALPLUS_FRIEND_INFO_CACHE={}
+	SOCIALPLUS_FRIEND_INFO_FRAME=nil
+end
+
 function FG_GetFriendInfoByIndex(index)
 	if C_FriendList and C_FriendList.GetFriendInfoByIndex then
-		return C_FriendList.GetFriendInfoByIndex(index)
-	elseif GetFriendInfo then
-		-- Classic / MoP: GetFriendInfo(index) returns
-		-- name, level, class, area, connected, status, note
-		local name,level,class,area,connected,status,note=GetFriendInfo(index)
-		return {
-			name=name,
-			level=level,
-			className=class,
-			area=area,
-			connected=connected,
-			notes=note,
-			afk=status=="AFK",
-			dnd=status=="DND",
-			mobile=false,
-			richPresence=nil,
-		}
+		local now=(GetTime and GetTime()) or 0
+		if SOCIALPLUS_FRIEND_INFO_FRAME~=now then
+			SOCIALPLUS_FRIEND_INFO_FRAME=now
+			SOCIALPLUS_FRIEND_INFO_CACHE={}
+		end
+
+		local hit=SOCIALPLUS_FRIEND_INFO_CACHE[index]
+		if hit~=nil then return hit end
+
+		local info=C_FriendList.GetFriendInfoByIndex(index)
+		SOCIALPLUS_FRIEND_INFO_CACHE[index]=info
+		return info
 	end
 	return nil
 end
@@ -2018,6 +2060,11 @@ local function FG_GetSelectedFriend()
 end
 
 local function FG_SetFriendNotes(index,note)
+	-- The per-frame memo has to go: this changes the very record it caches,
+	-- and a reader later in the same frame would otherwise be handed the note
+	-- as it was before the write.
+	if SocialPlus_InvalidateFriendInfo then SocialPlus_InvalidateFriendInfo() end
+
 	-- Always resolve the real friend first by index
 	local info=FG_GetFriendInfoByIndex(index)
 	local name=info and info.name or nil
@@ -2099,13 +2146,6 @@ end
 local function FG_BNGetInfo()
 	if BNGetInfo then
 		return BNGetInfo()
-	end
-	return nil
-end
-
-local function FG_BNGetGameAccountInfo(bnetAccountId)
-	if BNGetGameAccountInfo then
-		return BNGetGameAccountInfo(bnetAccountId)
 	end
 	return nil
 end
@@ -2350,6 +2390,20 @@ local function GetFriendInfoById(id)
 					wowProjectID=acct.wowProjectID
 					realmName=acct.realmName
 					client=BNET_CLIENT_WOW
+
+					-- These two as well, from the SAME account as the name above.
+					--
+					-- They were left behind, still holding whatever the summary we
+					-- just rejected had put there. So the row and the tooltip drew a
+					-- character from one game account beside a region flag and a
+					-- faction crest from another -- and when the broken summary
+					-- carried neither, the flag simply vanished for that friend.
+					--
+					-- Every other field here is taken from `acct` precisely so the
+					-- line describes one account; these two were the exception by
+					-- omission rather than on purpose.
+					regionID=acct.regionID
+					factionName=acct.factionName
 				end
 			end
 
@@ -2365,44 +2419,6 @@ local function GetFriendInfoById(id)
 			else
 				canCoop=nil
 			end
-		end
-else
-		local bnetIDAccount,accountName2,_,_,characterName2,bnetAccountId2,client2,
-			isOnline2,lastOnline2,isAFK2,isDND2,_,_,_,_,wowProjectID2,_,_,isFavorite2,mobile2=
-			FG_BNGetFriendInfo(id)
-
-		accountName=accountName2
-		bnetAccountId=bnetAccountId2
-		characterName=characterName2
-		client=client2
-		isOnline=isOnline2
-		lastOnline=lastOnline2
-		isAFK=isAFK2
-		isDND=isDND2
-		wowProjectID=wowProjectID2
-		isFavoriteFriend=isFavorite2
-		mobile=mobile2
-
-		if isOnline2 and bnetAccountId2 then
-			local _,_,_,realmName2,_,_,_,class2,_,zoneName2,level2,
-				gameText2,_,_,_,_,_,isGameAFK2,isGameBusy2,_,wowProjectID3,mobile3=
-				FG_BNGetGameAccountInfo(bnetAccountId2)
-
-			realmName=realmName2
-			class=class2
-			zoneName=zoneName2
-			level=level2
-			gameText=gameText2
-			isGameAFK=isGameAFK2
-			isGameBusy=isGameBusy2
-			wowProjectID=wowProjectID3 or wowProjectID
-			mobile=mobile3 or mobile
-		end
-
-		if CanCooperateWithGameAccount and bnetAccountId2 then
-			canCoop=CanCooperateWithGameAccount(bnetAccountId2)
-		else
-			canCoop=nil
 		end
 	end
 
@@ -8060,7 +8076,7 @@ function SocialPlus_ShowRowTooltip(button)
 	-- Separate from the Ladder Standing block below because that block runs
 	-- last, and this is needed while the identity line is still being written.
 	-- Cheap to ask twice: the lookup is an indexed hash, not a scan.
-	local function SpecIconFor(charName,charRealm,regionID)
+	local function SpecIconFor(charName,charRealm,regionID,projectID)
 		if not (SocialPlus_SavedVars and SocialPlus_SavedVars.pvp_spec_icon) then return "" end
 		if not (charName and charName~="") then return "" end
 
@@ -8073,7 +8089,13 @@ function SocialPlus_ShowRowTooltip(button)
 		local region
 		if api.RegionFromID then region=api.RegionFromID(regionID) end
 
-		local ok,found=pcall(api.GetLadder,full,region)
+		-- Same reason the ratings block asks: the icon has to come off the row
+		-- for the game they are actually in, or a name that exists on both
+		-- ladders is drawn wearing the wrong spec.
+		local version
+		if api.VersionFromProjectID then version=api.VersionFromProjectID(projectID) end
+
+		local ok,found=pcall(api.GetLadder,full,region,version)
 		if not (ok and found) then return "" end
 
 		-- Any bracket will do: the site stores one spec per character, measured
@@ -8136,11 +8158,19 @@ function SocialPlus_ShowRowTooltip(button)
 			local region=person.region
 			if not region and api.RegionFromID then region=api.RegionFromID(person.regionID) end
 
+			-- Their game as well as their region. A friend on the Anniversary realms
+			-- is on a different ladder, and looking them up in the Classic one finds
+			-- either nothing or -- worse -- a stranger who happens to share the name.
+			--
+			-- nil means the Classic ladder, which is what every caller wanted before
+			-- this existed and what a plain WoW friend still wants.
+			local version=person.version
+
 			-- Regions we never scraped cannot answer either way.
-			local usable=not (region and api.HasRegion and not api.HasRegion(region))
+			local usable=not (region and api.HasRegion and not api.HasRegion(region,version))
 
 			if usable then
-				local ok,found=pcall(api.GetLadder,full,region)
+				local ok,found=pcall(api.GetLadder,full,region,version)
 
 				-- Filtered here, not at drawing time, so a friend ranked only
 				-- in brackets you have switched off counts as having nothing to
@@ -8349,6 +8379,15 @@ function SocialPlus_ShowRowTooltip(button)
 		AddPvPLines({ {
 			name=wowName, realm=wowRealm, className=info.className,
 			regionID=GetCurrentRegion and GetCurrentRegion() or nil,
+
+			-- Whatever game THIS client is: a friends-list friend is on your own
+			-- realm, so they are necessarily in it. Left unset this defaulted to
+			-- the Classic ladder whichever client was running, which was right
+			-- only by accident -- on Anniversary every one of these friends was
+			-- looked up in the wrong game's ladder, finding nothing or, where a
+			-- name existed on both, somebody else entirely.
+			version=(_G.ArenaPlusAPI and _G.ArenaPlusAPI.VersionFromProjectID
+				and _G.ArenaPlusAPI.VersionFromProjectID(WOW_PROJECT_ID)) or nil,
 			-- A friends-list friend is on your realm and so your faction; the
 			-- game does not report one for them because there is nothing to
 			-- report.
@@ -8388,7 +8427,7 @@ function SocialPlus_ShowRowTooltip(button)
 					-- spec icon and the faction crest, where it read as clutter
 					-- between two pictures rather than as information.
 					GameTooltip:AddLine(classColor..charLabel.."|r"
-						..SpecIconFor(characterName,realmName,regionID)
+						..SpecIconFor(characterName,realmName,regionID,wowProjectID)
 						..FactionIconSuffix(friendFaction),1,1,1)
 					if level and level~=0 then
 						GameTooltip:AddLine(format(FRIENDS_LEVEL_TEMPLATE,level,class or ""),0.8,0.8,0.8)
@@ -8437,7 +8476,7 @@ function SocialPlus_ShowRowTooltip(button)
 					-- "Retail (EU)") -- putting it on the name line too gave
 					-- a duplicate "(NA) ... (NA)" (reported live).
 					GameTooltip:AddLine(classColor..charLabel.."|r"
-						..SpecIconFor(characterName,realmName,regionID)
+						..SpecIconFor(characterName,realmName,regionID,wowProjectID)
 						..FactionIconSuffix(friendFaction),1,1,1)
 					-- Version only. The region moved out to the row's flag --
 					-- see the name line above.
@@ -8496,7 +8535,26 @@ function SocialPlus_ShowRowTooltip(button)
 
 		local function Consider(name,realm,regionID,projectID,className,factionName)
 			if not (name and name~="") then return end
-			if projectID and projectID~=WOW_PROJECT_ID then return end
+
+			-- Kept if ArenaPlus ships a ladder for the game they are in, rather than
+			-- only for our own. It was our project id or nothing, because the ladder
+			-- described no other game -- the data addon now carries the Anniversary
+			-- one too, so a friend on TBC has a rating worth showing while we sit
+			-- in Classic.
+			--
+			-- Asked of ArenaPlus rather than by listing project ids here: which
+			-- ladders shipped is its business, and a version it cannot answer for is
+			-- dropped exactly as before.
+			local ladderAPI=_G.ArenaPlusAPI
+			local version
+			if ladderAPI and ladderAPI.VersionFromProjectID then
+				version=ladderAPI.VersionFromProjectID(projectID)
+				if projectID and not version then return end
+			elseif projectID and projectID~=WOW_PROJECT_ID then
+				-- ArenaPlus absent, or an older one that cannot be asked. Same rule
+				-- it had before: our own game only.
+				return
+			end
 
 			for _,had in ipairs(characters) do
 				if had.name==name and (had.realm or "")==(realm or "") then return end
@@ -8505,6 +8563,7 @@ function SocialPlus_ShowRowTooltip(button)
 			characters[#characters+1]={
 				name=name, realm=realm, regionID=regionID,
 				className=className, factionName=factionName,
+				version=version,
 			}
 		end
 
@@ -9088,6 +9147,12 @@ StaticPopupDialogs["SOCIALPLUS_CONFIRM_REMOVE_BNET"]={
 }
 
 function SocialPlus_RemoveCurrentFriend()
+	-- Removing a friend renumbers every friend after them, so an index the
+	-- memo answered a moment ago now names somebody else. Cleared before the
+	-- removal and again after it, because this function reads by index on the
+	-- way through.
+	if SocialPlus_InvalidateFriendInfo then SocialPlus_InvalidateFriendInfo() end
+
 	local cf=SocialPlus_CurrentFriend
 	if not cf or not cf.buttonType or not cf.id then
 		FG_Debug("RemoveCurrentFriend: aborted (no current friend)")
