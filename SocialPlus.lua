@@ -670,9 +670,21 @@ local function SocialPlus_GetDragGhost()
 		--
 		-- Asked again on every show, because the one built during combat would
 		-- otherwise never get its keyboard at all.
-		f:EnableKeyboard(SocialPlus_SetPropagate(f,true) and true or false)
+	-- Arm, ask, and disarm again if the answer is no.
+		--
+		-- The previous shape asked first and armed only if granted, which reads
+		-- safer and is broken: SetPropagateKeyboardInput does nothing on a frame
+		-- whose keyboard is still off, so the propagate never stuck and the frame
+		-- came up armed and swallowing everything. That shipped as 1.15b and took
+		-- the search box with it. The keyboard has to be on for the request to mean
+		-- anything, so the only safe order is to turn it on, ask, and turn it back
+		-- off if the request was refused -- which it is in combat, since the call is
+		-- protected.
+		f:EnableKeyboard(true)
+		if not SocialPlus_SetPropagate(f,true) then f:EnableKeyboard(false) end
 		f:HookScript("OnShow",function(self)
-			self:EnableKeyboard(SocialPlus_SetPropagate(self,true) and true or false)
+			self:EnableKeyboard(true)
+			if not SocialPlus_SetPropagate(self,true) then self:EnableKeyboard(false) end
 		end)
 		f:SetScript("OnKeyDown",function(self,key)
 			if key=="ESCAPE" and SocialPlus_DragSourceGroup then
@@ -6241,9 +6253,13 @@ function SocialPlus_CreateSettingsPanel()
 	-- Propagate first, keyboard only if granted, and asked again on show --
 	-- see the drag ghost for why. This panel is built the first time it is
 	-- opened, which can just as easily be in combat.
-	f:EnableKeyboard(SocialPlus_SetPropagate(f,true) and true or false)
+	-- Arm, ask, disarm if refused -- see the drag ghost for why this order and
+	-- not the other one.
+	f:EnableKeyboard(true)
+	if not SocialPlus_SetPropagate(f,true) then f:EnableKeyboard(false) end
 	f:HookScript("OnShow",function(self)
-		self:EnableKeyboard(SocialPlus_SetPropagate(self,true) and true or false)
+		self:EnableKeyboard(true)
+		if not SocialPlus_SetPropagate(self,true) then self:EnableKeyboard(false) end
 	end)
 	f:SetScript("OnKeyDown",function(self,key)
 		if key=="ESCAPE" then
@@ -7142,10 +7158,13 @@ end)
 -- the drag ghost. This one runs at load rather than in combat, so it is the
 -- safe member of the three; it follows the same order so that the next person
 -- to copy this block copies the right one.
-SocialPlus_ClickCatcher:EnableKeyboard(
-	SocialPlus_SetPropagate(SocialPlus_ClickCatcher,true) and true or false)
+SocialPlus_ClickCatcher:EnableKeyboard(true)
+if not SocialPlus_SetPropagate(SocialPlus_ClickCatcher,true) then
+	SocialPlus_ClickCatcher:EnableKeyboard(false)
+end
 SocialPlus_ClickCatcher:HookScript("OnShow",function(self)
-	self:EnableKeyboard(SocialPlus_SetPropagate(self,true) and true or false)
+	self:EnableKeyboard(true)
+	if not SocialPlus_SetPropagate(self,true) then self:EnableKeyboard(false) end
 end)
 SocialPlus_ClickCatcher:SetScript("OnKeyDown",function(self,key)
     if key=="ESCAPE" and SocialPlus_IsAnyDropDownOpen() then
@@ -8659,12 +8678,20 @@ local function SocialPlus_OnEnter(self)
 		-- In combat it does not happen either, and for the same reason rather
 		-- than a different one: the call is protected there, so EnableKeyboard
 		-- would arm a row that swallows every key with no way to hand them
-		-- back. Hence the propagate is asked for *first* and the row is only
-		-- armed once it has been granted -- never the other way round.
+		-- back.
 		local cycle=SocialPlus_PvPCycle
-		if cycle and (cycle.count or 1)>1 and SocialPlus_SetPropagate(self,true) then
-			cycle.button=self
+		if cycle and (cycle.count or 1)>1 then
+			-- Armed BEFORE the request, and disarmed again if it is refused.
+			--
+			-- Asking first reads safer and does not work: SetPropagateKeyboardInput
+			-- does nothing on a frame whose keyboard is still off, so the propagate
+			-- never sticks and the row comes up armed and deaf anyway. That is what
+			-- shipped as 1.15b and took the search box with it.
 			self:EnableKeyboard(true)
+			if not SocialPlus_SetPropagate(self,true) then self:EnableKeyboard(false) end
+		end
+		if cycle and (cycle.count or 1)>1 and self:IsKeyboardEnabled() then
+			cycle.button=self
 
 			self:SetScript("OnKeyDown",function(row,key)
 				if key~="TAB" or not SocialPlus_PvPCycle or (SocialPlus_PvPCycle.count or 1)<=1 then
