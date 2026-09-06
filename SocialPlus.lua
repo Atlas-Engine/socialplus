@@ -5822,6 +5822,15 @@ local function InviteOrGroup(clickedgroup,invite)
 	local isFavorites=(clickedgroup==SP_FAVORITES_GROUP)
 	local groups={}
 
+	-- Remembered as they are written, exactly as the rename path does.
+	-- Deleting a group rewrites one note per member and each lands
+	-- separately, so without this the members crossed out of the group one
+	-- at a time over the following minute, and a note the server dropped
+	-- left somebody in a group that no longer exists.
+	-- Battle.net friends only: the character-friend notes below are local
+	-- and land at once.
+	local pending={}
+
 	-- BNet friends
 	for i=1,FG_BNGetNumFriends() do
 		local t={FG_BNGetFriendInfo(i)}
@@ -5849,6 +5858,9 @@ local function InviteOrGroup(clickedgroup,invite)
 				groups[clickedgroup]=nil
 				local newNote=CreateNote(note,groups)
 				FG_SetBNetFriendNote(i,newNote)
+				if presenceID then
+					pending[#pending+1]={ presenceID=presenceID, note=newNote }
+				end
 			end
 		end
 	end
@@ -5907,8 +5919,16 @@ local function InviteOrGroup(clickedgroup,invite)
 	-- it. Those writes are server-side and land after any immediate render, so
 	-- the list would otherwise still show the deleted group until something else
 	-- redrew it. See SocialPlus_RefreshAfterNoteWrite.
-	if (not invite) and SocialPlus_RefreshAfterNoteWrite then
-		SocialPlus_RefreshAfterNoteWrite()
+	if not invite then
+		-- Above one member this is a bulk write: the list is already correct
+		-- here, so the per-write rebuilds are suppressed until the writes stop
+		-- and each dropped note is re-sent. One member falls through to the
+		-- single-write path, which BeginBulkNotes declines to take.
+		if not SocialPlus_BeginBulkNotes(pending) then
+			if SocialPlus_RefreshAfterNoteWrite then
+				SocialPlus_RefreshAfterNoteWrite()
+			end
+		end
 	end
 end
 
