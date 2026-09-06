@@ -1,6 +1,6 @@
 ﻿# Changelog
 
-## 1.16a
+## 1.16b
 
 - Fixed setting a note on a Battle.net friend sometimes applying to a different friend, and moving that friend into a group they were never in. Battle.net reorders its friend list whenever anyone logs on or off, and the note was written to whoever ended up in that position rather than to the friend you clicked.
 - Fixed the settings panel drawing past its own edge: the notifications section and the scroll speed slider had outgrown the window and were being drawn over the world with no panel behind them.
