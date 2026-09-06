@@ -37,11 +37,32 @@ Libs\LibUIDropDownMenu\LibUIDropDownMenu.lua
 Locales.lua
 SocialPlus.lua
 
-#@do-not-package@
-# Debug / testing tool: the /spsim friend-list simulator. This whole block is
-# stripped by the packager and the file itself is in .pkgmeta's ignore list, so
-# it loads from a git checkout but never ships in a CurseForge release. Both
-# halves are required: dropping only the file would leave the packaged .toc
-# pointing at something that isn't there.
-SocialPlusSim.lua
-#@end-do-not-package@
+# Modules split out of SocialPlus.lua, loaded after it.
+#
+# After it, not before: they call into functions the main file defines, and a
+# Lua file runs top to bottom as it loads. Anything moved here has to be
+# self-contained at load time -- registering handlers and defining functions,
+# never reaching for state the main file has not built yet.
+SocialPlus_Favorites.lua
+SocialPlus_Who.lua
+SocialPlus_Version.lua
+SocialPlus_Settings.lua
+SocialPlus_FriendMenu.lua
+SocialPlus_Init.lua
+
+# The /spsim friend-list simulator is not loaded at the moment.
+#
+# SocialPlusSim.lua is still in the repository and still in .pkgmeta's ignore
+# list; only the line that loaded it is gone. To bring it back, restore:
+#
+#     #@do-not-package@
+#     SocialPlusSim.lua
+#     #@end-do-not-package@
+#
+# Both halves matter -- the packager strips that block, so the shipped .toc never
+# points at a file the release does not contain.
+#
+# Why it went: a CurseForge install into the Mists client deleted the file (the
+# release does not carry it) and a later mirror of this .toc put the line back,
+# so the client had a .toc naming a file that was not there and reported
+# "Error loading SocialPlus/SocialPlusSim.lua" at every login.

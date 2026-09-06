@@ -8,7 +8,8 @@ local hooks = {}
 -- Shared click sound for the settings/group cogwheels and reorder arrows
 -- (the same "open a menu" sound as clicking Options from the Escape menu).
 -- Guarded since SOUNDKIT entries can vary slightly by client version.
-local function SocialPlus_PlayMenuClickSound()
+-- Global: the settings panel plays it.
+function SocialPlus_PlayMenuClickSound()
 	if SOUNDKIT and SOUNDKIT.IG_MAINMENU_OPTION then
 		PlaySound(SOUNDKIT.IG_MAINMENU_OPTION)
 	end
@@ -16,7 +17,8 @@ end
 
 -- Companion "menu closed" sound, played only when a dropdown menu we opened
 -- actually closes (not when the search box merely loses focus).
-local function SocialPlus_PlayMenuCloseSound()
+-- Global: the settings panel plays it.
+function SocialPlus_PlayMenuCloseSound()
 	if SOUNDKIT and SOUNDKIT.IG_MAINMENU_CLOSE then
 		PlaySound(SOUNDKIT.IG_MAINMENU_CLOSE)
 	end
@@ -24,7 +26,8 @@ end
 
 -- "Menu opened" sound for right-click context menus (friend rows, who
 -- rows), matching the sound Blizzard's own unit popup makes.
-local function SocialPlus_PlayMenuOpenSound()
+-- Global, not local: SocialPlus_Who.lua plays the same sound.
+function SocialPlus_PlayMenuOpenSound()
 	if SOUNDKIT and SOUNDKIT.IG_MAINMENU_OPEN then
 		PlaySound(SOUNDKIT.IG_MAINMENU_OPEN)
 	end
@@ -57,7 +60,8 @@ end
 -- (settings button, group-header gear) and the friend/who right-click
 -- context menus. Left false for the search-box focus case and the
 -- group-header right-click menu, so those stay silent.
-local SocialPlus_ClickCatcherIsForMenu = false
+-- Global, not local: SocialPlus_Who.lua sets this when it opens its own menu.
+SocialPlus_ClickCatcherIsForMenu = false
 
 
 -- Also expose to global to allow calls from any scope
@@ -67,7 +71,8 @@ local SocialPlus_ClickCatcherIsForMenu = false
 -- Debug helper to trace id resolution and menu actions (set FG_DEBUG = true to enable)
 local FG_DEBUG = false
 
-local function FG_Debug(...)
+-- Global: the friend row dropdown lives in its own file now.
+function FG_Debug(...)
 	if not FG_DEBUG then return end
 	local t = {}
 	for i=1,select('#',...) do
@@ -101,13 +106,11 @@ end
 local SocialPlus_NAME_COLOR=NORMAL_FONT_COLOR
 
 -- Forward declaration for invite helper so early functions can reference it
-local SocialPlus_GetInviteStatus
 
 -- Declared here and defined much further down, because the invite fallback
 -- calls it some hundred and seventy lines before its definition. Without this
 -- the name resolved to a global nil there, so BNInviteFriend never got a
 -- presence ID and that fallback silently did nothing.
-local FG_BNGetFriendInfo
 
 -- Same reason: the collapse settle timer, ~1900 lines above the definition,
 -- renders instead of re-deriving when nothing changed. Without this
@@ -118,17 +121,24 @@ local FG_BNGetFriendInfo
 -- Costs no extra local: the definition below becomes an assignment to THIS
 -- name rather than declaring its own, so the file's 200-local ceiling is
 -- unmoved.
-local SocialPlus_UpdateFriends
-local SocialPlus_GetGroupKeyFromRow
-local SocialPlus_EnsureSavedVars
 local SocialPlus_SetCustomGroupOrderFromMove
 local SocialPlus_IsRowInDraggedGroup
 local SocialPlus_CancelGroupDrag
 local SocialPlus_HardResetScrollRows
 local SocialPlus_ScheduleCollapseSettle
-local SocialPlus_GetVersionLabelText
-local SocialPlus_ShowRowTooltip
-local SocialPlus_HideRowTooltip
+-- SocialPlus_GetVersionLabelText is a global: it is defined in the settings
+-- panel file and called from here, and a global needs no forward declaration.
+-- No forward declarations here for the names defined with "function X()"
+-- further down.
+--
+-- "local X" followed later by "function X()" assigns the LOCAL, so the name
+-- reads like a global and is invisible to every other file. That is how
+-- SocialPlus_HideRowTooltip reached the settings panel as a nil call. All six
+-- that had this shape are real globals now; references above their definition
+-- resolve at call time, which ordercheck already proves is safe.
+-- settings panel in its own file can call it. With a "local" here, the
+-- "function SocialPlus_HideRowTooltip()" below would assign THAT instead
+-- and the name would be nil everywhere outside this file.
 
 local CURRENT_DB_VERSION = 2
 
@@ -475,7 +485,12 @@ local ONE_YEAR=12*ONE_MONTH
 -- No notifications until the first scans have settled: a snapshot taken too
 -- early reads as a false transition. Declared here rather than beside its main
 -- users, because a guard far above them needs it in scope.
-local SocialPlus_ScanWarmupUntil=0
+-- the dead warmup gate this file already had once.
+-- the original, and the reader here would go on seeing 0 -- which is exactly
+-- An ns alias would not do. A write through an alias updates the alias, not
+--
+-- Global, not local: SocialPlus_Init.lua writes it and this file reads it.
+SocialPlus_ScanWarmupUntil=0
 
 -- Friend list state
 local FriendButtons={count=0}
@@ -506,7 +521,8 @@ local SocialPlus_SearchFocusGroup=nil
 -- reported live as still auto-highlighting/jumping between friends with
 -- no click). This is the only source of truth for "did the player
 -- actually pick this row."
-local SocialPlus_SelectedRow=nil
+-- Global: written by the settings panel.
+SocialPlus_SelectedRow=nil
 local GroupCount=0
 local GroupTotal={}
 local GroupOnline={}
@@ -561,7 +577,8 @@ local SocialPlus_DragSourceButton=nil
 local SocialPlus_DragGhostFrame=nil
 
 -- Global collapse/expand button state
-local SocialPlus_CollapseAllButton
+-- SocialPlus_CollapseAllButton is a global: the settings panel reads it, and it
+-- is created at runtime, so an ns snapshot taken at load would have been nil.
 
 -- Returns anyCollapsed, anyExpanded across every header row -- custom
 -- groups, General, Favorites, and Friend Requests alike (they can all be
@@ -586,7 +603,8 @@ local function SocialPlus_GetAnyGroupCollapsed()
 end
 
 -- Update icon (+/-), visibility, and mode
-local function SocialPlus_UpdateCollapseAllButtonVisual()
+-- Global: called from the settings panel.
+function SocialPlus_UpdateCollapseAllButtonVisual()
 	if not SocialPlus_CollapseAllButton then return end
 	if not FriendsFrame or not FriendsFrame:IsShown() then
 		SocialPlus_CollapseAllButton:Hide()
@@ -1301,10 +1319,13 @@ end
 -------------------------------------------------
 -- SocialPlus simple search (accent/symbol-insensitive)
 -------------------------------------------------
-local SocialPlus_Searchbox
-local SocialPlus_SearchTerm=nil  -- always normalized or nil
+-- SocialPlus_Searchbox is a global: the settings panel reads it, and it is
+-- created at runtime, so an ns snapshot taken at load would have been nil.
+-- Global: written by the settings panel, which lives in its own file now.
+SocialPlus_SearchTerm=nil  -- always normalized or nil
 
-local function SocialPlus_ClearSearch()
+-- Global: the friend row dropdown lives in its own file now.
+function SocialPlus_ClearSearch()
 	if SocialPlus_Searchbox then
 		SocialPlus_Searchbox:SetText("")
 		SocialPlus_Searchbox:ClearFocus()
@@ -1904,7 +1925,8 @@ end
 -- entry per currently-online WoW game account linked to this BNet friend
 -- (friend-list index), so the invite menu can offer a choice instead of
 -- silently inviting whichever one gets picked automatically.
-local function SocialPlus_GetOnlineWoWGameAccounts(bnetIndex)
+-- Global, not local: SocialPlus_Version.lua needs it.
+function SocialPlus_GetOnlineWoWGameAccounts(bnetIndex)
 	local accounts={}
 	if not (C_BattleNet and C_BattleNet.GetFriendNumGameAccounts and C_BattleNet.GetFriendGameAccountInfo) then
 		return accounts
@@ -1936,7 +1958,8 @@ local function SocialPlus_GetOnlineWoWGameAccounts(bnetIndex)
 end
 
 -- [[ Unified invite helpers (WOW + BNET) ]]
-local function SocialPlus_PerformInvite(kind,id)
+-- Global: the friend row dropdown lives in its own file now.
+function SocialPlus_PerformInvite(kind,id)
 	if not kind or not id then
 		return false,L.INVITE_GENERIC_FAIL
 	end
@@ -2127,7 +2150,8 @@ end
 -- friends, character GUID for WoW friends (reported live: a tooltip
 -- briefly flashed a different friend's info while hovering the same row,
 -- with the row's own name never changing -- traced to this).
-local function SocialPlus_GetRowIdentityKey(buttonType,id)
+-- Global: the friend row dropdown lives in its own file now.
+function SocialPlus_GetRowIdentityKey(buttonType,id)
 	if not id then return nil end
 	if buttonType==FRIENDS_BUTTON_TYPE_BNET then
 		if C_BattleNet and C_BattleNet.GetFriendAccountInfo then
@@ -2173,7 +2197,8 @@ local function FG_SetFriendNotes(index,note)
 end
 
 -- [[ Safe BN wrappers for compatibility on older clients ]]
-local function FG_BNGetNumFriends()
+-- Global, not local: SocialPlus_Version.lua needs it.
+function FG_BNGetNumFriends()
 	if BNGetNumFriends then
 		return BNGetNumFriends()
 	end
@@ -2243,7 +2268,17 @@ end
 
 -- BNet note setter using BN friend LIST INDEX
 local function FG_SetBNetFriendNote(index,note)
-	if not BNSetFriendNote then
+	-- Either setter, modern one first.
+	--
+	-- This file reads friend data through C_BattleNet in twenty-odd places and
+	-- then wrote notes through the legacy global, which is the one our own
+	-- comment below records as being silently dropped. FriendGroups prefers
+	-- C_BattleNet.SetFriendNote on this same client, which is good evidence it
+	-- exists and works here; the old call stays as the fallback rather than
+	-- being replaced, since nothing proves the new one is present everywhere
+	-- this addon loads.
+	local setNote=(C_BattleNet and C_BattleNet.SetFriendNote) or BNSetFriendNote
+	if not setNote then
 		return
 	end
 
@@ -2265,7 +2300,7 @@ local function FG_SetBNetFriendNote(index,note)
 	-- fully empty after removing their only group tag stayed stuck in
 	-- that group, while one with leftover free text (never hitting this
 	-- path) removed fine. Empty string is what actually works.
-	pcall(BNSetFriendNote,presenceID,note)
+	pcall(setNote,presenceID,note)
 end
 
 
@@ -2754,221 +2789,6 @@ function SocialPlus_SampleGroupFriends(headerIndex,maxCount)
 	return samples
 end
 
-
--- [[ SocialPlus-managed favorites ]]
--- A stable key independent of the volatile friend-list index. presenceID is
--- only valid for the current session -- the client can assign a different
--- presenceID to the same BNet friend after a relog, so it can't be used for
--- anything persisted across sessions. battleTag is the permanent per-account
--- identifier and is used for BNet friends instead; character name is used
--- for native WoW-only friends.
-local function SocialPlus_GetFavoriteKey(buttonType,id)
-	if buttonType==FRIENDS_BUTTON_TYPE_BNET then
-		local _,_,battleTag=FG_BNGetFriendInfo(id)
-		return battleTag and battleTag~="" and ("BNET:"..battleTag)
-	elseif buttonType==FRIENDS_BUTTON_TYPE_WOW then
-		local info=FG_GetFriendInfoByIndex(id)
-		return info and info.name and info.name~="" and ("WOW:"..info.name)
-	end
-	return nil
-end
-
-----------------------------------------------------------------
--- Recently added
-----------------------------------------------------------------
-
--- Everyone on the list right now, by the same stable key favourites use.
--- Global for the 200-locals reason above.
-function SocialPlus_CollectFriendKeys()
-	local keys={}
-
-	for i=1,(FG_BNGetNumFriends and FG_BNGetNumFriends() or 0) do
-		local key=SocialPlus_GetFavoriteKey(FRIENDS_BUTTON_TYPE_BNET,i)
-		if key then keys[key]=true end
-	end
-
-	local wow=C_FriendList and C_FriendList.GetNumFriends and C_FriendList.GetNumFriends() or 0
-	for i=1,wow do
-		local key=SocialPlus_GetFavoriteKey(FRIENDS_BUTTON_TYPE_WOW,i)
-		if key then keys[key]=true end
-	end
-
-	return keys
-end
-
--- A fresh session: everyone here now counts as already known, and nobody is
--- recent. Without this the entire friends list would show up as newly added
--- the first time the feature ran.
-function SocialPlus_StartFriendSession()
-	if not SocialPlus_SavedVars then return end
-	SocialPlus_SavedVars.recent={}
-	SocialPlus_SavedVars.known=SocialPlus_CollectFriendKeys()
-	-- Primed to match the snapshot so the first rebuild afterwards does not
-	-- see a changed count and rescan the list it was just handed.
-	local bnet=(FG_BNGetNumFriends and FG_BNGetNumFriends()) or 0
-	local wow=(C_FriendList and C_FriendList.GetNumFriends and C_FriendList.GetNumFriends()) or 0
-	SOCIALPLUS_LAST_FRIEND_COUNT=bnet+wow
-end
-
--- Waits for the list to STOP GROWING rather than trusting a fixed delay.
---
--- BNGetFriendInfo answers nothing for a friend whose account data has not
--- streamed in yet, so a snapshot taken mid-stream records only part of the
--- list. Everyone arriving afterwards is then absent from `known`, and the next
--- rebuild files them all under "Recently Added" -- exactly what the snapshot
--- exists to prevent, just moved later. A fixed five seconds was a guess that a
--- slow login or a large Battle.net list can beat.
---
--- Two consecutive reads agreeing is the signal. Bounded so that a genuinely
--- empty list (which never grows) still starts a session promptly, and a list
--- that somehow never settles cannot poll forever.
-function SocialPlus_StartFriendSessionWhenReady(tries,lastCount)
-	tries=(tries or 0)+1
-
-	local count=0
-	for _ in pairs(SocialPlus_CollectFriendKeys()) do count=count+1 end
-
-	if (lastCount and count==lastCount) or tries>=10 then
-		SocialPlus_StartFriendSession()
-		return
-	end
-
-	C_Timer.After(2,function()
-		SocialPlus_StartFriendSessionWhenReady(tries,count)
-	end)
-end
-
--- Anyone on the list who was not there at login. Called from the rebuild, so an
--- addition is noticed as soon as anything redraws.
-function SocialPlus_NoteNewFriends()
-	if not (SocialPlus_SavedVars and SocialPlus_SavedVars.known) then return end
-
-	-- Gated on the friend count changing, because the scan below costs one
-	-- BNGetFriendInfo per friend and this is called from every rebuild --
-	-- including collapsing a group, scrolling, and toggling offline friends,
-	-- none of which can add anybody. On a large list that was hundreds of API
-	-- calls to re-answer a question whose inputs had not moved.
-	--
-	-- Counts are the cheap gate: nobody can appear without the total changing.
-	-- The one case this misses is a removal and an addition between the same
-	-- two rebuilds, which leaves the total equal -- that friend simply is not
-	-- flagged as recent, which is a far better trade than rescanning always.
-	local bnet=(FG_BNGetNumFriends and FG_BNGetNumFriends()) or 0
-	local wow=(C_FriendList and C_FriendList.GetNumFriends and C_FriendList.GetNumFriends()) or 0
-	local total=bnet+wow
-	if SOCIALPLUS_LAST_FRIEND_COUNT==total then return end
-	SOCIALPLUS_LAST_FRIEND_COUNT=total
-
-	SocialPlus_SavedVars.recent=type(SocialPlus_SavedVars.recent)=="table"
-		and SocialPlus_SavedVars.recent or {}
-
-	for key in pairs(SocialPlus_CollectFriendKeys()) do
-		if not SocialPlus_SavedVars.known[key] then
-			SocialPlus_SavedVars.known[key]=true
-			SocialPlus_SavedVars.recent[key]=true
-		end
-	end
-end
-
-function SocialPlus_ClearRecentFriends()
-	if not SocialPlus_SavedVars then return end
-	SocialPlus_SavedVars.recent={}
-	SocialPlus_Update(true)
-end
-
-function SocialPlus_HasRecentFriends()
-	local recent=SocialPlus_SavedVars and SocialPlus_SavedVars.recent
-	return recent~=nil and next(recent)~=nil
-end
-
--- key is optional: a caller that already holds this friend's key (the rebuild's
--- per-friend pass does, from the BNGetFriendInfo it made while bucketing) can
--- pass it and skip the lookup, which is an API call per friend per rebuild.
--- Pass false for "known to have no key" so it isn't mistaken for "not supplied".
-local function SocialPlus_IsFavorite(buttonType,id,key)
-	if key==nil then key=SocialPlus_GetFavoriteKey(buttonType,id) end
-	return key and SocialPlus_SavedVars and SocialPlus_SavedVars.favorites and SocialPlus_SavedVars.favorites[key]==true
-end
-
--- In the recently-added group: added this session, not favourited, and not yet
--- filed into a group of your own.
---
--- Filing is the same intent as pressing the X, so it dismisses on its own --
--- which is why moving somebody into a group makes them leave here without any
--- extra bookkeeping.
--- Global for the 200-locals reason above.
--- key is optional, for the same reason as SocialPlus_IsFavorite above.
-function SocialPlus_IsRecent(buttonType,id,groups,key)
-	local recent=SocialPlus_SavedVars and SocialPlus_SavedVars.recent
-	if not recent then return false end
-
-	-- Nothing recent at all is the normal state, and it is answerable without
-	-- touching the friend APIs. Checked FIRST because this runs once per friend
-	-- per rebuild in two separate loops, and every step below costs a
-	-- BNGetFriendInfo.
-	if not next(recent) then return false end
-
-	-- One key derivation, not two. This used to call SocialPlus_IsFavorite
-	-- first, which derives the very same key through its own
-	-- BNGetFriendInfo -- so every friend paid for the lookup twice before
-	-- anything had even been decided.
-	if key==nil then key=SocialPlus_GetFavoriteKey(buttonType,id) end
-	if not (key and recent[key]) then return false end
-
-	-- The favourite test, inlined against the key already in hand: a
-	-- favourited friend belongs in Favorites rather than here.
-	local favorites=SocialPlus_SavedVars.favorites
-	if favorites and favorites[key]==true then return false end
-
-	-- groups carries "" alone when the friend has no tags at all.
-	if groups then
-		for name in pairs(groups) do
-			if name~="" then return false end
-		end
-	end
-
-	return true
-end
-
-function SocialPlus_ToggleFavorite(buttonType,id)
-	local key=SocialPlus_GetFavoriteKey(buttonType,id)
-	if not key then return end
-	SocialPlus_SavedVars.favorites=type(SocialPlus_SavedVars.favorites)=="table" and SocialPlus_SavedVars.favorites or {}
-	if SocialPlus_SavedVars.favorites[key] then
-		SocialPlus_SavedVars.favorites[key]=nil
-	else
-		SocialPlus_SavedVars.favorites[key]=true
-	end
-
-	-- Clear search so the full list comes back, matching what every other
-	-- action that moves a row already does (add/remove group). Favoriting
-	-- lifts the friend into the Favorites section at the top, so leaving the
-	-- filter on hides the result of the thing you just asked for.
-	if SocialPlus_ClearSearch then
-		SocialPlus_ClearSearch()
-	end
-
-	SocialPlus_Update(true)
-
-	-- Toggling favorite status can make the whole Favorites divider appear
-	-- or disappear, shifting every subsequent row's position -- Blizzard's
-	-- HybridScrollFrame doesn't always fully re-anchor its pooled buttons
-	-- from a single re-update, leaving stale/overlapping rows until an
-	-- actual scroll event forces its own layout pass (confirmed live). This
-	-- wasn't just cosmetic: right-clicking a row during that stale window
-	-- could open the context menu for a completely different friend than
-	-- the one visually under the cursor, silently favoriting/acting on the
-	-- wrong person (confirmed live -- favoriting two friends back to back
-	-- ended up favoriting two unrelated ones instead). Call again
-	-- immediately, synchronously, so no user interaction can land inside
-	-- that stale window; also keep a deferred pass for the same reason the
-	-- original fix was deferred (Blizzard's own layout pass may only fully
-	-- apply on the next frame).
-	SocialPlus_Update(true)
-	C_Timer.After(0,function()
-		SocialPlus_Update(true)
-	end)
-end
 
 -- [[ Core per-row button update ]]
 local function SocialPlus_UpdateFriendButton(button)
@@ -4858,6 +4678,14 @@ end
 		-- cached parse when this friend's raw note hasn't changed since
 		-- last time (see SocialPlus_BNetNoteCache above) instead of
 		-- re-parsing every single rebuild.
+		-- The note we are writing, if one is still in flight for this friend.
+		--
+		-- Substituted before anything parses it, so every consumer below -- the
+		-- cache, the bucketing, the group counts -- sees the finished state.
+		-- See SocialPlus_BulkNoteFor.
+		local pendingNote=SocialPlus_BulkNoteFor(presenceID)
+		if pendingNote then noteText=pendingNote end
+
 		local cached=presenceID and SocialPlus_BNetNoteCache[presenceID]
 		if cached and cached.rawNote==noteText then
 			BnetSocialPlus[i]=cached.groups
@@ -5492,6 +5320,11 @@ local function SocialPlus_Rename(self,old)
 
 	local groups={}
 
+	-- Remembered as they are written, so the burst can be watched to completion
+	-- and any note the server drops can be sent again. Battle.net friends only:
+	-- the character-friend notes below are local and land at once.
+	local pending={}
+
 	for i=1,FG_BNGetNumFriends() do
 		local presenceID,_,_,_,_,_,_,_,_,_,_,_,noteText=FG_BNGetFriendInfo(i)
 		local note=NoteAndGroups(noteText,groups)
@@ -5500,6 +5333,9 @@ local function SocialPlus_Rename(self,old)
 			groups[input]=true
 			note=CreateNote(note,groups)
 			FG_SetBNetFriendNote(i,note)
+			if presenceID then
+				pending[#pending+1]={ presenceID=presenceID, note=note }
+			end
 		end
 	end
 
@@ -5525,11 +5361,14 @@ local function SocialPlus_Rename(self,old)
 	end
 
 	SocialPlus_Update()
-	-- Rewrote notes across every affected BattleTag friend; those writes are
-	-- server-side and land after this render. No single value to wait on here,
-	-- so redraw shortly afterwards. See SocialPlus_RefreshAfterNoteWrite.
-	if SocialPlus_RefreshAfterNoteWrite then
-		SocialPlus_RefreshAfterNoteWrite()
+
+	-- Rewrote one note per member, and each lands separately. Above two members
+	-- that is a bulk write: the list is already correct here, so the per-write
+	-- rebuilds are suppressed until they stop. See SocialPlus_BeginBulkNotes.
+	if not SocialPlus_BeginBulkNotes(pending) then
+		if SocialPlus_RefreshAfterNoteWrite then
+			SocialPlus_RefreshAfterNoteWrite()
+		end
 	end
 end
 
@@ -5542,8 +5381,17 @@ local function SocialPlus_Create(self,data)
 		return
 	end
 
-	-- Apply group change
-	local note=AddGroup(data.note,input)
+	-- Moves them, rather than adding a second tag.
+	--
+	-- This addon puts a friend in one group at a time -- the same rule the Add
+	-- submenu enforces by wiping every tag before applying the new one (see
+	-- SocialPlus_ModifyGroupFromDropdown's ADD mode). Creating a group from a
+	-- friend who is already in one therefore takes them out of it; AddGroup on
+	-- the raw note would have left them tagged into both.
+	local groups={}
+	local baseNote=NoteAndGroups(data.note,groups)
+	local note=AddGroup(baseNote,input)
+
 	data.set(data.id,note)
 
 	-- Clear search so full list comes back
@@ -5639,7 +5487,7 @@ StaticPopupDialogs["FRIEND_SET_NOTE"]={
 			pcall(SocialPlus_Update)
 			-- BNet notes aren't readable back immediately; redraw once it lands.
 			if SocialPlus_RefreshAfterNoteWrite then
-				SocialPlus_RefreshAfterNoteWrite(data.kind,data.id,finalNote,data.set)
+				SocialPlus_RefreshAfterNoteWrite(data.kind,data.id,finalNote,data.set,data.presenceID)
 			end
 		end
 	end,
@@ -5650,7 +5498,8 @@ StaticPopupDialogs["FRIEND_SET_NOTE"]={
 
 -- [[ Character-name helper for menu actions ]]
 
-local function SocialPlus_GetFullCharacterName(cf)
+-- Global: the friend row dropdown lives in its own file now.
+function SocialPlus_GetFullCharacterName(cf)
 	if not cf then return nil end
 
 	local function AttachPlayerRealm(name)
@@ -5694,7 +5543,8 @@ end
 
 -- [[ Friend-menu title helper ]]
 
-local function SocialPlus_GetMenuTitle()
+-- Global: the friend row dropdown lives in its own file now.
+function SocialPlus_GetMenuTitle()
 	local kind,id=SocialPlus_GetDropdownFriend()
 	if not kind or not id then
 		return UNKNOWN
@@ -5752,7 +5602,8 @@ end
 
 -- [[ Generic dropdown separator helper ]]
 
-local function SocialPlus_AddSeparator(level)
+-- Global, not local: the who-list menu in SocialPlus_Who.lua needs it too.
+function SocialPlus_AddSeparator(level)
 	local info=LibDD:UIDropDownMenu_CreateInfo()
 	info.disabled=true
 	info.notCheckable=true
@@ -6020,930 +5871,13 @@ SocialPlus_Menu.initialize=function(self,level)
 end
 
 
--- [[ Preferences Panel (left-side) ]]
-function SocialPlus_CreateSettingsButton()
-	if SocialPlus_SettingsButton or not FriendsFrame then return end
-
-	-- Confirmed live via /fstack: FriendsFrameBattlenetFrame.BroadcastButton
-	-- is the chat-bubble icon at the right end of the blue BattleTag bar.
-	-- Parented to the bar itself (not FriendsFrame) so it's positioned
-	-- and layered correctly relative to it -- frame level +2 so it draws
-	-- above the bar's own texture.
-	local barParent=FriendsFrameBattlenetFrame or FriendsFrame
-	local btn=CreateFrame("Button","SocialPlus_SettingsButton",barParent)
-	btn:SetSize(18,18)
-	btn:SetFrameLevel(barParent:GetFrameLevel()+2)
-	if FriendsFrameBattlenetFrame and FriendsFrameBattlenetFrame.BroadcastButton then
-		btn:SetPoint("RIGHT",FriendsFrameBattlenetFrame.BroadcastButton,"LEFT",-5,0)
-	elseif FriendsFrameBattlenetFrame then
-		btn:SetPoint("RIGHT",FriendsFrameBattlenetFrame,"RIGHT",-4,0)
-	else
-		btn:SetPoint("TOPRIGHT",FriendsFrame,"TOPRIGHT",-8,-48)
-	end
-
-	-- Backplate (Blizzard-style frame)
-	local back=btn:CreateTexture(nil,"BACKGROUND")
-	back:SetTexture("Interface\\Buttons\\UI-Quickslot2")
-	back:SetTexCoord(0.1,0.9,0.1,0.9)
-	back:SetSize(30,30)
-	back:SetPoint("CENTER",btn,"CENTER",0,0)
-	back:SetVertexColor(0.55,0.55,0.55) -- idle: dim so hover can pop
-
-	-- Inner dark fill behind the cog (removes empty look)
-	local fill = btn:CreateTexture(nil, "BACKGROUND", nil, 1)
-	fill:SetColorTexture(0,0,0,0.75) -- soft dark fill
-	fill:SetPoint("CENTER", btn, "CENTER", 0, 0)
-	fill:SetSize(20,20) -- slightly smaller than the 30x30 outer frame
-
-	-- Cogwheel normal/pushed
-	btn:SetNormalTexture("Interface\\Buttons\\UI-OptionsButton")
-	btn:SetPushedTexture("Interface\\Buttons\\UI-OptionsButton")
-
-	local normal=btn:GetNormalTexture()
-	local pushed=btn:GetPushedTexture()
-
-	if normal then
-		normal:ClearAllPoints()
-		normal:SetPoint("CENTER",btn,"CENTER",0,0)
-		normal:SetSize(15,15)
-		normal:SetTexCoord(0,1,0,1)
-		normal:SetVertexColor(0.9,0.9,0.9) -- idle: slightly dim
-	end
-
-	if pushed then
-		pushed:ClearAllPoints()
-		pushed:SetPoint("CENTER",btn,"CENTER",-1,-1) -- pressed offset
-		pushed:SetSize(15,15)
-		pushed:SetTexCoord(0,1,0,1)
-		pushed:SetVertexColor(0.6,0.6,0.6) -- clearly darker on press
-	end
-
-	-- Hover: light up frame + cog
-	btn:HookScript("OnEnter",function()
-		back:SetVertexColor(1.5,1.5,1.5)   -- strong highlight
-		if normal then normal:SetVertexColor(1,1,1) end
-	end)
-
-	btn:HookScript("OnLeave",function()
-		back:SetVertexColor(0.55,0.55,0.55) -- back to dim frame
-		if normal then normal:SetVertexColor(0.9,0.9,0.9) end
-	end)
-
-	btn:SetScript("OnClick",function()
-		if SocialPlus_SettingsPanel then
-			local opening=not SocialPlus_SettingsPanel:IsShown()
-			SocialPlus_SettingsPanel:SetShown(opening)
-			if opening then
-				SocialPlus_PlayMenuClickSound()
-			else
-				SocialPlus_PlayMenuCloseSound()
-			end
-		else
-			SocialPlus_PlayMenuClickSound()
-		end
-	end)
-
-	SocialPlus_SettingsButton=btn
-end
-
--- Short label for a friend's WoW version (e.g. "Retail", "TBC"), always shown
--- (including same-version friends, e.g. "MoP" for another MoP Classic friend).
--- Sentinel fallbacks (-1, -2, ...) on each WOW_PROJECT_* global keep this safe
--- on clients where a given constant doesn't exist, rather than colliding with
--- a real project ID. Declared up here (rather than closer to the notification
--- code that also uses it) so SocialPlus_CreateSettingsPanel below can use it
--- too -- Lua locals are only visible after their declaration in the file.
-function SocialPlus_GetVersionLabelText(wowProjectID)
-	local labels={
-		[WOW_PROJECT_MAINLINE or -1]=L.WOW_VERSION_RETAIL,
-		[WOW_PROJECT_CLASSIC or -2]=L.WOW_VERSION_CLASSIC_ERA,
-		[WOW_PROJECT_BURNING_CRUSADE_CLASSIC or -3]=L.WOW_VERSION_TBC,
-		[WOW_PROJECT_WRATH_CLASSIC or -4]=L.WOW_VERSION_WOTLK,
-		[WOW_PROJECT_CATACLYSM_CLASSIC or -5]=L.WOW_VERSION_CATA,
-		[WOW_PROJECT_MISTS_CLASSIC or -6]=L.WOW_VERSION_MOP,
-	}
-	return (wowProjectID and labels[wowProjectID]) or "?"
-end
-
--- wowProjectID can come back broken (0, not a real expansion) for a friend
--- whose structured game-account fields didn't fully resolve -- confirmed
--- live for multiple friends across different expansions. Blizzard's own
--- free-text rich presence (gameText, e.g. "Mists of Pandaria Classic -
--- Pagle") is generated independently of those broken fields and is still
--- correct -- map its known expansion phrases to our own clean label
--- (region gets appended separately by the caller) instead of showing a
--- bare "?". The pattern list is local to this function (not a top-level
--- local) -- this file is already right at Lua's 200-local-per-chunk
--- ceiling for its main chunk, and this only runs on the rare "?" case.
-function SocialPlus_GetVersionLabelFromGameText(gameText)
-	if not gameText or gameText=="" then return nil end
-	-- Order matters: longer/more specific phrases first so e.g. "Wrath of
-	-- the Lich King Classic" doesn't accidentally get caught by a broader
-	-- pattern first.
-	local patterns={
-		-- Anniversary names itself, and never says "Burning Crusade": its rich
-		-- presence reads "WoW Classic Anniversary - Spineshatter". Matching
-		-- nothing here meant the caller fell through to printing that whole
-		-- string as the row's second line, where "TBC (EU)" belongs.
-		--
-		-- Mapped to TBC because the Anniversary realms are on Burning Crusade;
-		-- the client itself reports WOW_PROJECT_BURNING_CRUSADE_CLASSIC. If
-		-- that line ever moves on, this is the entry that has to move with it.
-		{"Classic Anniversary",L.WOW_VERSION_TBC},
-		{"Burning Crusade Classic",L.WOW_VERSION_TBC},
-		{"Wrath of the Lich King Classic",L.WOW_VERSION_WOTLK},
-		{"Cataclysm Classic",L.WOW_VERSION_CATA},
-		{"Mists of Pandaria Classic",L.WOW_VERSION_MOP},
-		{"Classic Era",L.WOW_VERSION_CLASSIC_ERA},
-	}
-	for _,entry in ipairs(patterns) do
-		if gameText:find(entry[1],1,true) then
-			return entry[2]
-		end
-	end
-	return nil
-end
-
--- Same recovery as the label function above, but yielding the project ID
--- itself rather than a display string, so a friend whose structured
--- wowProjectID came back broken can be repaired where it is READ instead of
--- every comparison site having to learn about it.
---
--- No Retail entry on purpose: retail's rich presence carries no "Classic"
--- marker to match on, so it stays unrecovered rather than guessed at.
-function SocialPlus_GetProjectIDFromGameText(gameText)
-	if not gameText or gameText=="" then return nil end
-	-- Order matters for the same reason as the label list above: longer, more
-	-- specific phrases first.
-	local ids={
-		-- See the label list above: Anniversary calls itself "WoW Classic
-		-- Anniversary" and reports the Burning Crusade project id.
-		{"Classic Anniversary",WOW_PROJECT_BURNING_CRUSADE_CLASSIC},
-		{"Burning Crusade Classic",WOW_PROJECT_BURNING_CRUSADE_CLASSIC},
-		{"Wrath of the Lich King Classic",WOW_PROJECT_WRATH_CLASSIC},
-		{"Cataclysm Classic",WOW_PROJECT_CATACLYSM_CLASSIC},
-		{"Mists of Pandaria Classic",WOW_PROJECT_MISTS_CLASSIC},
-		{"Classic Era",WOW_PROJECT_CLASSIC},
-	}
-	for _,entry in ipairs(ids) do
-		-- Guarded: these constants are absent on some client families, and an
-		-- absent one must not match everything via a nil comparison later.
-		if entry[2] and gameText:find(entry[1],1,true) then
-			return entry[2]
-		end
-	end
-	return nil
-end
-
--- Blizzard reports wowProjectID as 0 -- not a real expansion -- for friends
--- whose structured game-account fields didn't fully resolve (confirmed live:
--- WOW_PROJECT_ID 19 against a friend reporting 0 while playing that very
--- client). Because 0 is TRUTHY in Lua, the usual
--- "wowProjectID and wowProjectID ~= WOW_PROJECT_ID" guards read it as a
--- genuine mismatch rather than as missing data, so one broken field silently
--- cost that friend their faction crest, arena swords, prioritise sorting,
--- class-search matches and invite eligibility all at once.
---
--- Returns the value UNCHANGED when nothing can be recovered, so an
--- unidentifiable friend keeps today's behaviour instead of being optimistically
--- claimed as your own version.
-function SocialPlus_RepairProjectID(wowProjectID,gameText)
-	if wowProjectID and wowProjectID~=0 then return wowProjectID end
-	return SocialPlus_GetProjectIDFromGameText(gameText) or wowProjectID
-end
-
--- realmName goes missing on the same friends whose wowProjectID comes back 0,
--- and the rich presence carries it in the same breath: "Mists of Pandaria
--- Classic - Pagle". Confirmed live -- Blizzard's own tooltip renders that
--- string while the structured realmName reads nil.
---
--- Deliberately refuses to split anything whose leading half isn't a version
--- phrase we already recognise. Rich presence is free text and a friend's
--- status can legitimately contain " - "; without that guard this would
--- happily report the back half of an arbitrary sentence as a realm name.
-function SocialPlus_GetRealmFromGameText(gameText)
-	if not gameText or gameText=="" then return nil end
-	if not SocialPlus_GetProjectIDFromGameText(gameText) then return nil end
-	local realm=gameText:match("^.+%s+%-%s+(.+)$")
-	if realm and realm~="" then return realm end
-	return nil
-end
-
-function SocialPlus_RepairRealmName(realmName,gameText)
-	if realmName and realmName~="" then return realmName end
-	return SocialPlus_GetRealmFromGameText(gameText) or realmName
-end
-
-function SocialPlus_CreateSettingsPanel()
-	if SocialPlus_SettingsPanel or not FriendsFrame then return end
-
-	-- Parented to UIParent, not FriendsFrame: WoW frame alpha is
-	-- multiplicative down the parent chain, and FriendsFrame's own backdrop
-	-- isn't fully opaque -- being its child meant inheriting that
-	-- translucency no matter what our own backdrop alpha was set to
-	-- (confirmed live: the group-header dropdown, parented to UIParent,
-	-- looked solid while this panel didn't, despite identical backdrop
-	-- settings). Positioning still anchors relative to FriendsFrame below;
-	-- SetPoint works across unrelated frames. The auto-hide-with-Friends-
-	-- List behavior doesn't rely on parentage either -- see the explicit
-	-- FriendsFrame:HookScript("OnHide", ...) further down.
-	local f=CreateFrame("Frame","SocialPlus_SettingsPanel",UIParent,"BackdropTemplate")
-	-- Slightly larger box to fit icon preset controls (+26 for the new
-	-- "play sound" notification checkbox)
-	-- Remembered because UpdatePvPRatingsState shrinks the panel when the PvP
-	-- block is hidden, and needs the full height to subtract from -- reading
-	-- the live height there would compound each time it ran.
-	-- 404, not 380: the BattleTag tick added a row below the region flag, and
-	-- everything under it (the whole notifications section) is chained off
-	-- that, so without the extra height the last option falls off the bottom.
-	SOCIALPLUS_PVP_PANEL_H=404
-	f:SetSize(350,SOCIALPLUS_PVP_PANEL_H)
-
-	-- Right side of Friends frame
-	f:SetPoint("TOPLEFT",FriendsFrame,"TOPRIGHT",8,0)
-
-	-- Reported live: a single tooltip-style backdrop reads as too
-	-- transparent even at near-opaque alpha, compared to our own
-	-- right-click menus. Traced it to LibUIDropDownMenu's "MENU" display
-	-- mode actually layering TWO backdrops (Libs\LibUIDropDownMenu\
-	-- LibUIDropDownMenu.lua, creatre_DropDownList): a dark dialog-box
-	-- background underneath (BACKDROP_DIALOG_DARK), with the tooltip-tint
-	-- backdrop on top of THAT -- not the tooltip backdrop alone. Replicate
-	-- both layers, in the same order, for a visually identical result.
-	f:SetBackdrop({
-		bgFile="Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
-		edgeFile="Interface\\DialogFrame\\UI-DialogBox-Border",
-		tile=true,tileEdge=true,tileSize=32,edgeSize=32,
-		insets={left=11,right=12,top=12,bottom=11}
-	})
-	f:SetBackdropColor(0,0,0,1)
-	f:SetBackdropBorderColor(1,1,1,1)
-
-	-- Solid fill UNDER both backdrop layers.
-	--
-	-- Setting those layers to opaque black isn't enough on its own: the art
-	-- itself (UI-DialogBox-Background-Dark, and the tooltip tint over it) is
-	-- semi-transparent, so bright UI behind the panel still bleeds through --
-	-- the same problem the friend tooltip had. Sublevel -8 keeps it beneath
-	-- both, and the insets match the backdrop so the border art still frames it.
-	local fSolid=f:CreateTexture(nil,"BACKGROUND",nil,-8)
-	fSolid:SetPoint("TOPLEFT",f,"TOPLEFT",11,-12)
-	fSolid:SetPoint("BOTTOMRIGHT",f,"BOTTOMRIGHT",-12,11)
-	if fSolid.SetColorTexture then
-		fSolid:SetColorTexture(0,0,0,1)
-	else
-		fSolid:SetTexture(0,0,0,1)
-	end
-
-	-- Second layer: the tooltip-tint backdrop this panel had on its own
-	-- before, now on top of the dark dialog background instead of replacing
-	-- it -- same BACKDROP_TOOLTIP_16_16_5555 shape/insets as the library.
-	local fTint=CreateFrame("Frame",nil,f,"BackdropTemplate")
-	fTint:SetAllPoints()
-	-- CRITICAL: a new child FRAME defaults to one level above its parent,
-	-- which put fTint's whole backdrop (even its BACKGROUND-layer texture)
-	-- above everything f owns DIRECTLY as FontStrings -- title, version
-	-- text, the "Notifications" header, the scroll-speed label/description
-	-- -- since those live at f's own level, not a child frame's level.
-	-- (The checkboxes were unaffected only because they're separate child
-	-- frames created AFTER fTint, so they already sit above it too.)
-	-- Pinning fTint to f's own level restores normal same-level draw-layer
-	-- ordering (BACKGROUND behind OVERLAY), so it sits behind ALL of f's
-	-- content as originally intended (reported live: several labels read
-	-- as washed out/barely visible -- this was the actual cause, not their
-	-- text color).
-	fTint:SetFrameLevel(f:GetFrameLevel())
-	fTint:SetBackdrop({
-		bgFile="Interface\\Tooltips\\UI-Tooltip-Background",
-		edgeFile="Interface\\Tooltips\\UI-Tooltip-Border",
-		tile=true,tileEdge=true,tileSize=16,edgeSize=16,
-		insets={left=5,right=5,top=5,bottom=5}
-	})
-	fTint:SetBackdropColor(TOOLTIP_DEFAULT_BACKGROUND_COLOR.r,TOOLTIP_DEFAULT_BACKGROUND_COLOR.g,TOOLTIP_DEFAULT_BACKGROUND_COLOR.b)
-	fTint:SetBackdropBorderColor(TOOLTIP_DEFAULT_COLOR.r,TOOLTIP_DEFAULT_COLOR.g,TOOLTIP_DEFAULT_COLOR.b)
-
-	f:EnableMouse(true)
-	f:SetToplevel(true)
-	-- Match LibUIDropDownMenu's dropdown list frames, which sit at DIALOG
-	-- strata -- not just SetToplevel, which only reorders within a strata,
-	-- so this also fixes HUD unit frames (target/focus) bleeding through.
-	f:SetFrameStrata("DIALOG")
-
-	-- Escape closes just this panel, not the whole Friends panel behind it.
-	--
-	-- Propagate first, keyboard only if granted, and asked again on show --
-	-- see the drag ghost for why. This panel is built the first time it is
-	-- opened, which can just as easily be in combat.
-	-- Arm, ask, disarm if refused -- see the drag ghost for why this order and
-	-- not the other one.
-	f:EnableKeyboard(true)
-	if not SocialPlus_SetPropagate(f,true) then f:EnableKeyboard(false) end
-	f:HookScript("OnShow",function(self)
-		self:EnableKeyboard(true)
-		if not SocialPlus_SetPropagate(self,true) then self:EnableKeyboard(false) end
-	end)
-	f:SetScript("OnKeyDown",function(self,key)
-		if key=="ESCAPE" then
-			SocialPlus_SetPropagate(self,false)
-			SocialPlus_PlayMenuCloseSound()
-			self:Hide()
-		else
-			SocialPlus_SetPropagate(self,true)
-		end
-	end)
-
-	-- Title
-	f.title=f:CreateFontString(nil,"OVERLAY","GameFontHighlightLarge")
-	f.title:SetPoint("TOPLEFT",f,"TOPLEFT",14,-10)
-	f.title:SetText(L.GROUP_SETTINGS)
-
-	-- Close button (standard Blizzard X) -- flush with the panel's very
-	-- top-right corner, matching FriendsFrame's own close button placement.
-	local close=CreateFrame("Button","SocialPlus_SettingsCloseButton",f,"UIPanelCloseButton")
-	close:SetPoint("TOPRIGHT",f,"TOPRIGHT",0,0)
-	close:SetScript("OnClick",function()
-		SocialPlus_PlayMenuCloseSound()
-		f:Hide()
-	end)
-
-	-- Version, read from the .toc at load time so it always matches
-	-- whatever's actually packaged -- never hardcoded, so this can't drift
-	-- out of date on a new release. Right-aligned on the same axis as the
-	-- title, just left of the close button. SocialPlus_GetAddonVersion
-	-- handles both the C_AddOns/global API split and the unpackaged
-	-- "1.13c" sentinel (returning nil for a dev build) -- see
-	-- it for the full story on why that token can't be written literally.
-	local addonVersion=SocialPlus_GetAddonVersion()
-	if addonVersion then
-		-- GameFontDisableSmall (WoW's "grayed out" style) carries its own
-		-- dim alpha baked into the font object itself -- SetTextColor's RGB
-		-- was correct but that baked-in alpha kept it faded regardless
-		-- (reported live: still washed out even at full gold RGB).
-		-- GameFontNormalSmall has no such override, so our color actually
-		-- shows at full strength.
-		f.versionText=f:CreateFontString(nil,"OVERLAY","GameFontNormalSmall")
-		-- Anchored to the panel's own TOPRIGHT (same y as the title, -10)
-		-- rather than relative to the close button's center -- that anchor
-		-- put it too high and left too much of a gap next to the X
-		-- (reported live).
-		f.versionText:SetPoint("TOPRIGHT",f,"TOPRIGHT",-30,-10)
-		f.versionText:SetJustifyH("RIGHT")
-		f.versionText:SetText("v"..addonVersion)
-		f.versionText:SetTextColor(1,0.82,0,1)
-	end
-
-	-- Checkboxes
-	local hideOffline=CreateFrame("CheckButton","SocialPlus_HideOfflineCheck",f,"UICheckButtonTemplate")
-	hideOffline:SetPoint("TOPLEFT",f,"TOPLEFT",14,-40)
-	_G[hideOffline:GetName().."Text"]:SetText(L.SETTING_HIDE_OFFLINE)
-	hideOffline:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.hide_offline)
-	hideOffline:SetScript("OnClick",function()
-		SocialPlus_SavedVars.hide_offline=not SocialPlus_SavedVars.hide_offline
-		SocialPlus_Update()
-	end)
-
-	local showLevel=CreateFrame("CheckButton","SocialPlus_ShowLevelCheck",f,"UICheckButtonTemplate")
-	showLevel:SetPoint("TOPLEFT",hideOffline,"BOTTOMLEFT",0,-6)
-	_G[showLevel:GetName().."Text"]:SetText(L.SETTING_SHOW_LEVEL)
-	showLevel:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.show_level)
-	showLevel:SetScript("OnClick",function()
-		SocialPlus_SavedVars.show_level=not SocialPlus_SavedVars.show_level
-		SocialPlus_Update()
-	end)
-
-	local colourNames=CreateFrame("CheckButton","SocialPlus_ColourNamesCheck",f,"UICheckButtonTemplate")
-	colourNames:SetPoint("TOPLEFT",showLevel,"BOTTOMLEFT",0,-6)
-	_G[colourNames:GetName().."Text"]:SetText(L.SETTING_COLOR_NAMES)
-	colourNames:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.colour_classes)
-	colourNames:SetScript("OnClick",function()
-		SocialPlus_SavedVars.colour_classes=not SocialPlus_SavedVars.colour_classes
-		SocialPlus_Update()
-	end)
-
-	-- Prioritize current-client players -- label names whichever WoW version
-	-- this client actually is (MoP, TBC, etc.), not hardcoded to one, since
-	-- the addon runs on multiple classic clients now.
-	local prioritizeCurrent=CreateFrame("CheckButton","SocialPlus_PrioritizeCurrentClientCheck",f,"UICheckButtonTemplate")
-	prioritizeCurrent:SetPoint("TOPLEFT",colourNames,"BOTTOMLEFT",0,-6)
-	local currentVersionLabel=SocialPlus_GetVersionLabelText(WOW_PROJECT_ID)
-	_G[prioritizeCurrent:GetName().."Text"]:SetText(
-		L.SETTING_PRIORITIZE_PREFIX..currentVersionLabel..L.SETTING_PRIORITIZE_SUFFIX)
-	prioritizeCurrent:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.prioritize_current_client)
-	prioritizeCurrent:SetScript("OnClick",function()
-		SocialPlus_SavedVars.prioritize_current_client=not SocialPlus_SavedVars.prioritize_current_client
-		-- force full rebuild so ordering updates
-		SocialPlus_Update(true)
-	end)
-
-	-- Both declared here, above everything that reads them.
-	--
-	-- UpdatePvPRatingsState is referred to by the tick's click handler, and
-	-- bracketChecks is read inside UpdatePvPRatingsState -- a local declared
-	-- further down is not the same name at all from up here, it is a global
-	-- that happens to be nil, and the failure lands at runtime rather than at
-	-- load. The same shape as calling a function before its definition, which
-	-- is why ordercheck does not see it: nothing is being called.
-	local UpdatePvPRatingsState
-	local bracketChecks={}
-
-	-- Rated PvP in the tooltip, which needs ArenaPlus to supply the ladder.
-	local pvpRatings=CreateFrame("CheckButton","SocialPlus_PvPRatingsCheck",f,"UICheckButtonTemplate")
-	pvpRatings:SetPoint("TOPLEFT",prioritizeCurrent,"BOTTOMLEFT",0,-6)
-	_G[pvpRatings:GetName().."Text"]:SetText(L.SETTING_PVP_RATINGS)
-	pvpRatings:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.pvp_ratings)
-	pvpRatings:SetScript("OnClick",function()
-		SocialPlus_SavedVars.pvp_ratings=not SocialPlus_SavedVars.pvp_ratings
-		UpdatePvPRatingsState()
-		-- Nothing to rebuild: the tooltip reads the setting when it is next
-		-- built, and the list itself is unchanged.
-	end)
-
-
-	-- One tick per bracket, indented under the switch they depend on.
-	--
-	-- Built in a loop rather than written out four times: the labels come from
-	-- ArenaPlus's own BRACKETS table where it is installed, so the two cannot
-	-- disagree about what bracket 4 is called.
-	local previousCheck=pvpRatings
-
-	for bracket=1,4 do
-		local check=CreateFrame("CheckButton",nil,f,"UICheckButtonTemplate")
-		check:SetSize(20,20)
-		check:SetPoint("TOPLEFT",previousCheck,"BOTTOMLEFT",bracket==1 and 18 or 0,-2)
-		check.bracket=bracket
-
-		local names=_G.ArenaPlusAPI and _G.ArenaPlusAPI.BRACKETS
-		local label=check:CreateFontString(nil,"OVERLAY","GameFontNormalSmall")
-		label:SetPoint("LEFT",check,"RIGHT",2,0)
-		label:SetText((names and names[bracket]) or tostring(bracket))
-		check.label=label
-
-		check:SetScript("OnClick",function(self)
-			SocialPlus_SavedVars.pvp_brackets=type(SocialPlus_SavedVars.pvp_brackets)=="table"
-				and SocialPlus_SavedVars.pvp_brackets or {}
-			SocialPlus_SavedVars.pvp_brackets[self.bracket]=self:GetChecked() and true or nil
-		end)
-
-		bracketChecks[bracket]=check
-		previousCheck=check
-	end
-
-	local specIcon=CreateFrame("CheckButton","SocialPlus_PvPSpecIconCheck",f,"UICheckButtonTemplate")
-	specIcon:SetPoint("TOPLEFT",bracketChecks[4] or pvpRatings,"BOTTOMLEFT",
-		bracketChecks[4] and -18 or 0,-4)
-	_G[specIcon:GetName().."Text"]:SetText(L.SETTING_PVP_SPEC_ICON)
-	specIcon:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.pvp_spec_icon)
-	specIcon:SetScript("OnClick",function()
-		SocialPlus_SavedVars.pvp_spec_icon=not SocialPlus_SavedVars.pvp_spec_icon
-	end)
-
-	-- Under the spec icon, since the two decide what sits beside a name.
-	--
-	-- Unlike that one this needs no other addon: the flags ship here, so the
-	-- tick is never offered against something that cannot happen.
-	local regionFlag=CreateFrame("CheckButton","SocialPlus_RegionFlagCheck",f,"UICheckButtonTemplate")
-	regionFlag:SetPoint("TOPLEFT",specIcon,"BOTTOMLEFT",0,-4)
-	_G[regionFlag:GetName().."Text"]:SetText(L.SETTING_REGION_FLAG)
-	regionFlag:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.region_flag)
-	regionFlag:SetScript("OnClick",function()
-		SocialPlus_SavedVars.region_flag=not SocialPlus_SavedVars.region_flag
-
-		-- Redraw the list, or nothing changes until the rows happen to be
-		-- rebuilt: they are pooled, and a row keeps whatever it was last given
-		-- until something recycles it. Without this the tick appeared to do
-		-- nothing until you scrolled far enough to reuse every row.
-		SocialPlus_Update()
-	end)
-
-	-- Under the region flag: both change what the NAME area of a row shows.
-	--
-	-- Needs no other addon, so unlike the two PvP ticks it is always present.
-	local battleTag=CreateFrame("CheckButton","SocialPlus_BattleTagCheck",f,"UICheckButtonTemplate")
-	battleTag:SetPoint("TOPLEFT",regionFlag,"BOTTOMLEFT",0,-4)
-	_G[battleTag:GetName().."Text"]:SetText(L.SETTING_BATTLETAG)
-	battleTag:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.show_battletag)
-	battleTag:SetScript("OnClick",function()
-		SocialPlus_SavedVars.show_battletag=not SocialPlus_SavedVars.show_battletag
-		-- Same pooled-row reason as the flag above.
-		SocialPlus_Update()
-	end)
-
-	-- No "requires ArenaPlus" hover hint any more: it only ever appeared on the
-	-- greyed checkbox, and the checkbox is now hidden outright in exactly that
-	-- case, so the script could never run. L.SETTING_PVP_RATINGS_NEEDS is left
-	-- in Locales.lua unused rather than deleted across three languages, in case
-	-- the hint is wanted somewhere that can actually be seen.
-
-	-- Hidden outright unless ArenaPlus is there to answer, rather than greyed.
-	--
-	-- These two settings cannot do anything without it: the tooltip guards
-	-- every call into ArenaPlusAPI and simply draws no block. A greyed tick
-	-- still takes up a line and still asks to be read before it can be
-	-- dismissed, on a panel where most people will never install that addon.
-	-- Absent, it is simply not part of the panel.
-	--
-	-- The bracket ticks go with the ratings block they belong to. The region
-	-- flag does NOT -- it needs no other addon -- so it stays, and re-anchors
-	-- upward to close the gap the hidden rows leave behind. Everything below
-	-- it is chained off it and follows automatically.
-	--
-	-- Tested on the published table rather than on the addon being loaded: an
-	-- ArenaPlus that is installed but disabled never runs its files and never
-	-- creates it, which is the same thing as absent from here.
-	function UpdatePvPRatingsState()
-		local ready=_G.ArenaPlusAPI and _G.ArenaPlusAPI.GetLadder
-
-		-- Measured while the block is on screen, and only then: once hidden
-		-- these have no position to report. Cached so the panel can still be
-		-- resized correctly on a client that never had ArenaPlus loaded.
-		if ready and not SOCIALPLUS_PVP_BLOCK_H then
-			local top,bottom=pvpRatings:GetTop(),regionFlag:GetTop()
-			if top and bottom and top>bottom then
-				SOCIALPLUS_PVP_BLOCK_H=top-bottom
-			end
-		end
-
-		pvpRatings:SetShown(ready and true or false)
-		specIcon:SetShown(ready and true or false)
-		for _,check in ipairs(bracketChecks) do
-			check:SetShown(ready and true or false)
-		end
-
-		-- Re-anchored, not just moved: a hidden frame keeps its anchor, so
-		-- without this the region flag would stay where it was and leave the
-		-- hidden rows' space blank.
-		regionFlag:ClearAllPoints()
-		if ready then
-			regionFlag:SetPoint("TOPLEFT",specIcon,"BOTTOMLEFT",0,-4)
-		else
-			regionFlag:SetPoint("TOPLEFT",prioritizeCurrent,"BOTTOMLEFT",0,-6)
-		end
-
-		-- Shrink the panel by exactly what was removed, so hiding the rows
-		-- does not simply trade a greyed block for an empty one.
-		if SOCIALPLUS_PVP_BLOCK_H then
-			f:SetHeight(SOCIALPLUS_PVP_PANEL_H-(ready and 0 or SOCIALPLUS_PVP_BLOCK_H))
-		end
-
-		specIcon:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.pvp_spec_icon)
-		regionFlag:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.region_flag)
-		battleTag:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.show_battletag)
-
-		-- With ArenaPlus present the bracket ticks still depend on the block
-		-- above them being switched on: a tick that changes nothing is a tick
-		-- that lies.
-		local live=ready and SocialPlus_SavedVars and SocialPlus_SavedVars.pvp_ratings
-		for _,check in ipairs(bracketChecks) do
-			local wanted=SocialPlus_SavedVars and SocialPlus_SavedVars.pvp_brackets
-			check:SetChecked(wanted and wanted[check.bracket] and true or false)
-
-			if live then check:Enable() else check:Disable() end
-			check.label:SetTextColor(live and 0.8 or 0.4,live and 0.8 or 0.4,live and 0.8 or 0.4)
-		end
-	end
-
-	-- Defined here rather than above, deliberately.
-	--
-	-- It reads every widget in this block, and three times now a widget has
-	-- been added after it and come out nil -- a local declared below its
-	-- reader is not that local at all. Sitting after everything it touches,
-	-- the next widget added cannot repeat that. The forward declaration at
-	-- the top is what lets the tick's own click handler still reach it.
-
-	UpdatePvPRatingsState()
-
-	-- Separator + section header ahead of the notification checkboxes, same
-	-- style as the existing separator below them.
-	local preNotifyLine=f:CreateTexture(nil,"ARTWORK")
-	preNotifyLine:SetSize(f:GetWidth()-24,1)
-	-- Below the bracket ticks, not below their parent.
-	--
-	-- Anchored to pvpRatings it stayed where it was and the four new rows drew
-	-- straight through the notifications section. The -18 undoes the indent the
-	-- bracket ticks carry, so this returns to the left margin the rest of the
-	-- panel uses.
-	-- Below the last tick of the block above, whichever that is. It used to
-	-- name specIcon, and adding one under it put the divider and the whole
-	-- Notifications section straight through the new row -- everything down
-	-- here hangs off this one line, so it has to hang off the real last tick.
-	preNotifyLine:SetPoint("TOPLEFT",battleTag,"BOTTOMLEFT",0,-12)
-	preNotifyLine:SetColorTexture(0.6,0.6,0.6,0.4)
-
-	local notifySectionHeader=f:CreateFontString(nil,"ARTWORK","GameFontNormal")
-	notifySectionHeader:SetPoint("TOPLEFT",preNotifyLine,"BOTTOMLEFT",0,-8)
-	notifySectionHeader:SetText(L.SETTING_SECTION_NOTIFICATIONS)
-
-	-- Friend online/offline notifications
-	local notifyEnable=CreateFrame("CheckButton","SocialPlus_NotifyEnableCheck",f,"UICheckButtonTemplate")
-	notifyEnable:SetPoint("TOPLEFT",notifySectionHeader,"BOTTOMLEFT",0,-6)
-	_G[notifyEnable:GetName().."Text"]:SetText(L.SETTING_NOTIFY_ENABLE)
-	notifyEnable:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.notifications and SocialPlus_SavedVars.notifications.enabled)
-
-	-- Sound sits directly under the "come online" toggle it belongs to, so
-	-- the two online options read as a pair and "go offline" follows after.
-	--
-	-- Reproduces Blizzard's own friend online chime (SOUNDKIT.UI_BNET_TOAST),
-	-- which this addon's chat-message notification doesn't otherwise come
-	-- with -- the toast CVars this addon flips off only silence Blizzard's
-	-- visual popup, not this.
-	local notifySound=CreateFrame("CheckButton","SocialPlus_NotifySoundCheck",f,"UICheckButtonTemplate")
-	notifySound:SetPoint("TOPLEFT",notifyEnable,"BOTTOMLEFT",0,-6)
-	_G[notifySound:GetName().."Text"]:SetText(L.SETTING_NOTIFY_SOUND)
-	notifySound:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.notifications and SocialPlus_SavedVars.notifications.sound)
-	notifySound:SetScript("OnClick",function()
-		SocialPlus_SavedVars.notifications.sound=not SocialPlus_SavedVars.notifications.sound
-	end)
-
-	local notifyOffline=CreateFrame("CheckButton","SocialPlus_NotifyOfflineCheck",f,"UICheckButtonTemplate")
-	notifyOffline:SetPoint("TOPLEFT",notifySound,"BOTTOMLEFT",0,-6)
-	_G[notifyOffline:GetName().."Text"]:SetText(L.SETTING_NOTIFY_OFFLINE)
-	notifyOffline:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.notifications and SocialPlus_SavedVars.notifications.offline_too)
-	notifyOffline:SetScript("OnClick",function()
-		SocialPlus_SavedVars.notifications.offline_too=not SocialPlus_SavedVars.notifications.offline_too
-	end)
-
-	-- Only notify friends on this exact WoW version -- labelled dynamically
-	-- like "Show WoW friends first" above. Off by default: most players
-	-- still want notifications for every friend regardless of version,
-	-- this is an opt-in filter for people who specifically don't want
-	-- cross-version noise.
-	local notifySameVersion=CreateFrame("CheckButton","SocialPlus_NotifySameVersionCheck",f,"UICheckButtonTemplate")
-	notifySameVersion:SetPoint("TOPLEFT",notifyOffline,"BOTTOMLEFT",0,-6)
-	_G[notifySameVersion:GetName().."Text"]:SetText(
-		L.SETTING_NOTIFY_SAME_VERSION_PREFIX..currentVersionLabel..L.SETTING_NOTIFY_SAME_VERSION_SUFFIX)
-	notifySameVersion:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.notifications and SocialPlus_SavedVars.notifications.same_version_only)
-	notifySameVersion:SetScript("OnClick",function()
-		SocialPlus_SavedVars.notifications.same_version_only=not SocialPlus_SavedVars.notifications.same_version_only
-	end)
-
-	-- Child checkboxes only mean anything while the parent "notify when
-	-- friends come online" toggle is on -- gray them out and disable
-	-- interaction (but never touch their SavedVars) whenever it's off, so
-	-- re-enabling the parent restores exactly what the user had before.
-	local function SocialPlus_UpdateNotifyChildState()
-		local enabled=SocialPlus_SavedVars and SocialPlus_SavedVars.notifications and SocialPlus_SavedVars.notifications.enabled
-		for _,child in ipairs({notifyOffline,notifySameVersion,notifySound}) do
-			if enabled then
-				child:Enable()
-				_G[child:GetName().."Text"]:SetTextColor(NORMAL_FONT_COLOR:GetRGB())
-			else
-				child:Disable()
-				_G[child:GetName().."Text"]:SetTextColor(GRAY_FONT_COLOR:GetRGB())
-			end
-		end
-	end
-
-	notifyEnable:SetScript("OnClick",function()
-		SocialPlus_SavedVars.notifications.enabled=not SocialPlus_SavedVars.notifications.enabled
-		SocialPlus_ApplyToastCVars()
-		SocialPlus_UpdateNotifyChildState()
-	end)
-	SocialPlus_UpdateNotifyChildState()
-
-	-- Separator spanning almost full width, now directly below the notification checkboxes
-	local line=f:CreateTexture(nil,"ARTWORK")
-	line:SetSize(f:GetWidth()-24,1)
-	line:SetPoint("TOPLEFT",notifySameVersion,"BOTTOMLEFT",0,-12)
-	line:SetColorTexture(0.6,0.6,0.6,0.4)
-
-	-- Slider label + description
-	local lbl=f:CreateFontString(nil,"ARTWORK","GameFontHighlightSmall")
-	lbl:SetPoint("TOPLEFT",line,"BOTTOMLEFT",0,-10)
-	lbl:SetText(L.SETTING_SCROLL_SPEED)
-
-	local desc=f:CreateFontString(nil,"ARTWORK","GameFontNormalSmall")
-	desc:SetPoint("TOPLEFT",lbl,"BOTTOMLEFT",0,-6)
-	desc:SetText(L.SETTING_SCROLL_SPEED_DESC)
-
-	-- Slider (widened)
-	local slider=CreateFrame("Slider","SocialPlus_SettingsScrollSpeedSlider",f,"OptionsSliderTemplate")
-	slider:SetPoint("TOPLEFT",desc,"BOTTOMLEFT",0,-5)
-	slider:SetSize(f:GetWidth()-40,16)
-	slider:SetMinMaxValues(1.0,5.0)
-	slider:SetValueStep(0.1)
-	slider:SetObeyStepOnDrag(true)
-	slider:SetValue(SocialPlus_SavedVars and SocialPlus_SavedVars.scrollSpeed or SCROLL_BASE)
-
-	-- Center numeric value under slider
-	slider.text=_G[slider:GetName().."Text"]
-	if slider.text then
-		slider.text:ClearAllPoints()
-		slider.text:SetPoint("TOP",slider,"BOTTOM",0,-2)
-		slider.text:SetJustifyH("CENTER")
-		slider.text:SetText(string.format("%d%%",slider:GetValue()/SCROLL_BASE*100))
-	end
-
-	slider:SetScript("OnValueChanged",function(self,val)
-		val=tonumber(val) or SCROLL_BASE
-		val=math.floor(val*10+0.5)/10
-		self:SetValue(val)
-		if self.text then
-			self.text:SetText(string.format("%d%%",val/SCROLL_BASE*100))
-		end
-		if not SocialPlus_SavedVars then SocialPlus_SavedVars={} end
-		SocialPlus_SavedVars.scrollSpeed=val
-		pcall(SocialPlus_InitSmoothScroll)
-	end)
-
-	-- Sync on show (no more icon profile dropdown)
-	f:SetScript("OnShow",function()
-		hideOffline:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.hide_offline)
-		showLevel:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.show_level)
-		colourNames:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.colour_classes)
-		prioritizeCurrent:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.prioritize_current_client)
-		pvpRatings:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.pvp_ratings)
-		-- Re-tested every time the panel opens, in case ArenaPlus was enabled.
-		UpdatePvPRatingsState()
-		notifyEnable:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.notifications and SocialPlus_SavedVars.notifications.enabled)
-		notifyOffline:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.notifications and SocialPlus_SavedVars.notifications.offline_too)
-		notifySameVersion:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.notifications and SocialPlus_SavedVars.notifications.same_version_only)
-		notifySound:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.notifications and SocialPlus_SavedVars.notifications.sound)
-		SocialPlus_UpdateNotifyChildState()
-
-		local svSpeed=SocialPlus_SavedVars and SocialPlus_SavedVars.scrollSpeed or SCROLL_BASE
-		slider:SetValue(svSpeed)
-		if slider.text then
-			slider.text:SetText(string.format("%d%%",svSpeed/SCROLL_BASE*100))
-		end
-
-		-- Dynamically fit the panel height to its actual content, so it never
-		-- clips or leaves dead space as settings are added/removed over time.
-		local top=f:GetTop()
-		local bottom=(slider.text and slider.text:GetBottom()) or slider:GetBottom()
-		if top and bottom then
-			f:SetHeight((top-bottom)+20)
-		end
-	end)
-
-	f:Hide()
-	SocialPlus_SettingsPanel=f
-
-	if FriendsFrame then
-		FriendsFrame:HookScript("OnHide",function()
-			-- Our group/friend dropdown menus aren't parented to FriendsFrame,
-			-- so closing the panel (e.g. via Escape) doesn't automatically
-			-- close them, leaving an orphaned menu on screen. Close explicitly.
-			LibDD:CloseDropDownMenus()
-
-			-- WoW only fires OnEnter on actual mouse movement -- so
-			-- reopening the panel with the cursor sitting still leaves the
-			-- stale tooltip from whoever was hovered before showing, even
-			-- though the row under the cursor may now be a different friend
-			-- (list order can change while the panel's closed) (reported
-			-- live). Clear it out on close so nothing stale can linger.
-			SocialPlus_HideRowTooltip()
-
-			-- Clear the highlighted friend on close too, so reopening the
-			-- panel starts fresh with nobody selected instead of whoever
-			-- was picked last time.
-			SocialPlus_SelectedRow=nil
-
-			if SocialPlus_SettingsPanel then
-				SocialPlus_SettingsPanel:Hide()
-			end
-			if SocialPlus_Searchbox then
-				SocialPlus_Searchbox:SetText("")
-				SocialPlus_Searchbox:ClearFocus()
-				SocialPlus_SearchTerm=nil
-				if SocialPlus_SearchGlow then SocialPlus_SearchGlow:Hide() end
-				if SocialPlus_SearchGlowOuter then SocialPlus_SearchGlowOuter:Hide() end
-			end
-		end)
-	end
-end
-
--- The search box shares its row with Blizzard's Friends/Ignore tabs, whose
--- width comes from the GAME client's locale, not ours. At a fixed 170 the box
--- left exactly 1px of clearance on a Spanish client (measured with /spgap:
--- "Amigos"/"Ignorar") and would overlap outright in a wordier locale.
---
--- So the width adapts: keep 170 when there's room, otherwise give the tabs
--- their space and shrink, down to a floor where the box is still usable. Runs
--- whenever the tab strip may have changed, since the tabs are laid out by
--- Blizzard and we only get to react.
-function SocialPlus_LayoutSearchBox()
-	if not (SocialPlus_Searchbox and FriendsFrame) then return end
-
-	local PREFERRED,MINIMUM,GAP=170,104,8
-
-	local frameRight=FriendsFrame:GetRight()
-	if not frameRight then return end
-
-	local rightmostTab=nil
-	for i=1,4 do
-		local tab=_G["FriendsTabHeaderTab"..i]
-		if tab and tab:IsShown() then
-			local r=tab:GetRight()
-			if r and (not rightmostTab or r>rightmostTab) then rightmostTab=r end
-		end
-	end
-
-	-- No tabs laid out yet (panel never shown): leave the preferred width.
-	if not rightmostTab then
-		SocialPlus_Searchbox:SetWidth(PREFERRED)
-		return
-	end
-
-	-- -9 mirrors the TOPRIGHT inset the box is anchored with.
-	local available=(frameRight-9)-(rightmostTab+GAP)
-	local width=math.min(PREFERRED,math.max(MINIMUM,available))
-	if math.floor(width+0.5)~=math.floor((SocialPlus_Searchbox:GetWidth() or 0)+0.5) then
-		SocialPlus_Searchbox:SetWidth(width)
-	end
-end
-
-local function SocialPlus_UpdateFriendsTabVisibility()
-	if not FriendsFrame then return end
-	-- Tabs may have just been re-laid out (shown, or switched); re-fit first so
-	-- the box is never briefly overlapping them.
-	SocialPlus_LayoutSearchBox()
-
-	local tabID=PanelTemplates_GetSelectedTab(FriendsFrame) or FriendsFrame.selectedTab
-	local isFriendsTab=(tabID==1)
-
-	-- The Friends/Ignore sub-tabs at the top are a separate tab strip
-	-- (FriendsTabHeader), independent of the bottom Friends/Who/Raid tabs.
-	-- Search only applies to the friends list, so on the Ignore sub-tab
-	-- the box stays visible but empty and disabled (greyed), instead of
-	-- filtering a list it doesn't apply to.
-	local headerTab=FriendsTabHeader
-		and ((PanelTemplates_GetSelectedTab and PanelTemplates_GetSelectedTab(FriendsTabHeader)) or FriendsTabHeader.selectedTab)
-	local searchUsable=isFriendsTab and (headerTab==nil or headerTab==1)
-
-	-- Show/hide search box
-	if SocialPlus_Searchbox then
-		-- Whenever search doesn't apply (other bottom tab, or the Ignore
-		-- sub-tab): clear it completely
-		if not searchUsable then
-			SocialPlus_Searchbox:SetText("")
-			SocialPlus_Searchbox:ClearFocus()
-			SocialPlus_SearchTerm=nil
-
-			if SocialPlus_SearchGlow then
-				SocialPlus_SearchGlow:Hide()
-			end
-			if SocialPlus_SearchGlowOuter then
-				SocialPlus_SearchGlowOuter:Hide()
-			end
-
-			-- Do NOT call FriendsList_Update here: any function we define is tainted
-			-- by SocialPlus, so even a C_Timer-deferred call propagates taint through
-			-- our hooksecurefunc on FriendsList_Update and blocks CopyToClipboard in
-			-- the /who unit popup.  SearchTerm is already nil and the search box is
-			-- cleared, so the list rebuilds unfiltered on the next natural update.
-		end
-
-		SocialPlus_Searchbox:SetShown(isFriendsTab)
-		if searchUsable then
-			SocialPlus_Searchbox:Enable()
-			SocialPlus_Searchbox:SetAlpha(1)
-		else
-			SocialPlus_Searchbox:Disable()
-			SocialPlus_Searchbox:SetAlpha(0.4)
-		end
-	end
-
-	-- Show/hide settings button
-	if SocialPlus_SettingsButton then
-		SocialPlus_SettingsButton:SetShown(isFriendsTab)
-	end
-
-    -- keep +/- button in sync with the Friends tab
-	if SocialPlus_CollapseAllButton then
-		SocialPlus_UpdateCollapseAllButtonVisual()
-	end
-
-	-- Auto-close settings when leaving the tab
-	if not isFriendsTab and SocialPlus_SettingsPanel and SocialPlus_SettingsPanel:IsShown() then
-		SocialPlus_SettingsPanel:Hide()
-	end
-end
-
--- Run visibility fix on first load
-SocialPlus_UpdateFriendsTabVisibility()
-
--- Update visibility when switching tabs
-FriendsFrame:HookScript("OnShow",SocialPlus_UpdateFriendsTabVisibility)
-
-hooksecurefunc("PanelTemplates_SetTab",function(frame,tabID)
-	if frame==FriendsFrame or (FriendsTabHeader and frame==FriendsTabHeader) then
-		SocialPlus_UpdateFriendsTabVisibility()
-	end
-end)
-
--- Belt-and-suspenders for the header sub-tabs: FriendsFrame_Update is
--- Blizzard's central updater that runs on every tab switch of either
--- strip, so hooking it covers the Ignore sub-tab even if this client's
--- header tabs don't route through PanelTemplates_SetTab.
-if type(FriendsFrame_Update)=="function" then
-	hooksecurefunc("FriendsFrame_Update",SocialPlus_UpdateFriendsTabVisibility)
-end
-
 -- [[ Friend (row) right-click menu state ]]
 
-local SocialPlus_CurrentFriend=nil
+-- Global: the friend row dropdown lives in its own file now.
+SocialPlus_CurrentFriend=nil
 
-local SocialPlus_FriendMenu=LibDD:Create_UIDropDownMenu("SocialPlus_FriendMenu",UIParent)
+-- Global: the friend row dropdown lives in its own file now.
+SocialPlus_FriendMenu=LibDD:Create_UIDropDownMenu("SocialPlus_FriendMenu",UIParent)
 SocialPlus_FriendMenu.displayMode="MENU"
 
 -- [[ Click-catcher: closes our menus and unfocuses search when clicking outside ]]
@@ -7539,7 +6473,8 @@ end
 -- Expose global alias so third-party callers that expect a global will find it
 _G.SocialPlus_GetInviteStatus = SocialPlus_GetInviteStatus
 
-local function SocialPlus_DropdownFriendHasGroup()
+-- Global: the friend row dropdown lives in its own file now.
+function SocialPlus_DropdownFriendHasGroup()
 	local _,_,note=SocialPlus_GetDropdownFriendNote()
 	if not note or note=="" then
 		return false
@@ -7570,7 +6505,8 @@ local function SocialPlus_GetStringWidth(str)
     return SocialPlus_MenuMeasureFS:GetStringWidth() or 0
 end
 
-local function SocialPlus_ApplyMenuMinWidth(level)
+-- Global: the friend row dropdown lives in its own file now.
+function SocialPlus_ApplyMenuMinWidth(level)
     level=level or 1
     local listFrame=_G["DropDownList"..level]
     if not listFrame then return end
@@ -7598,350 +6534,6 @@ local function SocialPlus_ApplyMenuMinWidth(level)
         end
     end
 end
-
--- [[ Friend row dropdown (per-friend menu) ]]
-SocialPlus_FriendMenu.initialize=function(self,level)
-	level=level or 1
-	if not SocialPlus_CurrentFriend then return end
-	local info
-
-	if level==1 then
-		local cf=SocialPlus_CurrentFriend
-
-		-- [ Friend Name ] title
-		info=LibDD:UIDropDownMenu_CreateInfo()
-		info.text=SocialPlus_GetMenuTitle()
-		info.isTitle=true
-		info.notCheckable=true
-		info.disabled=true
-		info.justifyH="LEFT"
-		LibDD:UIDropDownMenu_AddButton(info,level)
-
-		-- Make the title a bit sharper
-		do
-			local listFrame=_G["L_DropDownList"..level]
-			if listFrame then
-				local idx=listFrame.numButtons or 1
-				local btn=_G[listFrame:GetName().."Button"..idx]
-				if btn then
-					local fs=btn:GetFontString()
-					if fs then
-						fs:SetFont("Fonts\\FRIZQT__.TTF",12,"OUTLINE")
-					end
-				end
-			end
-		end
-
-		-- Toggle SocialPlus favorite (independent of Blizzard's own BNet
-		-- favorite, which pins a friend to the top on its own with no
-		-- addon-level control).
-		if cf.buttonType==FRIENDS_BUTTON_TYPE_BNET or cf.buttonType==FRIENDS_BUTTON_TYPE_WOW then
-			-- cf.id is the friend-list index captured when the menu opened,
-			-- which can go stale if the list reorders while the menu is
-			-- still open (confirmed live: toggled favorite on a different
-			-- friend than the one actually right-clicked). Re-resolve to
-			-- the CURRENT index from the stable presence ID/character name,
-			-- the same pattern SocialPlus_GetDropdownFriend already uses
-			-- for every other dropdown action.
-			local dropdownKind,freshID=SocialPlus_GetDropdownFriend()
-			local freshButtonType=(dropdownKind=="BNET") and FRIENDS_BUTTON_TYPE_BNET or FRIENDS_BUTTON_TYPE_WOW
-			local isFav=freshID and SocialPlus_IsFavorite(freshButtonType,freshID)
-			info=LibDD:UIDropDownMenu_CreateInfo()
-			info.text=isFav and L.MENU_REMOVE_FAVORITE or L.MENU_ADD_FAVORITE
-			info.notCheckable=true
-			info.func=function()
-				local k,fid=SocialPlus_GetDropdownFriend()
-				if not fid then return end
-				local bt=(k=="BNET") and FRIENDS_BUTTON_TYPE_BNET or FRIENDS_BUTTON_TYPE_WOW
-				SocialPlus_ToggleFavorite(bt,fid)
-			end
-			LibDD:UIDropDownMenu_AddButton(info,level)
-		end
-
-		-- Set Note
-		info=LibDD:UIDropDownMenu_CreateInfo()
-		info.text=L.MENU_SET_NOTE
-		info.notCheckable=true
-		info.func=function()
-			local kind,id,note,setter=SocialPlus_GetDropdownFriendNote()
-			if not kind or not id or not setter then return end
-			local groups={}
-			local baseNote=NoteAndGroups(note,groups)
-			StaticPopup_Show("FRIEND_SET_NOTE",nil,nil,{kind=kind,id=id,set=setter,note=baseNote,groups=groups})
-		end
-		LibDD:UIDropDownMenu_AddButton(info,level)
-
-		-- View BNet friend's friends (Blizzard-style "View Friends")
-		info=LibDD:UIDropDownMenu_CreateInfo()
-		info.text=L.MENU_VIEW_FRIENDS
-		info.notCheckable=true
-		do
-			local cf=SocialPlus_CurrentFriend
-			if cf and cf.buttonType==FRIENDS_BUTTON_TYPE_BNET then
-				info.disabled=false
-			else
-				info.disabled=true
-			end
-		end
-
-		info.func=function()
-			-- Re-resolve by presenceID, same reasoning as every other item
-			-- here -- the raw index captured when the menu opened can go
-			-- stale if the list reindexes before this item is clicked.
-			local kind,index=SocialPlus_GetDropdownFriend()
-			if kind~="BNET" or not index or not BNGetFriendInfo then return end
-
-			-- MoP-style BNGetFriendInfo:
-			-- presenceID = t[1], bnetIDAccount = last value
-			local t={BNGetFriendInfo(index)}
-			local presenceID=t[1]
-			local bnetIDAccount=t[#t]
-
-			if not presenceID then return end
-
-			-- 1) Show the Friends-of-Friends frame
-			if type(FriendsFriendsFrame_Show)=="function" then
-				FriendsFriendsFrame_Show(presenceID)
-			elseif FriendsFriendsFrame then
-				if ShowUIPanel then
-					ShowUIPanel(FriendsFriendsFrame)
-				else
-					FriendsFriendsFrame:Show()
-				end
-			end
-
-			-- 2) Actually request the FoF data so it fills
-			if BNRequestFOFInfo and bnetIDAccount then
-				BNRequestFOFInfo(bnetIDAccount)
-			end
-		end
-		LibDD:UIDropDownMenu_AddButton(info,level)
-
-		-- --- separator before Interact block
-		SocialPlus_AddSeparator(level)
-
-		-- Interact header
-		info=LibDD:UIDropDownMenu_CreateInfo()
-		info.text=L.MENU_INTERACT
-		info.isTitle=true
-		info.notCheckable=true
-		info.disabled=true
-		LibDD:UIDropDownMenu_AddButton(info,level)
-
-		-- Invite / Suggest invite
-		info=LibDD:UIDropDownMenu_CreateInfo()
-
-		local isSuggest=SocialPlus_ShouldSuggestInvite and SocialPlus_ShouldSuggestInvite()
-		local label=isSuggest and (L.MENU_SUGGEST or L.MENU_INVITE) or L.MENU_INVITE
-
-		info.text=label
-		info.notCheckable=true
-
-		-- Determine invite eligibility and reason for the dropdown friend
-		local kind,id=SocialPlus_GetDropdownFriend()
-		local canInvite,reason=false,nil
-		if kind and id then
-			canInvite,reason=SocialPlus_GetInviteStatus(kind,id)
-		else
-			canInvite=false
-			reason=L.INVITE_GENERIC_FAIL
-		end
-
-		-- A BNet friend can have multiple WoW licenses online at the same
-		-- time (same case the faction-preference fix handles) -- offer a
-		-- submenu to choose which character to invite, matching Retail,
-		-- instead of silently inviting whichever one gets auto-picked.
-		local onlineAccounts=(kind=="BNET" and id) and SocialPlus_GetOnlineWoWGameAccounts(id) or nil
-
-		if onlineAccounts and #onlineAccounts>1 then
-			info.hasArrow=true
-			info.value="SocialPlus_INVITE_SUB"
-			info.disabled=false
-			info.tooltipTitle=nil
-			info.tooltipText=nil
-			info.func=nil
-		else
-			info.disabled=not canInvite
-			if info.disabled and reason and reason~="" then
-				info.tooltipTitle="|cffff4444"..label.."|r"
-				info.tooltipText=reason
-			else
-				info.tooltipTitle=label
-				info.tooltipText=nil
-			end
-
-			info.func=function()
-				if not SocialPlus_CanInviteMenuTarget() then return end
-
-				local kind,id=SocialPlus_GetDropdownFriend()
-				if not kind or not id then return end
-
-				-- Use the unified invite helper (same logic as buttons)
-				local ok,reason=SocialPlus_PerformInvite(kind,id)
-				if not ok and reason and UIErrorsFrame and UIErrorsFrame.AddMessage then
-					UIErrorsFrame:AddMessage(reason,1,0.1,0.1,1.0)
-				end
-			end
-		end
-		LibDD:UIDropDownMenu_AddButton(info,level)
-
-		-- Whisper
-		info=LibDD:UIDropDownMenu_CreateInfo()
-		info.text=L.MENU_WHISPER
-		info.notCheckable=true
-		info.func=function()
-			-- Re-resolve by stable identity (BNet presenceID / WoW character
-			-- name), same as the Invite item above -- NOT the raw index
-			-- captured when the menu was opened. The friends list can
-			-- reindex between opening this menu and clicking an item in it
-			-- (e.g. a FriendsList_Update from scrolling, or someone else's
-			-- online status changing), which silently repoints a stale raw
-			-- index at a completely different friend (reported live: right-
-			-- clicking one friend and choosing Whisper messaged a different
-			-- one entirely).
-			local kind,id=SocialPlus_GetDropdownFriend()
-			if not kind or not id then return end
-			local resolvedType=(kind=="BNET") and FRIENDS_BUTTON_TYPE_BNET or FRIENDS_BUTTON_TYPE_WOW
-
-			-- Don't touch the chat edit box or its attributes ourselves -- that's
-			-- what was tainting the shared Menu system and blocking unrelated
-			-- "Copy Name" clicks afterward. Instead, just set the same plain
-			-- (non-protected) selection fields Blizzard's own Friends UI uses,
-			-- then let Blizzard's own button handler do all the actual work.
-			-- This is the same handler the default UI calls for both WoW and
-			-- BNet friends, so it covers both cases.
-			FriendsFrame.selectedFriendType=resolvedType
-			FriendsFrame.selectedFriend=id
-			SocialPlus_SelectedRow={buttonType=resolvedType,id=id,identityKey=SocialPlus_GetRowIdentityKey(resolvedType,id)}
-
-			FG_Debug("Whisper via FriendsFrameSendMessageButton_OnClick","buttonType="..tostring(resolvedType),"index="..tostring(id))
-
-			if FriendsFrameSendMessageButton_OnClick then
-				pcall(FriendsFrameSendMessageButton_OnClick,FriendsFrameSendMessageButton)
-			end
-		end
-		LibDD:UIDropDownMenu_AddButton(info,level)
-
-		-- Copy character name
-		info=LibDD:UIDropDownMenu_CreateInfo()
-		info.text=L.MENU_COPY_NAME
-		info.notCheckable=true
-
-		local canCopy=SocialPlus_CanCopyCharName()
-		info.disabled=not canCopy
-
-		info.func=function()
-			if not SocialPlus_CanCopyCharName() then return end
-			local cf=SocialPlus_CurrentFriend
-			if not cf then return end
-			local full=SocialPlus_GetFullCharacterName(cf)
-			if full and full~="" then
-				StaticPopup_Show("SocialPlus_COPY_NAME",nil,nil,{name=full})
-			end
-		end
-		LibDD:UIDropDownMenu_AddButton(info,level)
-
-		-- --- separator before Groups section
-		SocialPlus_AddSeparator(level)
-
-		-- Groups section title
-		info=LibDD:UIDropDownMenu_CreateInfo()
-		info.text=L.MENU_GROUPS
-		info.isTitle=true
-		info.notCheckable=true
-		info.disabled=true
-		LibDD:UIDropDownMenu_AddButton(info,level)
-
-		-- Does this friend already have a #Group tag?
-		local hasGroup=SocialPlus_DropdownFriendHasGroup()
-
-		-- Create group from this friend
-		info=LibDD:UIDropDownMenu_CreateInfo()
-		info.text=L.MENU_CREATE_GROUP
-		info.notCheckable=true
-		info.disabled=hasGroup -- only for ungrouped friends
-		info.func=SocialPlus_CreateGroupFromDropdown
-		LibDD:UIDropDownMenu_AddButton(info,level)
-
-		-- Add / Move submenu
-		info=LibDD:UIDropDownMenu_CreateInfo()
-		info.text=hasGroup and (L.MENU_MOVE_TO_GROUP or L.MENU_ADD_TO_GROUP) or L.MENU_ADD_TO_GROUP
-		info.notCheckable=true
-		info.hasArrow=true
-		info.value="SocialPlus_ADD_SUB"
-		info.disabled=false
-		LibDD:UIDropDownMenu_AddButton(info,level)
-
-		-- Remove-from-group (direct action — friends can only be in one group)
-		local removeLabel=L.MENU_REMOVE_FROM_GROUP
-		if hasGroup then
-			local _,_,currentNote=SocialPlus_GetDropdownFriendNote()
-			local currentGroups={}
-			NoteAndGroups(currentNote,currentGroups)
-			for g in pairs(currentGroups) do
-				local c=NORMAL_FONT_COLOR
-				local hex=string.format("|cff%02x%02x%02x",c.r*255,c.g*255,c.b*255)
-				removeLabel=string.format(L.MENU_REMOVE_FROM_NAMED,"["..hex..g.."|r]")
-				break
-			end
-		end
-		info=LibDD:UIDropDownMenu_CreateInfo()
-		info.text=removeLabel
-		info.notCheckable=true
-		info.hasArrow=false
-		info.disabled=not hasGroup
-		info.func=function()
-			local kind,id,note,setter=SocialPlus_GetDropdownFriendNote()
-			if not setter or not id then return end
-			local groups={}
-			local baseNote=NoteAndGroups(note,groups)
-			for g in pairs(groups) do
-				baseNote=RemoveGroup(baseNote,g)
-			end
-			setter(id,baseNote)
-			SocialPlus_ClearSearch()
-			SocialPlus_Update()
-		end
-		LibDD:UIDropDownMenu_AddButton(info,level)
-
-        -- Separator before Other Options
-        SocialPlus_AddSeparator(level)
-
-        -- Other Options header
-        info=LibDD:UIDropDownMenu_CreateInfo()
-        info.text=L.MENU_OTHER_OPTIONS
-        info.isTitle=true
-        info.notCheckable=true
-        info.disabled=true
-        LibDD:UIDropDownMenu_AddButton(info,level)
-
-        -- Remove Friend / Remove Battle.net Friend
-        info=LibDD:UIDropDownMenu_CreateInfo()
-        info.notCheckable=true
-        info.func=function()
-            SocialPlus_RemoveCurrentFriend()
-        end
-        if cf and cf.buttonType==FRIENDS_BUTTON_TYPE_BNET then
-            info.text=L.MENU_REMOVE_BNET
-        else
-            info.text=REMOVE_FRIEND
-        end
-        LibDD:UIDropDownMenu_AddButton(info,level)
-
-		-- After all level-1 buttons are added, enforce a minimum width
-        SocialPlus_ApplyMenuMinWidth(level)
-
-	elseif level==2 then
-		if L_UIDROPDOWNMENU_MENU_VALUE=="SocialPlus_ADD_SUB" then
-			SocialPlus_BuildGroupSubmenu("ADD",level)
-		elseif L_UIDROPDOWNMENU_MENU_VALUE=="SocialPlus_DEL_SUB" then
-			SocialPlus_BuildGroupSubmenu("DEL",level)
-		elseif L_UIDROPDOWNMENU_MENU_VALUE=="SocialPlus_INVITE_SUB" then
-			SocialPlus_BuildInviteAccountSubmenu(level)
-		end
-	end
-end
-
 
 -- [[ FriendsFrame button hooks (click / tooltip / invite tooltip) ]]
 local frame=CreateFrame("Frame")
@@ -7974,9 +6566,11 @@ frame:RegisterEvent("PLAYER_REGEN_ENABLED")
 -- Global, not a file-local: this chunk is at Lua's 200-locals ceiling.
 function SocialPlus_MakeTooltipOpaque()
 	-- Modern templates use NineSlice; older ones a plain backdrop. Handle both.
-	local ns=GameTooltip.NineSlice
-	if ns and ns.SetCenterColor then
-		ns:SetCenterColor(0,0,0,1)
+	-- Not called "ns": that is the addon namespace, and shadowing it here would
+	-- hand any later edit in this function a tooltip widget instead.
+	local nine=GameTooltip.NineSlice
+	if nine and nine.SetCenterColor then
+		nine:SetCenterColor(0,0,0,1)
 	end
 	if GameTooltip.SetBackdropColor then
 		GameTooltip:SetBackdropColor(0,0,0,1)
@@ -8934,7 +7528,8 @@ travel:HookScript("OnLeave",function()
 end
 
 -- [[ Friends dropdown integration ]]
-local function SocialPlus_FindBNetIndexByPresenceID(presenceID)
+-- Global, not local: SocialPlus_Version.lua needs it.
+function SocialPlus_FindBNetIndexByPresenceID(presenceID)
 	for i=1,FG_BNGetNumFriends() do
 		local pid=select(1,FG_BNGetFriendInfo(i))
 		if pid==presenceID then return i end
@@ -9000,7 +7595,25 @@ function SocialPlus_GetDropdownFriendNote()
 
 		local note=t[13] or t[12] or t[14] or nil
 		FG_Debug("GetDropdownFriendNote -> BNET","index="..tostring(id),"note="..tostring(note))
-		return kind,id,note,FG_SetBNetFriendNote
+
+		-- Written by presence id, never by the list index it was found at.
+		--
+		-- id is a position in Battle.net's friend list, and that list reorders
+		-- itself whenever anybody logs on or off. Between opening the note popup
+		-- and pressing Accept the position can belong to a different person --
+		-- and the write went to whoever was standing there, carrying the groups
+		-- read from the friend actually clicked. Reported live: a note meant for
+		-- one friend landed on another and moved them into the first one's group.
+		--
+		-- The presence id is stable, so it is captured here and the index is
+		-- resolved again at the moment of writing.
+		local presenceID=t[1]
+		local setter=function(_,newNote)
+			local idx=presenceID and SocialPlus_FindBNetIndexByPresenceID(presenceID)
+			if idx then FG_SetBNetFriendNote(idx,newNote) end
+		end
+
+		return kind,id,note,setter,presenceID
 	else
 		local info=FG_GetFriendInfoByIndex(id)
 		if info then
@@ -9035,14 +7648,153 @@ end
 -- Deliberately NOT driven off BN_FRIEND_INFO_CHANGED: that fires constantly for
 -- zone/status/level changes, so rebuilding on it would add per-friend work all
 -- session long, which is the opposite of what a large friend list needs.
-function SocialPlus_RefreshAfterNoteWrite(kind,id,expectedNote,setter)
+-- A group rename or a group-wide move rewrites one note per member, and the
+-- server confirms each one separately as its own BN_FRIEND_INFO_CHANGED. Each of
+-- those rebuilds the whole friends list, so renaming a fourteen-person group
+-- meant fourteen full rebuilds spread over a minute -- which is what made the
+-- members appear to march across one at a time (reported live).
+--
+-- The writes themselves cannot be hurried: Battle.net throttles them server-side
+-- and there is no bulk note API. What can go is the thrash. The list is redrawn
+-- once up front, where it already knows the answer, and the per-write rebuilds
+-- are suppressed until the writes stop.
+--
+-- Watched, not timed.
+--
+-- Two guesses failed before this. A window computed from the member count ended
+-- with three writes outstanding; a quiet period after the last confirmation
+-- ended during a stall. Measured on a fourteen-member rename, four notes landed
+-- promptly and the rest took about two more minutes -- so the writes are not
+-- paced, they arrive in bursts with long gaps, and no timer can tell a gap from
+-- the end.
+--
+-- What is knowable is what was written. Each note is remembered with the friend
+-- it belongs to, and the burst is over when every one of them reads back. That
+-- is the same thing SocialPlus_RefreshAfterNoteWrite already does for a single
+-- move, including re-issuing the write: BNSetFriendNote is silently dropped
+-- often enough that the single-friend path retries three times, and the bulk
+-- path never retried at all -- which is the likelier cause of the two minutes
+-- than any server pacing.
+--
+-- The hard stop remains, for the note that never lands however often it is sent.
+SocialPlus_BulkPending=nil
+SocialPlus_BulkNotesHardStop=0
+
+SocialPlus_BulkPendingByID=nil
+function SocialPlus_BulkNotesActive()
+	return SocialPlus_BulkPending~=nil
+end
+
+-- The note we wrote for this friend, while their write is still outstanding.
+--
+-- The list is built from notes, so until a write lands a rebuild honestly shows
+-- the friend in their old group -- which is why suppressing redraws only hid the
+-- marching instead of stopping it. This hands the rebuild the note we are trying
+-- to write, so the finished state is on screen from the first redraw and never
+-- goes backwards. When the write lands the two agree; if it never lands, the
+-- override lapses with the burst and the friend honestly reverts.
+--
+-- Keyed rather than searched: this is asked once per Battle.net friend per
+-- rebuild, and a linear scan of the pending list would be a few thousand
+-- comparisons on a large list.
+function SocialPlus_BulkNoteFor(presenceID)
+	if not (presenceID and SocialPlus_BulkPendingByID) then return nil end
+	local item=SocialPlus_BulkPendingByID[presenceID]
+	if item and not item.done then return item.note end
+	return nil
+end
+
+-- Kept only so the event handler has something harmless to call; the burst now
+-- ends on the notes reading back, not on confirmations arriving.
+function SocialPlus_BulkNotesSaw()
+end
+
+function SocialPlus_BeginBulkNotes(pending)
+	if not (pending and #pending>1) then return false end
+	if not (C_Timer and C_Timer.After) then return false end
+
+	SocialPlus_BulkPending=pending
+	SocialPlus_BulkPendingByID={}
+	for _,item in ipairs(pending) do
+		SocialPlus_BulkPendingByID[item.presenceID]=item
+	end
+	SocialPlus_BulkNotesHardStop=(GetTime and GetTime() or 0)
+		+math.min(600,30+#pending*15)
+
+	SocialPlus_Update(true)
+
+	if L and L.GROUP_BULK_WRITING then
+		DEFAULT_CHAT_FRAME:AddMessage("|cff4da6ff[SocialPlus]|r "..
+			string.format(L.GROUP_BULK_WRITING,#pending))
+	end
+
+	local function finish()
+		local done=0
+		for _,item in ipairs(SocialPlus_BulkPending or {}) do
+			if item.done then done=done+1 end
+		end
+
+		SocialPlus_BulkPending=nil
+		SocialPlus_BulkPendingByID=nil
+		SocialPlus_BulkNotesHardStop=0
+		SocialPlus_Update(true)
+
+		-- Said at the end rather than as it goes: the list is already correct
+		-- throughout, so a running count would be noise. It still reports the
+		-- total, so a write that never landed shows up as a shortfall instead of
+		-- silently reverting a friend to their old group.
+		if L and L.GROUP_BULK_DONE then
+			DEFAULT_CHAT_FRAME:AddMessage("|cff4da6ff[SocialPlus]|r "..
+				string.format(L.GROUP_BULK_DONE,done,#pending))
+		end
+	end
+
+	local function poll()
+		if not SocialPlus_BulkPending then return end
+
+		local outstanding=0
+		for _,item in ipairs(SocialPlus_BulkPending) do
+			if not item.done then
+				local idx=SocialPlus_FindBNetIndexByPresenceID(item.presenceID)
+				local current=idx and select(13,FG_BNGetFriendInfo(idx)) or nil
+				if current==item.note then
+					item.done=true
+				else
+					outstanding=outstanding+1
+					item.tries=(item.tries or 0)+1
+
+					-- Re-sent periodically rather than every pass: the server
+					-- does accept these eventually, and hammering one note every
+					-- two seconds would be its own kind of rude.
+					if idx and item.tries%3==0 then
+						FG_SetBNetFriendNote(idx,item.note)
+					end
+				end
+			end
+		end
+
+		if outstanding==0 or (GetTime and GetTime() or 0)>=SocialPlus_BulkNotesHardStop then
+			finish()
+			return
+		end
+		C_Timer.After(2,poll)
+	end
+
+	C_Timer.After(2,poll)
+	return true
+end
+
+function SocialPlus_RefreshAfterNoteWrite(kind,id,expectedNote,setter,presenceID)
 	if not (C_Timer and C_Timer.After) then
 		SocialPlus_Update(true)
 		return
 	end
 
 	if kind=="BNET" and id and expectedNote~=nil then
-		local presenceID=FG_BNGetFriendInfo(id)
+		-- Given one where the caller has it. Deriving it from the index has the
+		-- same staleness the note write itself had: the list can have reordered
+		-- since, and then this polls the wrong friend's note and gives up.
+		presenceID=presenceID or FG_BNGetFriendInfo(id)
 		if presenceID then
 			local tries=0
 			local function pollForWrite()
@@ -10132,700 +8884,32 @@ function SocialPlus_ApplyToastCVars()
 	end
 end
 
--- [[ Who-list right-click menu ]]
--- Blizzard's own who-row context menu cannot work correctly alongside this
--- addon: our renderer writes row-state fields (buttonType/id) on the SHARED
--- friends-list buttons, and Blizzard's secure panel-show update reads them
--- (FriendsFrame_ShouldShowSummonButton), tainting the execution that then
--- populates the who list -- from there every who context menu is born
--- tainted and its "Copy Character Name" (CopyToClipboard is blocked for
--- addon-tainted calls) throws ADDON_ACTION_FORBIDDEN blaming us (confirmed
--- via a full taintLog 11 trace: the who buttons' whoIndex fields are
--- written by a SocialPlus-tainted WhoList_Update run). Rather than rename
--- every shared field (a large refactor that would break the stock tooltip
--- helpers we reuse), own the who menu like we already own the friends-list
--- menus: our items need no protected calls -- Copy uses the same
--- Ctrl+C popup as the friend menu, which exists precisely because addons
--- can't call CopyToClipboard.
-local SocialPlus_WhoMenu=LibDD:Create_UIDropDownMenu("SocialPlus_WhoMenu",UIParent)
-SocialPlus_WhoMenu.displayMode="MENU"
-local SocialPlus_WhoMenuName=nil
-local SocialPlus_WhoMenuIndex=nil
-
--- Mirrors the stock who menu's layout: name title, Interact
--- (Invite/Whisper), Other Options (Ignore/Report Player/Copy Character
--- Name). IGNORE and REPORT_PLAYER are Blizzard's own globals, localized by
--- the client. Report uses the same PlayerLocation/ReportInfo primitives as
--- Blizzard's who menu (CreateFromWhoIndex + Enum.ReportType.InWorld).
-SocialPlus_WhoMenu.initialize=function(self,level)
-	if level~=1 then return end
-	local name=SocialPlus_WhoMenuName
-	local whoIndex=SocialPlus_WhoMenuIndex
-	if not name then return end
-
-	local info=LibDD:UIDropDownMenu_CreateInfo()
-	info.text=name
-	info.isTitle=true
-	info.notCheckable=true
-	LibDD:UIDropDownMenu_AddButton(info,level)
-
-	-- Divider lines + Blizzard's own section-title globals, so the layout
-	-- and wording match the stock who menu exactly in every locale.
-	SocialPlus_AddSeparator(level)
-
-	info=LibDD:UIDropDownMenu_CreateInfo()
-	info.text=UNIT_FRAME_DROPDOWN_SUBSECTION_TITLE_INTERACT or L.MENU_INTERACT
-	info.isTitle=true
-	info.notCheckable=true
-	LibDD:UIDropDownMenu_AddButton(info,level)
-
-	info=LibDD:UIDropDownMenu_CreateInfo()
-	info.text=L.MENU_INVITE
-	info.notCheckable=true
-	info.func=function()
-		if C_PartyInfo and C_PartyInfo.InviteUnit then
-			C_PartyInfo.InviteUnit(name)
-		end
-	end
-	LibDD:UIDropDownMenu_AddButton(info,level)
-
-	info=LibDD:UIDropDownMenu_CreateInfo()
-	info.text=L.MENU_WHISPER
-	info.notCheckable=true
-	info.func=function()
-		if ChatFrame_OpenChat then
-			ChatFrame_OpenChat("/w "..name.." ")
-		end
-	end
-	LibDD:UIDropDownMenu_AddButton(info,level)
-
-	SocialPlus_AddSeparator(level)
-
-	info=LibDD:UIDropDownMenu_CreateInfo()
-	info.text=UNIT_FRAME_DROPDOWN_SUBSECTION_TITLE_OTHER or L.MENU_OTHER_OPTIONS
-	info.isTitle=true
-	info.notCheckable=true
-	LibDD:UIDropDownMenu_AddButton(info,level)
-
-	info=LibDD:UIDropDownMenu_CreateInfo()
-	info.text=IGNORE
-	info.notCheckable=true
-	info.func=function()
-		if C_FriendList and C_FriendList.AddIgnore then
-			C_FriendList.AddIgnore(name)
-		end
-	end
-	LibDD:UIDropDownMenu_AddButton(info,level)
-
-	info=LibDD:UIDropDownMenu_CreateInfo()
-	info.text=REPORT_PLAYER
-	info.notCheckable=true
-	info.disabled=not (whoIndex and PlayerLocation and ReportFrame and ReportInfo and Enum and Enum.ReportType)
-	info.func=function()
-		if not whoIndex then return end
-		local ok,playerLocation=pcall(PlayerLocation.CreateFromWhoIndex,PlayerLocation,whoIndex)
-		if not ok or not playerLocation then return end
-		local ok2,reportInfo=pcall(ReportInfo.CreateReportInfoFromType,ReportInfo,Enum.ReportType.InWorld)
-		if not ok2 or not reportInfo then return end
-		pcall(ReportFrame.InitiateReport,ReportFrame,reportInfo,name,playerLocation,false)
-	end
-	LibDD:UIDropDownMenu_AddButton(info,level)
-
-	info=LibDD:UIDropDownMenu_CreateInfo()
-	info.text=L.MENU_COPY_NAME
-	info.notCheckable=true
-	info.func=function()
-		StaticPopup_Show("SocialPlus_COPY_NAME",nil,nil,{name=name})
-	end
-	LibDD:UIDropDownMenu_AddButton(info,level)
-end
-
-local function SocialPlus_HookWhoButtons()
-	local i=1
-	while _G["WhoFrameButton"..i] do
-		local whoBtn=_G["WhoFrameButton"..i]
-		if not whoBtn.SocialPlusWhoHooked then
-			whoBtn.SocialPlusWhoHooked=true
-			local orig=whoBtn:GetScript("OnClick")
-			whoBtn:SetScript("OnClick",function(btn,button)
-				if button=="RightButton" then
-					local info=btn.whoIndex and C_FriendList and C_FriendList.GetWhoInfo
-						and C_FriendList.GetWhoInfo(btn.whoIndex)
-					local nameFS=_G["WhoFrameButton"..btn:GetID().."Name"]
-					local name=(info and info.fullName) or (nameFS and nameFS:GetText())
-					if name and name~="" then
-						SocialPlus_WhoMenuName=name
-						SocialPlus_WhoMenuIndex=btn.whoIndex
-						SocialPlus_PlayMenuOpenSound()
-						LibDD:ToggleDropDownMenu(1,nil,SocialPlus_WhoMenu,"cursor",0,0)
-						SocialPlus_ClickCatcherIsForMenu=true
-						SocialPlus_ShowClickCatcher()
-					end
-					return
-				end
-				if orig then
-					orig(btn,button)
-				end
-			end)
-		end
-		i=i+1
-	end
-end
-
--- [[ Out-of-date version alert ]]
+-- Everything SocialPlus_Init.lua needs from this file.
 --
--- Same idea as Bagnon's: broadcast our own version over the addon-message
--- channel, and if another player reports a HIGHER one, tell the user once
--- that theirs might be out of date. Everything here is deliberately
--- best-effort -- a failed/unavailable comm API must never break the addon,
--- so every call is guarded and every unparseable version is ignored rather
--- than guessed at.
+-- Exported rather than promoted to globals: most of these are forward-declared
+-- near the top and assigned much later, so dropping "local" would mean editing
+-- that block and changing how every reference in between resolves. An export at
+-- the end touches nothing else.
 --
--- Declared as globals (not top-level locals) on purpose: this file's main
--- chunk is already at Lua's 200-local ceiling (see the tooltip helpers for
--- the same constraint).
+-- Safe as a snapshot because every one is read-only from the other side and all
+-- are assigned during load. A name the other file WRITES cannot be exported this
+-- way -- see SocialPlus_ScanWarmupUntil above.
 
--- Addon message prefixes are capped at 16 characters.
-SOCIALPLUS_VERSION_PREFIX="SocialPlusVer"
-
--- Only ever warn once per session, however many people report a newer build.
-SocialPlus_VersionAlertShown=false
-
--- Our own version, straight from the .toc, or nil when running unpackaged.
---
--- The packager substitutes "1.13c" with the real tag across
--- EVERY packaged file -- so the sentinel we compare against has to be built
--- from pieces, or it gets substituted too and the comparison silently
--- becomes 'version ~= version' (this exact self-defeating bug shipped once
--- already, see the settings panel's version text). Returning nil for the
--- unpackaged case keeps a dev build from ever broadcasting or reacting to
--- the literal token.
-function SocialPlus_GetAddonVersion()
-	local version
-	-- Try the modern C_AddOns namespace first -- this client's version of
-	-- the old global may be absent, in which case a bare
-	-- "GetAddOnMetadata and GetAddOnMetadata(...)" guard silently skips.
-	if C_AddOns and C_AddOns.GetAddOnMetadata then
-		version=C_AddOns.GetAddOnMetadata(ADDON_NAME,"Version")
-	elseif GetAddOnMetadata then
-		version=GetAddOnMetadata(ADDON_NAME,"Version")
-	end
-	local unpackagedToken="@".."project-version".."@"
-	if not version or version=="" or version==unpackagedToken then
-		return nil
-	end
-	return version
-end
-
--- "1.10c" -> 1, 10, "c". Returns nil for anything that isn't our exact
--- release format, so a malformed or foreign version string can never
--- produce a bogus "you're outdated" warning.
-function SocialPlus_ParseVersion(version)
-	if type(version)~="string" then return nil end
-	local major,minor,letter=version:match("^(%d+)%.(%d+)(%a?)$")
-	if not major then return nil end
-	return tonumber(major),tonumber(minor),letter or ""
-end
-
--- True only when `other` is a well-formed version strictly newer than
--- `mine`. Minor is compared NUMERICALLY (1.10 is newer than 1.9 -- a plain
--- string compare would get that backwards), and the letter suffix compares
--- lexically with "" sorting before "a" (so 1.10 < 1.10a < 1.10b).
-function SocialPlus_IsVersionNewer(other,mine)
-	local oMajor,oMinor,oLetter=SocialPlus_ParseVersion(other)
-	local mMajor,mMinor,mLetter=SocialPlus_ParseVersion(mine)
-	if not oMajor or not mMajor then return false end
-	if oMajor~=mMajor then return oMajor>mMajor end
-	if oMinor~=mMinor then return oMinor>mMinor end
-	return oLetter>mLetter
-end
-
-function SocialPlus_BroadcastVersion()
-	local version=SocialPlus_GetAddonVersion()
-	if not version then return end
-	local send=(C_ChatInfo and C_ChatInfo.SendAddonMessage) or SendAddonMessage
-	if not send then return end
-
-	if IsInGuild and IsInGuild() then
-		pcall(send,SOCIALPLUS_VERSION_PREFIX,version,"GUILD")
-	end
-	-- Dungeon Finder, Raid Finder, scenario and battleground groups route
-	-- party chat to INSTANCE_CHAT, and sending to PARTY inside one is NOT
-	-- silently dropped, as this comment used to claim. The client answers
-	-- with a "You are not in a party." system message that the player sees,
-	-- once per roster change, since GROUP_ROSTER_UPDATE is what queues the
-	-- rebroadcast. The pcall below does not hide it either: it is a chat
-	-- message from the client, not a Lua error.
-	--
-	-- Both instance tests are kept because they do not agree across every
-	-- group type, and INSTANCE_CHAT is accepted whenever either is true.
-	local inInstanceGroup=(IsPartyLFG and IsPartyLFG())
-		or (IsInGroup and LE_PARTY_CATEGORY_INSTANCE
-			and IsInGroup(LE_PARTY_CATEGORY_INSTANCE))
-	local channel
-	if inInstanceGroup then
-		channel="INSTANCE_CHAT"
-	elseif IsInRaid and IsInRaid() then
-		channel="RAID"
-	elseif IsInGroup and IsInGroup() then
-		channel="PARTY"
-	end
-	if channel then
-		pcall(send,SOCIALPLUS_VERSION_PREFIX,version,channel)
-	end
-end
-
--- Roster events fire in bursts (every member load, every join/leave), so
--- coalesce them into at most one broadcast per settle window instead of
--- spamming the channel -- same debounce shape as the friend-scan queue.
-SocialPlus_VersionBroadcastTimer=nil
-function SocialPlus_QueueVersionBroadcast()
-	if SocialPlus_VersionBroadcastTimer then return end
-	SocialPlus_VersionBroadcastTimer=C_Timer.NewTimer(5,function()
-		SocialPlus_VersionBroadcastTimer=nil
-		SocialPlus_BroadcastVersion()
-	end)
-end
-
-function SocialPlus_OnVersionMessage(prefix,message,sender)
-	if prefix~=SOCIALPLUS_VERSION_PREFIX then return end
-	if SocialPlus_VersionAlertShown then return end
-	local mine=SocialPlus_GetAddonVersion()
-	if not mine then return end
-	-- Our own broadcast comes back to us too, but it can never be strictly
-	-- newer than itself, so it falls out here with no special-casing.
-	if not SocialPlus_IsVersionNewer(message,mine) then return end
-
-	SocialPlus_VersionAlertShown=true
-	if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-		DEFAULT_CHAT_FRAME:AddMessage(format(L.MSG_VERSION_OUTDATED,mine,sender or UNKNOWN,message))
-	end
-end
-
--- Battle.net friends are the whole point of this addon, and they're far
--- likelier to be running it than a random guildmate -- but they are NOT
--- reachable over the addon-message channels above, which only ever cover
--- guild/group members. BNSendGameData is the Battle.net equivalent, and
--- it targets ONE game account at a time: there's no broadcast, just one
--- send per online friend.
---
--- That makes this the one spot where a big friend list genuinely costs
--- something -- 150 online friends means 150 sends -- and WoW will
--- disconnect a client that bursts addon messages. So sends are queued and
--- drained a couple per second rather than fired in a loop. Nothing is
--- waiting on them, so being slow is free.
-
--- gameAccountIDs already sent to this session, so a friend relogging (or
--- several roster events in a row) can't queue them repeatedly.
-SocialPlus_VersionBNetSent={}
-SocialPlus_VersionBNetQueue={}
-SocialPlus_VersionBNetTicker=nil
-
-function SocialPlus_QueueBNetVersionSend(gameAccountID)
-	if not gameAccountID then return end
-	if SocialPlus_VersionBNetSent[gameAccountID] then return end
-	if not BNSendGameData then return end
-	if not SocialPlus_GetAddonVersion() then return end
-
-	SocialPlus_VersionBNetSent[gameAccountID]=true
-	SocialPlus_VersionBNetQueue[#SocialPlus_VersionBNetQueue+1]=gameAccountID
-	if SocialPlus_VersionBNetTicker then return end
-
-	SocialPlus_VersionBNetTicker=C_Timer.NewTicker(0.5,function(ticker)
-		local gameAccount=table.remove(SocialPlus_VersionBNetQueue,1)
-		if not gameAccount then
-			ticker:Cancel()
-			SocialPlus_VersionBNetTicker=nil
-			return
-		end
-		local version=SocialPlus_GetAddonVersion()
-		if version then
-			-- pcall'd: a friend can log out between queueing and sending,
-			-- and a cross-project target may simply reject the data.
-			pcall(BNSendGameData,gameAccount,SOCIALPLUS_VERSION_PREFIX,version)
-		end
-	end)
-end
-
-function SocialPlus_SendVersionToBNetFriends()
-	if not BNSendGameData then return end
-	if not SocialPlus_GetAddonVersion() then return end
-	for i=1,FG_BNGetNumFriends() do
-		-- Reuses the same online-WoW-account enumeration the invite menu
-		-- and tooltip already rely on, so a friend with two clients open
-		-- gets told on whichever ones are actually running WoW.
-		for _,acct in ipairs(SocialPlus_GetOnlineWoWGameAccounts(i)) do
-			SocialPlus_QueueBNetVersionSend(acct.gameAccountID)
-		end
-	end
-end
-
--- One specific friend, for when they come online after our opening pass --
--- far cheaper than re-walking the whole friend list on every online event
--- (which matters on a large list, where that walk hits the game-account
--- API once per friend).
-function SocialPlus_SendVersionToBNetFriend(presenceID)
-	if not BNSendGameData then return end
-	if not SocialPlus_GetAddonVersion() then return end
-	local index=SocialPlus_FindBNetIndexByPresenceID(presenceID)
-	if not index then return end
-	for _,acct in ipairs(SocialPlus_GetOnlineWoWGameAccounts(index)) do
-		SocialPlus_QueueBNetVersionSend(acct.gameAccountID)
-	end
-end
-
--- BN_CHAT_MSG_ADDON identifies the sender by presenceID, not by name --
--- resolve it to the BattleTag so the alert names someone recognisable
--- instead of a bare number.
-function SocialPlus_ResolveBNetSenderName(presenceID)
-	if not presenceID then return nil end
-	local index=SocialPlus_FindBNetIndexByPresenceID(presenceID)
-	if not index then return nil end
-	return (GetFriendInfoById(index))
-end
-
--- One FriendsList_Update per burst, instead of one per event.
---
--- Only used while SOCIALPLUS_DRIVING_REFRESH is set -- that is, while the two
--- high-frequency events have been taken off Blizzard's frame (see the
--- PLAYER_LOGIN block). Blizzard's function is still what runs; this only
--- decides how often. A whole burst arriving in one frame collapses to a single
--- call on the next, which is the same shape as the derivation coalescing in
--- SocialPlus_Update and for the same reason.
---
--- Global rather than a file-local: this chunk is at Lua's 200-local ceiling.
-function SocialPlus_RequestListRefresh()
-	if SOCIALPLUS_REFRESH_QUEUED then return end
-	SOCIALPLUS_REFRESH_QUEUED=true
-
-	C_Timer.After(0,function()
-		SOCIALPLUS_REFRESH_QUEUED=false
-		if type(FriendsList_Update)=="function" then FriendsList_Update() end
-	end)
-end
-
--- [[ Initialization on PLAYER_LOGIN ]]
-
-frame:SetScript("OnEvent",function(self,event,...)
-	-- ANY registered event marks the friend data as possibly changed.
-	--
-	-- Set here, once, rather than in each branch below: this frame is
-	-- registered only for events that can plausibly affect what the list
-	-- shows, and the cost of being wrong in this direction is one extra
-	-- rebuild, while the cost of missing one is a stale list. Deliberately
-	-- before the branches, so an early return cannot skip it.
-	--
-	-- Read by the scroll-window skip in SocialPlus_Update: that skip only
-	-- suppresses a data pass when NOTHING here has fired since the last one.
-	--
-	-- GROUP_ROSTER_UPDATE is the one exception, and it is worth the branch.
-	-- Joining or leaving a group changes whether a friend can be invited --
-	-- which is drawn per row, from SocialPlus_GetInviteStatus, at render time
-	-- -- but it cannot move anybody between groups, rename one, or change who
-	-- is online. Nothing the derivation reads. Marking the data dirty for it
-	-- bought a full per-friend pass (~32ms across a large list) for a result
-	-- identical to the one already held, and in a raid this event fires
-	-- constantly, which is exactly when the frames are least affordable.
-	-- The rows still need repainting, so the branch below does that instead.
-	if event~="GROUP_ROSTER_UPDATE" then
-		SOCIALPLUS_DATA_DIRTY=true
-	end
-
-	-- A fresh login empties the recently-added group; a /reload does not.
-	--
-	-- The distinction is the whole reason the group can be session-scoped and
-	-- still survive reloading: isInitialLogin and isReloadingUi arrive as the
-	-- two arguments of this event, and nothing else in the client tells them
-	-- apart afterwards.
-	if event=="PLAYER_ENTERING_WORLD" then
-		local isInitialLogin=...
-		if isInitialLogin and SocialPlus_StartFriendSessionWhenReady then
-			-- Deliberately NOT a fixed delay -- see that function: it retries
-			-- until the friend list stops growing, because a snapshot taken
-			-- while Battle.net is still streaming marks the remainder of the
-			-- list as newly added.
-			C_Timer.After(2,SocialPlus_StartFriendSessionWhenReady)
-		end
-		return
-	end
-
-	if event=="PLAYER_LOGIN" then
-		SocialPlus_EnsureSavedVars()
-		SocialPlus_ApplyToastCVars()
-
-		-- Give friends' game-account data a few seconds to finish streaming
-		-- in before trusting the scan to detect real transitions.
-		SocialPlus_ScanWarmupUntil=GetTime()+5
-
-		-- Safety net for "left/entered WoW while staying connected" detection:
-		-- a passive AFK disconnect, or launching WoW from an already-open
-		-- Battle.net app, doesn't reliably fire FRIENDLIST_UPDATE (confirmed
-		-- live for both), so don't depend on events alone. Short enough to
-		-- keep the worst-case notification delay reasonable. Not a
-		-- false-positive risk (just polling frequency), so kept short.
-		C_Timer.NewTicker(5,SocialPlus_QueueFriendScan)
-
-		-- Out-of-date version alert: the prefix must be registered before
-		-- CHAT_MSG_ADDON will ever deliver it to us. The opening broadcast
-		-- is delayed so guild/group rosters have actually finished loading
-		-- (sending into an empty roster right at login just gets dropped).
-		local registerPrefix=(C_ChatInfo and C_ChatInfo.RegisterAddonMessagePrefix) or RegisterAddonMessagePrefix
-		if registerPrefix then
-			pcall(registerPrefix,SOCIALPLUS_VERSION_PREFIX)
-		end
-		C_Timer.After(10,SocialPlus_BroadcastVersion)
-		-- Staggered behind the guild/group broadcast so the two openers
-		-- don't stack into one burst of addon traffic at login.
-		C_Timer.After(15,SocialPlus_SendVersionToBNetFriends)
-
-		FG_InitFactionIcon()
-
-		Hook("FriendsList_Update",SocialPlus_Update,true)
-
-		-- The two spammy events come off Blizzard's own frame, and this addon
-		-- drives them instead.
-		--
-		-- That hook is a hooksecurefunc, so Blizzard's WHOLE FriendsList_Update
-		-- body runs before ours does -- on every single one of these events. On
-		-- a large list they arrive in bursts (every friend changing zone,
-		-- flipping AFK or switching character sends one), so the burst cost was
-		-- never just this addon's derivation: it was Blizzard's full list
-		-- rebuild too, N times over, and nothing here could throttle that from
-		-- inside a hook that only runs after it has already happened.
-		--
-		-- Deliberately NOT re-implementing what their handler does. The events
-		-- are unregistered, but FriendsList_Update itself is still called --
-		-- once per burst, from SocialPlus_RequestListRefresh -- so every side
-		-- effect it has (tab counts, the rest of the panel) still happens,
-		-- just at a rate somebody chose. Only the two high-frequency events
-		-- move; invites, connects and disconnects stay on Blizzard's frame
-		-- where they are rare and want to be immediate.
-		--
-		-- SOCIALPLUS_DRIVE_REFRESH=false (via /run, before this point) leaves
-		-- Blizzard's registration alone, as an escape hatch if this ever proves
-		-- to have taken something with it.
-		if SOCIALPLUS_DRIVE_REFRESH~=false and FriendsFrame and FriendsFrame.UnregisterEvent then
-			FriendsFrame:UnregisterEvent("FRIENDLIST_UPDATE")
-			FriendsFrame:UnregisterEvent("BN_FRIEND_INFO_CHANGED")
-			SOCIALPLUS_DRIVING_REFRESH=true
-		end
-
-		-- Force a real render on every panel open, in isolation this time
-		-- (no debounce/dirty-check machinery to race against -- both fully
-		-- reverted). If the friend list data hasn't changed since it was
-		-- last open, Blizzard's own FriendsList_Update may not fire at all
-		-- on reopen, so our own render pass (which is what keeps the
-		-- tooltip in sync -- see the SocialPlus_MouseIsOver check above) never
-		-- ran, and whatever tooltip showed came from Blizzard's own stale
-		-- internal state instead (reported live: closed while hovering one
-		-- friend, reopened without moving the mouse, got a completely
-		-- unrelated friend's tooltip).
-		if FriendsFrame and FriendsFrame.HookScript then
-			FriendsFrame:HookScript("OnShow",function()
-				SocialPlus_HardResetScrollRows()
-				SocialPlus_Update(true)
-				-- KEEP THIS. Removing it as a "redundant" second rebuild sent
-				-- the open path from 3 rebuilds to 15 (51ms, measured): without
-				-- the settle pass the content height never stabilises, so the
-				-- scrollbar's OnValueChanged keeps re-entering Blizzard's
-				-- HybridScrollFrame update, which fires FriendsList_Update
-				-- again -- the self-sustaining churn documented throughout
-				-- SocialPlus_UpdateFriends. One extra rebuild here BUYS the
-				-- absence of a dozen.
-				SocialPlus_ScheduleCollapseSettle()
-			end)
-		end
-
-		-- The panel-close garbage sweep used to live here, and is gone.
-		--
-		-- It forced collectgarbage("collect") when this addon's attributed
-		-- memory passed 25 MB, to flush transient garbage that heavy
-		-- scrolling and collapse spam left parked -- tens of MB of it,
-		-- reported live.
-		--
-		-- Two reasons it went rather than being tuned. The first is that
-		-- the churn it was mopping up is largely gone: the per-friend
-		-- table thrown away for every friend on every notification scan,
-		-- the sort comparator re-lowercasing the same names thousands of
-		-- times a rebuild, a full derivation per event in a burst, a
-		-- rebuild per keystroke, and Blizzard's own list rebuild running
-		-- just as often -- all of those were the source, and all of them
-		-- are fixed. Measured after: a simulated 460-friend list no longer
-		-- climbs anywhere near the threshold that made this fire.
-		--
-		-- The second is that the cure was heavier than it looked. There is
-		-- one Lua state for every addon in the game, so "collect" was never
-		-- this addon tidying up after itself -- it was a stop-the-world
-		-- collection of everyone's garbage, triggered by one addon's own
-		-- accounting. And UpdateAddOnMemoryUsage, the guard meant to avoid
-		-- paying that, walks every loaded addon to recompute attribution --
-		-- so the cheap path still paid a real cost on every single panel
-		-- close, to answer a question that is now always "no".
-		--
-		-- Garbage sitting uncollected is not a leak. Lua's incremental
-		-- collector reclaiming it lazily is the collector working, and the
-		-- number in an addon-memory readout is not memory lost. If that
-		-- number ever climbs like it used to, the fix is to find what is
-		-- allocating -- not to stop the world on the way out.
-
-		FriendsScrollFrame.dynamic=SocialPlus_GetTopButton
-		-- Scrolling only re-rendered the cached FriendButtons[].id indices
-		-- from the last full update, without re-verifying they still point
-		-- to the same friends -- Blizzard's own friend-list index-to-friend
-		-- mapping can shift in the background between updates, so a stale
-		-- index could silently render a completely different friend after
-		-- scrolling (confirmed live: a friend playing Hearthstone appeared
-		-- to vanish/replace-with-someone-else on scroll). A full recompute
-		-- fixes this, but doing it on every single scroll tick is expensive
-		-- for large friend lists (rebuilds + re-sorts everyone on every
-		-- frame of an inertia scroll). Instead: keep scrolling itself cheap
-		-- (just reposition/re-render with the cached data, as before), and
-		-- debounce the actual full recompute to run once ~150ms after
-		-- scrolling settles -- short enough that a stale row is corrected
-		-- almost immediately, without paying the full cost on every tick.
-		--
-		-- This used to allocate a fresh C_Timer.NewTimer on every single
-		-- scroll tick (cancelling the previous one first) -- during a fast
-		-- inertia scroll .update() fires dozens of times per second, so a
-		-- sustained fast scroll allocates and discards dozens of timer
-		-- objects a second (reported live as a memory bump during fast
-		-- scrolling, worse than the collapse-toggle case). Replaced with a
-		-- single ticker, created once and never recreated: each scroll tick
-		-- only touches two cheap upvalues (a flag and a timestamp), and the
-		-- ticker itself just polls whether scrolling has gone quiet.
-		local SocialPlus_ScrollDirty=false
-		local SocialPlus_LastScrollTick=0
-		local SocialPlus_LastScrollValue=nil
-		FriendsScrollFrame.update=function()
-			-- The scrollbar quantizes every SetValue to multiples of 32px
-			-- (a built-in value step), so the value our wheel handler
-			-- requests vs. what the slider stores always differ slightly
-			-- -- compare ROUNDED values, or "did it change?" checks are
-			-- unreliable (confirmed live via an event trace). Blizzard
-			-- only invokes .update() when the TOP ROW actually changes,
-			-- and it applies the new sub-row pixel offset itself,
-			-- immediately -- so every real change MUST re-render right
-			-- away. An earlier rate-throttle here skipped some of these
-			-- renders, leaving the old rows displayed shifted by the new
-			-- row's remainder until the settle pass corrected it ~200ms
-			-- later -- that delayed correction was the long-hunted
-			-- "refresh that moves things / hides a group header" glitch
-			-- (confirmed by matching an event trace against a screen
-			-- recording). Only true no-ops (rounded value unchanged)
-			-- may return early.
-			local value=FriendsScrollFrame.scrollBar and FriendsScrollFrame.scrollBar:GetValue()
-			value=value and math.floor(value+0.5)
-			if value==SocialPlus_LastScrollValue then
-				-- No-op guard: only a real value change counts as
-				-- "still scrolling" (also keeps these calls from pushing
-				-- the settle countdown back indefinitely).
-				return
-			end
-			-- Hide outright rather than trust the per-row resync to catch
-			-- it here -- the mouse-focus check can misreport during/right after a
-			-- mouse-wheel scroll event (focus can transiently shift to the
-			-- scroll frame itself), so the resync's "is the cursor over ME"
-			-- check silently failed to match ANY row and the tooltip just
-			-- stayed at its old position/content (reported live: scrolling
-			-- without moving the mouse left the tooltip stuck in place).
-			-- The resync logic still recovers it correctly on the next
-			-- genuine hover.
-			SocialPlus_HideRowTooltip()
-			SocialPlus_ScrollDirty=true
-			SocialPlus_LastScrollTick=GetTime()
-			SocialPlus_UpdateFriends()
-			-- Cache the value as it settled AFTER rendering, not the value
-			-- that triggered this call -- SocialPlus_UpdateFriends clamps
-			-- the scrollbar's value itself (the scrollbar-range fix), so
-			-- comparing against the pre-render value here would make our
-			-- own clamp look like a "real" scroll change on the very next
-			-- call. Rounded, same as the comparison above.
-			local settled=FriendsScrollFrame.scrollBar and FriendsScrollFrame.scrollBar:GetValue()
-			SocialPlus_LastScrollValue=settled and math.floor(settled+0.5)
-		end
-		C_Timer.NewTicker(0.1,function()
-			if SocialPlus_ScrollDirty and (GetTime()-SocialPlus_LastScrollTick)>=0.15 then
-				SocialPlus_ScrollDirty=false
-				-- A full data pass ONLY if something actually changed while
-				-- scrolling. Measured: this settle was 36 of 41 data passes in
-				-- a 16-second run -- ~32ms each, re-deriving all 866 friends to
-				-- rebuild a list that scrolling cannot have altered.
-				--
-				-- What the settle is for is finishing the render once the rows
-				-- have stopped moving, and SocialPlus_UpdateFriends is that.
-				-- The per-friend derivation was only ever coming along for the
-				-- ride because SocialPlus_Update(true) is the whole pipeline.
-				if SOCIALPLUS_DATA_DIRTY then
-					SocialPlus_Update(true)
-				else
-					SocialPlus_UpdateFriends()
-				end
-			end
-		end)
-
-		if FriendsScrollFrame and FriendsScrollFrame.buttons and FriendsScrollFrame.buttons[1] and FRIENDS_FRAME_FRIENDS_FRIENDS_HEIGHT then
-			pcall(FriendsScrollFrame.buttons[1].SetHeight,FriendsScrollFrame.buttons[1],FRIENDS_FRAME_FRIENDS_FRIENDS_HEIGHT)
-		end
-		if HybridScrollFrame_CreateButtons then
-			pcall(HybridScrollFrame_CreateButtons,FriendsScrollFrame,FriendButtonTemplate)
-		end
-
-		HookButtons()
-		SocialPlus_HookWhoButtons()
-	elseif event=="BN_FRIEND_ACCOUNT_ONLINE" then
-		local bnetIDAccount=...
-		SocialPlus_QueueNotifyCheck(bnetIDAccount)
-		SocialPlus_QueueFriendScan()
-		-- Delayed: their game-account data (which is what carries the
-		-- gameAccountID we'd send to) hasn't streamed in yet at this point.
-		C_Timer.After(10,function()
-			SocialPlus_SendVersionToBNetFriend(bnetIDAccount)
-		end)
-	elseif event=="BN_FRIEND_ACCOUNT_OFFLINE" then
-		local bnetIDAccount=...
-		SocialPlus_QueueNotifyCheck(bnetIDAccount)
-		SocialPlus_QueueFriendScan()
-	elseif event=="FRIENDLIST_UPDATE" then
-		SocialPlus_QueueFriendScan()
-		-- Only when Blizzard's frame is no longer listening for this itself --
-		-- otherwise their handler already ran and asking again would double it.
-		if SOCIALPLUS_DRIVING_REFRESH then SocialPlus_RequestListRefresh() end
-	elseif event=="BN_FRIEND_INFO_CHANGED" then
-		SocialPlus_QueueFriendScan()
-		if SOCIALPLUS_DRIVING_REFRESH then SocialPlus_RequestListRefresh() end
-	elseif event=="CHAT_MSG_ADDON" then
-		local prefix,message,_,sender=...
-		SocialPlus_OnVersionMessage(prefix,message,sender)
-	elseif event=="BN_CHAT_MSG_ADDON" then
-		local prefix,message,_,senderPresenceID=...
-		SocialPlus_OnVersionMessage(prefix,message,SocialPlus_ResolveBNetSenderName(senderPresenceID))
-	elseif event=="PLAYER_REGEN_ENABLED" then
-		-- Whatever the combat guard turned away, collected now.
-		--
-		-- Unforced on purpose, so the panel-hidden guard still applies: coming
-		-- out of a fight with the friends list closed owes nobody a rebuild,
-		-- and the dirty flag keeps the debt until it is actually opened.
-		if SOCIALPLUS_COMBAT_DEFERRED then
-			SOCIALPLUS_COMBAT_DEFERRED=false
-			SocialPlus_Update()
-		end
-	elseif event=="GROUP_ROSTER_UPDATE" then
-		SocialPlus_QueueVersionBroadcast()
-
-		-- Repaint, without re-deriving (see the dirty note at the top).
-		--
-		-- The invite icon dims for somebody already in your group, so the rows
-		-- genuinely are stale after this event -- but that state is read per
-		-- row while rendering, so the cheap half is the whole fix. Previously
-		-- this did the opposite of what it needed: it marked the data dirty,
-		-- which bought a full pass later, and never repainted, so the icons
-		-- stayed wrong until something unrelated redrew them.
-		--
-		-- Only while the list is actually up. In combat this event arrives
-		-- constantly and the panel is almost never open, so the guard is what
-		-- keeps a raid from paying for renders nobody is looking at.
-		if FriendsListFrame and FriendsListFrame:IsShown() then
-			SocialPlus_UpdateFriends()
-		end
-	end
-end)
+ns.GetFriendInfoById = GetFriendInfoById
+ns.SCROLL_BASE = SCROLL_BASE
+ns.NoteAndGroups = NoteAndGroups
+ns.RemoveGroup = RemoveGroup
+ns.frame = frame
+ns.Hook = Hook
+ns.HookButtons = HookButtons
+ns.FriendsScrollFrame = FriendsScrollFrame
+ns.FriendButtonTemplate = FriendButtonTemplate
+ns.FG_InitFactionIcon = FG_InitFactionIcon
+ns.SocialPlus_EnsureSavedVars = SocialPlus_EnsureSavedVars
+ns.SocialPlus_GetTopButton = SocialPlus_GetTopButton
+ns.SocialPlus_HardResetScrollRows = SocialPlus_HardResetScrollRows
+ns.SocialPlus_HideRowTooltip = SocialPlus_HideRowTooltip
+ns.SocialPlus_QueueFriendScan = SocialPlus_QueueFriendScan
+ns.SocialPlus_QueueNotifyCheck = SocialPlus_QueueNotifyCheck
+ns.SocialPlus_ScheduleCollapseSettle = SocialPlus_ScheduleCollapseSettle
+ns.SocialPlus_UpdateFriends = SocialPlus_UpdateFriends
