@@ -9,6 +9,11 @@ local LibDD = LibStub("LibUIDropDownMenu-4.0")
 -- frames it touches be created at runtime -- an ns snapshot taken at load
 -- would have captured nil for both.
 local SCROLL_BASE = ns.SCROLL_BASE
+
+-- The same collapse artwork the friends list's own group headers use, so a
+-- section here reads as the same kind of thing.
+local TEX_PLUS  = "Interface\\Buttons\\UI-PlusButton-Up"
+local TEX_MINUS = "Interface\\Buttons\\UI-MinusButton-Up"
 local frame = ns.frame
 
 -- The preferences panel, lifted out of SocialPlus.lua unchanged.
@@ -110,50 +115,65 @@ end
 -- a real project ID. Declared up here (rather than closer to the notification
 -- code that also uses it) so SocialPlus_CreateSettingsPanel below can use it
 -- too -- Lua locals are only visible after their declaration in the file.
+--
+-- Built once, at load. It used to be built inside the function, and the row
+-- renderer asks for a label for every cross-version friend on every render --
+-- so a six-entry table was allocated and thrown away hundreds of times a
+-- second on a large list. Safe to build at file scope because Locales.lua is
+-- loaded ahead of this file (the `local L = ns.L` at the top depends on the
+-- same thing) and the WOW_PROJECT_* globals exist before any addon runs.
+local VERSION_LABELS={
+	[WOW_PROJECT_MAINLINE or -1]=L.WOW_VERSION_RETAIL,
+	[WOW_PROJECT_CLASSIC or -2]=L.WOW_VERSION_CLASSIC_ERA,
+	[WOW_PROJECT_BURNING_CRUSADE_CLASSIC or -3]=L.WOW_VERSION_TBC,
+	[WOW_PROJECT_WRATH_CLASSIC or -4]=L.WOW_VERSION_WOTLK,
+	[WOW_PROJECT_CATACLYSM_CLASSIC or -5]=L.WOW_VERSION_CATA,
+	[WOW_PROJECT_MISTS_CLASSIC or -6]=L.WOW_VERSION_MOP,
+}
 function SocialPlus_GetVersionLabelText(wowProjectID)
-	local labels={
-		[WOW_PROJECT_MAINLINE or -1]=L.WOW_VERSION_RETAIL,
-		[WOW_PROJECT_CLASSIC or -2]=L.WOW_VERSION_CLASSIC_ERA,
-		[WOW_PROJECT_BURNING_CRUSADE_CLASSIC or -3]=L.WOW_VERSION_TBC,
-		[WOW_PROJECT_WRATH_CLASSIC or -4]=L.WOW_VERSION_WOTLK,
-		[WOW_PROJECT_CATACLYSM_CLASSIC or -5]=L.WOW_VERSION_CATA,
-		[WOW_PROJECT_MISTS_CLASSIC or -6]=L.WOW_VERSION_MOP,
-	}
-	return (wowProjectID and labels[wowProjectID]) or "?"
+	return (wowProjectID and VERSION_LABELS[wowProjectID]) or "?"
 end
 
+-- The expansion phrases Blizzard's own free-text rich presence uses, with the
+-- label and the project ID each one stands for.
+--
 -- wowProjectID can come back broken (0, not a real expansion) for a friend
--- whose structured game-account fields didn't fully resolve -- confirmed
--- live for multiple friends across different expansions. Blizzard's own
--- free-text rich presence (gameText, e.g. "Mists of Pandaria Classic -
--- Pagle") is generated independently of those broken fields and is still
--- correct -- map its known expansion phrases to our own clean label
--- (region gets appended separately by the caller) instead of showing a
--- bare "?". The pattern list is local to this function (not a top-level
--- local) -- this file is already right at Lua's 200-local-per-chunk
--- ceiling for its main chunk, and this only runs on the rare "?" case.
+-- whose structured game-account fields didn't fully resolve -- confirmed live
+-- for multiple friends across different expansions. gameText (e.g. "Mists of
+-- Pandaria Classic - Pagle") is generated independently of those broken fields
+-- and is still correct, so it is what both recoveries below read.
+--
+-- One list, not two. The label recovery and the project-ID recovery used to
+-- carry the same six phrases in the same order in separate tables, so every
+-- phrase had to be added twice and the ordering rule had to hold in two
+-- places -- and each was rebuilt on every call besides.
+--
+-- Order matters: longer, more specific phrases first, so "Wrath of the Lich
+-- King Classic" is never caught by a broader entry.
+local GAMETEXT_VERSIONS={
+	-- Anniversary names itself, and never says "Burning Crusade": its rich
+	-- presence reads "WoW Classic Anniversary - Spineshatter". Matching
+	-- nothing here meant the caller fell through to printing that whole
+	-- string as the row's second line, where "TBC (EU)" belongs.
+	--
+	-- Mapped to TBC because the Anniversary realms are on Burning Crusade;
+	-- the client itself reports WOW_PROJECT_BURNING_CRUSADE_CLASSIC. If
+	-- that line ever moves on, this is the entry that has to move with it.
+	{"Classic Anniversary",L.WOW_VERSION_TBC,WOW_PROJECT_BURNING_CRUSADE_CLASSIC},
+	{"Burning Crusade Classic",L.WOW_VERSION_TBC,WOW_PROJECT_BURNING_CRUSADE_CLASSIC},
+	{"Wrath of the Lich King Classic",L.WOW_VERSION_WOTLK,WOW_PROJECT_WRATH_CLASSIC},
+	{"Cataclysm Classic",L.WOW_VERSION_CATA,WOW_PROJECT_CATACLYSM_CLASSIC},
+	{"Mists of Pandaria Classic",L.WOW_VERSION_MOP,WOW_PROJECT_MISTS_CLASSIC},
+	{"Classic Era",L.WOW_VERSION_CLASSIC_ERA,WOW_PROJECT_CLASSIC},
+	-- No Retail entry on purpose: retail's rich presence carries no "Classic"
+	-- marker to match on, so it stays unrecovered rather than guessed at.
+}
+
+-- Our own clean label for a friend whose wowProjectID came back broken
+-- (region gets appended separately by the caller), instead of a bare "?".
 function SocialPlus_GetVersionLabelFromGameText(gameText)
 	if not gameText or gameText=="" then return nil end
-	-- Order matters: longer/more specific phrases first so e.g. "Wrath of
-	-- the Lich King Classic" doesn't accidentally get caught by a broader
-	-- pattern first.
-	local patterns={
-		-- Anniversary names itself, and never says "Burning Crusade": its rich
-		-- presence reads "WoW Classic Anniversary - Spineshatter". Matching
-		-- nothing here meant the caller fell through to printing that whole
-		-- string as the row's second line, where "TBC (EU)" belongs.
-		--
-		-- Mapped to TBC because the Anniversary realms are on Burning Crusade;
-		-- the client itself reports WOW_PROJECT_BURNING_CRUSADE_CLASSIC. If
-		-- that line ever moves on, this is the entry that has to move with it.
-		{"Classic Anniversary",L.WOW_VERSION_TBC},
-		{"Burning Crusade Classic",L.WOW_VERSION_TBC},
-		{"Wrath of the Lich King Classic",L.WOW_VERSION_WOTLK},
-		{"Cataclysm Classic",L.WOW_VERSION_CATA},
-		{"Mists of Pandaria Classic",L.WOW_VERSION_MOP},
-		{"Classic Era",L.WOW_VERSION_CLASSIC_ERA},
-	}
-	for _,entry in ipairs(patterns) do
+	for _,entry in ipairs(GAMETEXT_VERSIONS) do
 		if gameText:find(entry[1],1,true) then
 			return entry[2]
 		end
@@ -161,32 +181,16 @@ function SocialPlus_GetVersionLabelFromGameText(gameText)
 	return nil
 end
 
--- Same recovery as the label function above, but yielding the project ID
--- itself rather than a display string, so a friend whose structured
--- wowProjectID came back broken can be repaired where it is READ instead of
--- every comparison site having to learn about it.
---
--- No Retail entry on purpose: retail's rich presence carries no "Classic"
--- marker to match on, so it stays unrecovered rather than guessed at.
+-- The same recovery yielding the project ID itself rather than a display
+-- string, so a broken wowProjectID can be repaired where it is READ instead
+-- of every comparison site having to learn about it.
 function SocialPlus_GetProjectIDFromGameText(gameText)
 	if not gameText or gameText=="" then return nil end
-	-- Order matters for the same reason as the label list above: longer, more
-	-- specific phrases first.
-	local ids={
-		-- See the label list above: Anniversary calls itself "WoW Classic
-		-- Anniversary" and reports the Burning Crusade project id.
-		{"Classic Anniversary",WOW_PROJECT_BURNING_CRUSADE_CLASSIC},
-		{"Burning Crusade Classic",WOW_PROJECT_BURNING_CRUSADE_CLASSIC},
-		{"Wrath of the Lich King Classic",WOW_PROJECT_WRATH_CLASSIC},
-		{"Cataclysm Classic",WOW_PROJECT_CATACLYSM_CLASSIC},
-		{"Mists of Pandaria Classic",WOW_PROJECT_MISTS_CLASSIC},
-		{"Classic Era",WOW_PROJECT_CLASSIC},
-	}
-	for _,entry in ipairs(ids) do
+	for _,entry in ipairs(GAMETEXT_VERSIONS) do
 		-- Guarded: these constants are absent on some client families, and an
 		-- absent one must not match everything via a nil comparison later.
-		if entry[2] and gameText:find(entry[1],1,true) then
-			return entry[2]
+		if entry[3] and gameText:find(entry[1],1,true) then
+			return entry[3]
 		end
 	end
 	return nil
@@ -231,6 +235,51 @@ function SocialPlus_RepairRealmName(realmName,gameText)
 	return SocialPlus_GetRealmFromGameText(gameText) or realmName
 end
 
+-- Tall enough for whatever is actually in it.
+--
+-- The height used to be a hand-kept number that every new setting had to
+-- remember to bump -- "404, not 380" in the comment that used to sit here,
+-- because the BattleTag tick pushed a row down. Settings were added and it was
+-- not bumped, so the notifications block and the scroll slider drew outside the
+-- panel, over the world, with no backdrop behind them.
+--
+-- Measured on show rather than at build time: a hidden frame has no reliable
+-- rect to read, and the panel is created hidden. Regions are measured as well
+-- as children, since the section headers are font strings rather than frames.
+--
+-- At file scope on purpose. It used to be declared at column 0 in the MIDDLE of
+-- SocialPlus_CreateSettingsPanel, left there by an earlier edit -- legal Lua,
+-- but it meant the global did not exist until the panel had been built once.
+function SocialPlus_FitSettingsPanel(f)
+	if not (f and f.GetTop) then return end
+	local top=f:GetTop()
+	if not top then return end
+
+	local lowest=top
+	local function consider(obj)
+		if obj and obj.IsShown and obj:IsShown() and obj.GetBottom then
+			local bottom=obj:GetBottom()
+			if bottom and bottom<lowest then lowest=bottom end
+		end
+	end
+
+	for _,child in ipairs({f:GetChildren()}) do
+		consider(child)
+		-- One level deeper as well.
+		--
+		-- A control's own label can hang BELOW it: the scroll slider carries its
+		-- percentage anchored under its bottom edge. Measuring only the child
+		-- stops at the slider and cuts that number off, which is what the
+		-- hand-written "+20" in the old OnShow handler existed to paper over.
+		if child.GetRegions then
+			for _,region in ipairs({child:GetRegions()}) do consider(region) end
+		end
+	end
+	for _,region in ipairs({f:GetRegions()}) do consider(region) end
+
+	if lowest<top then f:SetHeight(top-lowest+14) end
+end
+
 function SocialPlus_CreateSettingsPanel()
 	if SocialPlus_SettingsPanel or not FriendsFrame then return end
 
@@ -245,51 +294,9 @@ function SocialPlus_CreateSettingsPanel()
 	-- List behavior doesn't rely on parentage either -- see the explicit
 	-- FriendsFrame:HookScript("OnHide", ...) further down.
 	local f=CreateFrame("Frame","SocialPlus_SettingsPanel",UIParent,"BackdropTemplate")
-	-- Slightly larger box to fit icon preset controls (+26 for the new
-	-- "play sound" notification checkbox)
-	-- Tall enough for whatever is actually in it.
---
--- The height used to be a hand-kept number that every new setting had to
--- remember to bump -- "404, not 380" in the old comment here, because the
--- BattleTag tick pushed a row down. Settings were added and it was not bumped,
--- so the notifications block and the scroll slider drew outside the panel, over
--- the world, with no backdrop behind them.
---
--- Measured on show rather than at build time: a hidden frame has no reliable
--- rect to read, and the panel is created hidden. Regions are measured as well as
--- children, since the section headers and the slider's labels are font strings
--- rather than frames.
-function SocialPlus_FitSettingsPanel(f)
-	if not (f and f.GetTop) then return end
-	local top=f:GetTop()
-	if not top then return end
-
-	local lowest=top
-	for _,child in ipairs({f:GetChildren()}) do
-		if child:IsShown() then
-			local bottom=child:GetBottom()
-			if bottom and bottom<lowest then lowest=bottom end
-		end
-	end
-	for _,region in ipairs({f:GetRegions()}) do
-		if region.IsShown and region:IsShown() and region.GetBottom then
-			local bottom=region:GetBottom()
-			if bottom and bottom<lowest then lowest=bottom end
-		end
-	end
-
-	if lowest<top then f:SetHeight(top-lowest+14) end
-end
-
--- Remembered because UpdatePvPRatingsState shrinks the panel when the PvP
-	-- block is hidden, and needs the full height to subtract from -- reading
-	-- the live height there would compound each time it ran.
-	-- 404, not 380: the BattleTag tick added a row below the region flag, and
-	-- everything under it (the whole notifications section) is chained off
-	-- that, so without the extra height the last option falls off the bottom.
-	-- A starting size only. SocialPlus_FitSettingsPanel replaces the height with
-	-- whatever the content needs, the first time the panel is shown.
-	f:SetSize(350,404)
+	-- A starting size only. SocialPlus_FitSettingsPanel replaces the height
+	-- with whatever the content needs, the first time the panel is shown.
+	f:SetSize(500,404)
 
 	-- Right side of Friends frame
 	f:SetPoint("TOPLEFT",FriendsFrame,"TOPRIGHT",8,0)
@@ -424,50 +431,276 @@ end
 		f.versionText:SetTextColor(1,0.82,0,1)
 	end
 
-	-- Checkboxes
+	-- [[ Sections ]]
+	--
+	-- Every control used to hang off the one above it in a single unbroken
+	-- chain -- fifteen ticks, four bracket boxes and a slider, top to bottom,
+	-- with one section header somewhere in the middle. It read as a list rather
+	-- than a panel, it grew taller than the frame it hangs beside, and the chain
+	-- itself was the fragile part: three separate comments in this file recorded
+	-- a row being added and everything below it drawing straight through the
+	-- next section, because whatever had been anchored to the old last row
+	-- stayed anchored there.
+	--
+	-- There are four blocks now, and one function anchors all of them. A block
+	-- is a separator, a clickable header and an ordered list of controls;
+	-- Relayout walks them in order and re-anchors every visible one. Adding a
+	-- control is adding an entry to a list, and nothing below it has to be told.
+	--
+	-- Leaving one out is the same walk with fewer entries, which is what makes
+	-- both collapsing and the ArenaPlus case work -- the latter used to be a
+	-- hand-written re-anchoring pass inside UpdatePvPRatingsState, and is now
+	-- one flag on one block.
+	local blocks={}
+	local blocksByKey={}
+
+	local function IsCollapsed(key)
+		local saved=SocialPlus_SavedVars and SocialPlus_SavedVars.settingsCollapsed
+		return (saved and saved[key]) and true or false
+	end
+
+	local Relayout
+
+	local function AddBlock(key,label)
+		local block={key=key,label=label,widgets={},available=true}
+
+		block.line=f:CreateTexture(nil,"ARTWORK")
+		block.line:SetSize(f:GetWidth()-24,1)
+		block.line:SetColorTexture(0.6,0.6,0.6,0.4)
+
+		-- The whole header is the hit area, not just the little +/-. A 16px
+		-- square is a small target for something meant to be clicked often, and
+		-- the label beside it looks clickable whether or not it is.
+		block.header=CreateFrame("Button",nil,f)
+		block.header:SetSize(f:GetWidth()-28,18)
+
+		block.toggle=block.header:CreateTexture(nil,"ARTWORK")
+		block.toggle:SetSize(16,16)
+		block.toggle:SetPoint("LEFT",block.header,"LEFT",0,0)
+
+		block.text=block.header:CreateFontString(nil,"ARTWORK","GameFontNormal")
+		block.text:SetPoint("LEFT",block.toggle,"RIGHT",2,0)
+		block.text:SetText(label)
+
+		block.header:SetScript("OnEnter",function()
+			block.text:SetTextColor(1,1,1)
+		end)
+		block.header:SetScript("OnLeave",function()
+			block.text:SetTextColor(NORMAL_FONT_COLOR:GetRGB())
+		end)
+
+		block.header:SetScript("OnClick",function()
+			if not SocialPlus_SavedVars then return end
+			SocialPlus_SavedVars.settingsCollapsed=SocialPlus_SavedVars.settingsCollapsed or {}
+			-- nil rather than false when open, so the saved table only ever
+			-- holds the sections somebody actually closed.
+			SocialPlus_SavedVars.settingsCollapsed[key]=(not IsCollapsed(key)) or nil
+			Relayout()
+		end)
+
+		blocks[#blocks+1]=block
+		blocksByKey[key]=block
+		return block
+	end
+
+	-- indent and gap are offsets from the PREVIOUS row, which is what the old
+	-- hand-written chain used too -- so the bracket ticks step in by 18 once and
+	-- the tick after them steps back out by the same 18.
+	--
+	-- cols forces a run of that many controls onto one row, for the bracket
+	-- ticks: four boxes labelled "2v2".."RBG", which cost four full rows in a
+	-- single column and carry about forty pixels of text between them.
+	--
+	-- pair=false keeps a control on a row of its own whatever it measures --
+	-- the scroll slider and its description, which are not tick-shaped.
+	local function AddControl(block,widget,indent,gap,cols,pair)
+		block.widgets[#block.widgets+1]={
+			widget=widget,indent=indent,gap=gap,cols=cols,pair=pair,
+		}
+		return widget
+	end
+
+	-- What a control actually needs across, box plus label.
+	--
+	-- Measured rather than assumed, and this is the whole reason the two-column
+	-- layout below is safe to do at all: "Show BattleTags instead of real names"
+	-- fits beside another tick in English and does not in Spanish, and nothing
+	-- here has to know that. A label too wide for half the panel simply gets the
+	-- whole row, in whatever language it is too wide in.
+	local function ControlWidth(widget)
+		local width=(widget.GetWidth and widget:GetWidth()) or 0
+		local name=widget.GetName and widget:GetName()
+		local text=(name and _G[name.."Text"]) or widget.label
+		if text and text.GetStringWidth then
+			width=width+text:GetStringWidth()+4
+		end
+		return width
+	end
+
+	function Relayout()
+		local anchor,point=f.title,"BOTTOMLEFT"
+		local headerGap=-14
+		local inner=f:GetWidth()-28
+
+		for _,block in ipairs(blocks) do
+			if block.available then
+				block.line:ClearAllPoints()
+				block.line:SetPoint("TOPLEFT",anchor,point,0,headerGap)
+				block.line:Show()
+
+				block.header:ClearAllPoints()
+				block.header:SetPoint("TOPLEFT",block.line,"BOTTOMLEFT",0,-6)
+				block.header:Show()
+
+				local collapsed=IsCollapsed(block.key)
+				if collapsed then
+					block.toggle:SetTexture(TEX_PLUS)
+				else
+					block.toggle:SetTexture(TEX_MINUS)
+				end
+
+				anchor,point=block.header,"BOTTOMLEFT"
+				local gap=-2
+
+				local widgets=block.widgets
+				local i=1
+				while i<=#widgets do
+					local entry=widgets[i]
+
+					if collapsed then
+						entry.widget:Hide()
+						i=i+1
+					else
+						-- How many controls share this row: what the entry
+						-- asked for, or two where two will genuinely fit.
+						local cols=entry.cols or 1
+						if cols==1 then
+							local follower=widgets[i+1]
+							if entry.pair~=false and follower and follower.pair~=false
+								and ControlWidth(entry.widget)<=inner/2
+								and ControlWidth(follower.widget)<=inner/2 then
+								cols=2
+							end
+						end
+
+						local step=inner/cols
+						local rowFirst
+						for column=1,cols do
+							local placed=widgets[i]
+							if not placed then break end
+							placed.widget:Show()
+							placed.widget:ClearAllPoints()
+							if column==1 then
+								placed.widget:SetPoint("TOPLEFT",anchor,point,
+									placed.indent or 0,placed.gap or gap)
+								rowFirst=placed.widget
+							else
+								-- Off the row's first control, at a fixed step,
+								-- rather than off the one to its left: label
+								-- widths differ, and chaining left-to-right
+								-- would leave the second column ragged.
+								placed.widget:SetPoint("TOPLEFT",rowFirst,"TOPLEFT",
+									(column-1)*step,0)
+							end
+							i=i+1
+						end
+
+						anchor,point=rowFirst,"BOTTOMLEFT"
+						gap=-6
+					end
+				end
+
+				headerGap=-12
+			else
+				-- A hidden frame keeps its anchors, so a block that is not
+				-- available must not stay in the chain: nothing is anchored to
+				-- it, and the next block anchors to whatever came before it.
+				block.line:Hide()
+				block.header:Hide()
+				for _,entry in ipairs(block.widgets) do
+					entry.widget:Hide()
+				end
+			end
+		end
+
+		SocialPlus_FitSettingsPanel(f)
+	end
+
+	----------------------------------------------------------------------
+	-- Display
+	----------------------------------------------------------------------
+	local display=AddBlock("display",L.SETTING_SECTION_DISPLAY)
+
 	local hideOffline=CreateFrame("CheckButton","SocialPlus_HideOfflineCheck",f,"UICheckButtonTemplate")
-	hideOffline:SetPoint("TOPLEFT",f,"TOPLEFT",14,-40)
 	_G[hideOffline:GetName().."Text"]:SetText(L.SETTING_HIDE_OFFLINE)
-	hideOffline:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.hide_offline)
 	hideOffline:SetScript("OnClick",function()
 		SocialPlus_SavedVars.hide_offline=not SocialPlus_SavedVars.hide_offline
 		SocialPlus_Update()
 	end)
+	AddControl(display,hideOffline)
 
 	local showLevel=CreateFrame("CheckButton","SocialPlus_ShowLevelCheck",f,"UICheckButtonTemplate")
-	showLevel:SetPoint("TOPLEFT",hideOffline,"BOTTOMLEFT",0,-6)
 	_G[showLevel:GetName().."Text"]:SetText(L.SETTING_SHOW_LEVEL)
-	showLevel:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.show_level)
 	showLevel:SetScript("OnClick",function()
 		SocialPlus_SavedVars.show_level=not SocialPlus_SavedVars.show_level
 		SocialPlus_Update()
 	end)
+	AddControl(display,showLevel)
 
 	local colourNames=CreateFrame("CheckButton","SocialPlus_ColourNamesCheck",f,"UICheckButtonTemplate")
-	colourNames:SetPoint("TOPLEFT",showLevel,"BOTTOMLEFT",0,-6)
 	_G[colourNames:GetName().."Text"]:SetText(L.SETTING_COLOR_NAMES)
-	colourNames:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.colour_classes)
 	colourNames:SetScript("OnClick",function()
 		SocialPlus_SavedVars.colour_classes=not SocialPlus_SavedVars.colour_classes
 		SocialPlus_Update()
 	end)
+	AddControl(display,colourNames)
 
-	-- Prioritize current-client players -- label names whichever WoW version
-	-- this client actually is (MoP, TBC, etc.), not hardcoded to one, since
-	-- the addon runs on multiple classic clients now.
+	-- Label names whichever WoW version this client actually is (MoP, TBC,
+	-- etc.), not hardcoded to one, since the addon runs on several now.
 	local prioritizeCurrent=CreateFrame("CheckButton","SocialPlus_PrioritizeCurrentClientCheck",f,"UICheckButtonTemplate")
-	prioritizeCurrent:SetPoint("TOPLEFT",colourNames,"BOTTOMLEFT",0,-6)
 	local currentVersionLabel=SocialPlus_GetVersionLabelText(WOW_PROJECT_ID)
 	_G[prioritizeCurrent:GetName().."Text"]:SetText(
 		L.SETTING_PRIORITIZE_PREFIX..currentVersionLabel..L.SETTING_PRIORITIZE_SUFFIX)
-	prioritizeCurrent:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.prioritize_current_client)
 	prioritizeCurrent:SetScript("OnClick",function()
 		SocialPlus_SavedVars.prioritize_current_client=not SocialPlus_SavedVars.prioritize_current_client
 		-- force full rebuild so ordering updates
 		SocialPlus_Update(true)
 	end)
+	AddControl(display,prioritizeCurrent)
 
-	-- Both declared here, above everything that reads them.
+	-- These two live here rather than under PvP, where they used to sit purely
+	-- because that is where they had been added. Neither needs another addon --
+	-- the flags ship here -- and both change what the NAME area of a row shows,
+	-- which is what this section is. Moving them is also what lets the PvP
+	-- block disappear whole: it used to have to stay behind and re-anchor
+	-- upward over the hidden rows.
+	local regionFlag=CreateFrame("CheckButton","SocialPlus_RegionFlagCheck",f,"UICheckButtonTemplate")
+	_G[regionFlag:GetName().."Text"]:SetText(L.SETTING_REGION_FLAG)
+	regionFlag:SetScript("OnClick",function()
+		SocialPlus_SavedVars.region_flag=not SocialPlus_SavedVars.region_flag
+
+		-- Redraw the list, or nothing changes until the rows happen to be
+		-- rebuilt: they are pooled, and a row keeps whatever it was last given
+		-- until something recycles it. Without this the tick appeared to do
+		-- nothing until you scrolled far enough to reuse every row.
+		SocialPlus_Update()
+	end)
+	AddControl(display,regionFlag)
+
+	local battleTag=CreateFrame("CheckButton","SocialPlus_BattleTagCheck",f,"UICheckButtonTemplate")
+	_G[battleTag:GetName().."Text"]:SetText(L.SETTING_BATTLETAG)
+	battleTag:SetScript("OnClick",function()
+		SocialPlus_SavedVars.show_battletag=not SocialPlus_SavedVars.show_battletag
+		-- Same pooled-row reason as the flag above.
+		SocialPlus_Update()
+	end)
+	AddControl(display,battleTag)
+
+	----------------------------------------------------------------------
+	-- PvP -- present only while ArenaPlus is there to answer
+	----------------------------------------------------------------------
+	--
+	-- Both declared above everything that reads them.
 	--
 	-- UpdatePvPRatingsState is referred to by the tick's click handler, and
 	-- bracketChecks is read inside UpdatePvPRatingsState -- a local declared
@@ -478,30 +711,26 @@ end
 	local UpdatePvPRatingsState
 	local bracketChecks={}
 
-	-- Rated PvP in the tooltip, which needs ArenaPlus to supply the ladder.
+	local pvp=AddBlock("pvp",L.SETTING_SECTION_PVP)
+
 	local pvpRatings=CreateFrame("CheckButton","SocialPlus_PvPRatingsCheck",f,"UICheckButtonTemplate")
-	pvpRatings:SetPoint("TOPLEFT",prioritizeCurrent,"BOTTOMLEFT",0,-6)
 	_G[pvpRatings:GetName().."Text"]:SetText(L.SETTING_PVP_RATINGS)
-	pvpRatings:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.pvp_ratings)
 	pvpRatings:SetScript("OnClick",function()
 		SocialPlus_SavedVars.pvp_ratings=not SocialPlus_SavedVars.pvp_ratings
 		UpdatePvPRatingsState()
 		-- Nothing to rebuild: the tooltip reads the setting when it is next
 		-- built, and the list itself is unchanged.
 	end)
-
+	AddControl(pvp,pvpRatings)
 
 	-- One tick per bracket, indented under the switch they depend on.
 	--
 	-- Built in a loop rather than written out four times: the labels come from
 	-- ArenaPlus's own BRACKETS table where it is installed, so the two cannot
 	-- disagree about what bracket 4 is called.
-	local previousCheck=pvpRatings
-
 	for bracket=1,4 do
 		local check=CreateFrame("CheckButton",nil,f,"UICheckButtonTemplate")
 		check:SetSize(20,20)
-		check:SetPoint("TOPLEFT",previousCheck,"BOTTOMLEFT",bracket==1 and 18 or 0,-2)
 		check.bracket=bracket
 
 		local names=_G.ArenaPlusAPI and _G.ArenaPlusAPI.BRACKETS
@@ -517,148 +746,27 @@ end
 		end)
 
 		bracketChecks[bracket]=check
-		previousCheck=check
+		-- All four on one row: they are the narrowest controls on the panel and
+		-- they used to cost four of its tallest rows.
+		AddControl(pvp,check,bracket==1 and 18 or 0,-2,bracket==1 and 4 or nil)
 	end
 
 	local specIcon=CreateFrame("CheckButton","SocialPlus_PvPSpecIconCheck",f,"UICheckButtonTemplate")
-	specIcon:SetPoint("TOPLEFT",bracketChecks[4] or pvpRatings,"BOTTOMLEFT",
-		bracketChecks[4] and -18 or 0,-4)
 	_G[specIcon:GetName().."Text"]:SetText(L.SETTING_PVP_SPEC_ICON)
-	specIcon:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.pvp_spec_icon)
 	specIcon:SetScript("OnClick",function()
 		SocialPlus_SavedVars.pvp_spec_icon=not SocialPlus_SavedVars.pvp_spec_icon
 	end)
+	-- Steps back out by the same 18 the bracket ticks stepped in by.
+	AddControl(pvp,specIcon,-18,-4)
 
-	-- Under the spec icon, since the two decide what sits beside a name.
-	--
-	-- Unlike that one this needs no other addon: the flags ship here, so the
-	-- tick is never offered against something that cannot happen.
-	local regionFlag=CreateFrame("CheckButton","SocialPlus_RegionFlagCheck",f,"UICheckButtonTemplate")
-	regionFlag:SetPoint("TOPLEFT",specIcon,"BOTTOMLEFT",0,-4)
-	_G[regionFlag:GetName().."Text"]:SetText(L.SETTING_REGION_FLAG)
-	regionFlag:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.region_flag)
-	regionFlag:SetScript("OnClick",function()
-		SocialPlus_SavedVars.region_flag=not SocialPlus_SavedVars.region_flag
+	----------------------------------------------------------------------
+	-- Notifications
+	----------------------------------------------------------------------
+	local notify=AddBlock("notify",L.SETTING_SECTION_NOTIFICATIONS)
 
-		-- Redraw the list, or nothing changes until the rows happen to be
-		-- rebuilt: they are pooled, and a row keeps whatever it was last given
-		-- until something recycles it. Without this the tick appeared to do
-		-- nothing until you scrolled far enough to reuse every row.
-		SocialPlus_Update()
-	end)
-
-	-- Under the region flag: both change what the NAME area of a row shows.
-	--
-	-- Needs no other addon, so unlike the two PvP ticks it is always present.
-	local battleTag=CreateFrame("CheckButton","SocialPlus_BattleTagCheck",f,"UICheckButtonTemplate")
-	battleTag:SetPoint("TOPLEFT",regionFlag,"BOTTOMLEFT",0,-4)
-	_G[battleTag:GetName().."Text"]:SetText(L.SETTING_BATTLETAG)
-	battleTag:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.show_battletag)
-	battleTag:SetScript("OnClick",function()
-		SocialPlus_SavedVars.show_battletag=not SocialPlus_SavedVars.show_battletag
-		-- Same pooled-row reason as the flag above.
-		SocialPlus_Update()
-	end)
-
-	-- No "requires ArenaPlus" hover hint any more: it only ever appeared on the
-	-- greyed checkbox, and the checkbox is now hidden outright in exactly that
-	-- case, so the script could never run. L.SETTING_PVP_RATINGS_NEEDS is left
-	-- in Locales.lua unused rather than deleted across three languages, in case
-	-- the hint is wanted somewhere that can actually be seen.
-
-	-- Hidden outright unless ArenaPlus is there to answer, rather than greyed.
-	--
-	-- These two settings cannot do anything without it: the tooltip guards
-	-- every call into ArenaPlusAPI and simply draws no block. A greyed tick
-	-- still takes up a line and still asks to be read before it can be
-	-- dismissed, on a panel where most people will never install that addon.
-	-- Absent, it is simply not part of the panel.
-	--
-	-- The bracket ticks go with the ratings block they belong to. The region
-	-- flag does NOT -- it needs no other addon -- so it stays, and re-anchors
-	-- upward to close the gap the hidden rows leave behind. Everything below
-	-- it is chained off it and follows automatically.
-	--
-	-- Tested on the published table rather than on the addon being loaded: an
-	-- ArenaPlus that is installed but disabled never runs its files and never
-	-- creates it, which is the same thing as absent from here.
-	function UpdatePvPRatingsState()
-		local ready=_G.ArenaPlusAPI and _G.ArenaPlusAPI.GetLadder
-
-		pvpRatings:SetShown(ready and true or false)
-		specIcon:SetShown(ready and true or false)
-		for _,check in ipairs(bracketChecks) do
-			check:SetShown(ready and true or false)
-		end
-
-		-- Re-anchored, not just moved: a hidden frame keeps its anchor, so
-		-- without this the region flag would stay where it was and leave the
-		-- hidden rows' space blank.
-		regionFlag:ClearAllPoints()
-		if ready then
-			regionFlag:SetPoint("TOPLEFT",specIcon,"BOTTOMLEFT",0,-4)
-		else
-			regionFlag:SetPoint("TOPLEFT",prioritizeCurrent,"BOTTOMLEFT",0,-6)
-		end
-
-		-- Re-measured rather than adjusted by a remembered delta: rows have just
-		-- been shown or hidden, so what the panel needs has changed, and the
-		-- content is the only thing that actually knows by how much.
-		SocialPlus_FitSettingsPanel(f)
-
-		specIcon:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.pvp_spec_icon)
-		regionFlag:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.region_flag)
-		battleTag:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.show_battletag)
-
-		-- With ArenaPlus present the bracket ticks still depend on the block
-		-- above them being switched on: a tick that changes nothing is a tick
-		-- that lies.
-		local live=ready and SocialPlus_SavedVars and SocialPlus_SavedVars.pvp_ratings
-		for _,check in ipairs(bracketChecks) do
-			local wanted=SocialPlus_SavedVars and SocialPlus_SavedVars.pvp_brackets
-			check:SetChecked(wanted and wanted[check.bracket] and true or false)
-
-			if live then check:Enable() else check:Disable() end
-			check.label:SetTextColor(live and 0.8 or 0.4,live and 0.8 or 0.4,live and 0.8 or 0.4)
-		end
-	end
-
-	-- Defined here rather than above, deliberately.
-	--
-	-- It reads every widget in this block, and three times now a widget has
-	-- been added after it and come out nil -- a local declared below its
-	-- reader is not that local at all. Sitting after everything it touches,
-	-- the next widget added cannot repeat that. The forward declaration at
-	-- the top is what lets the tick's own click handler still reach it.
-
-	UpdatePvPRatingsState()
-
-	-- Separator + section header ahead of the notification checkboxes, same
-	-- style as the existing separator below them.
-	local preNotifyLine=f:CreateTexture(nil,"ARTWORK")
-	preNotifyLine:SetSize(f:GetWidth()-24,1)
-	-- Below the bracket ticks, not below their parent.
-	--
-	-- Anchored to pvpRatings it stayed where it was and the four new rows drew
-	-- straight through the notifications section. The -18 undoes the indent the
-	-- bracket ticks carry, so this returns to the left margin the rest of the
-	-- panel uses.
-	-- Below the last tick of the block above, whichever that is. It used to
-	-- name specIcon, and adding one under it put the divider and the whole
-	-- Notifications section straight through the new row -- everything down
-	-- here hangs off this one line, so it has to hang off the real last tick.
-	preNotifyLine:SetPoint("TOPLEFT",battleTag,"BOTTOMLEFT",0,-12)
-	preNotifyLine:SetColorTexture(0.6,0.6,0.6,0.4)
-
-	local notifySectionHeader=f:CreateFontString(nil,"ARTWORK","GameFontNormal")
-	notifySectionHeader:SetPoint("TOPLEFT",preNotifyLine,"BOTTOMLEFT",0,-8)
-	notifySectionHeader:SetText(L.SETTING_SECTION_NOTIFICATIONS)
-
-	-- Friend online/offline notifications
 	local notifyEnable=CreateFrame("CheckButton","SocialPlus_NotifyEnableCheck",f,"UICheckButtonTemplate")
-	notifyEnable:SetPoint("TOPLEFT",notifySectionHeader,"BOTTOMLEFT",0,-6)
 	_G[notifyEnable:GetName().."Text"]:SetText(L.SETTING_NOTIFY_ENABLE)
-	notifyEnable:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.notifications and SocialPlus_SavedVars.notifications.enabled)
+	AddControl(notify,notifyEnable)
 
 	-- Sound sits directly under the "come online" toggle it belongs to, so
 	-- the two online options read as a pair and "go offline" follows after.
@@ -668,20 +776,18 @@ end
 	-- with -- the toast CVars this addon flips off only silence Blizzard's
 	-- visual popup, not this.
 	local notifySound=CreateFrame("CheckButton","SocialPlus_NotifySoundCheck",f,"UICheckButtonTemplate")
-	notifySound:SetPoint("TOPLEFT",notifyEnable,"BOTTOMLEFT",0,-6)
 	_G[notifySound:GetName().."Text"]:SetText(L.SETTING_NOTIFY_SOUND)
-	notifySound:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.notifications and SocialPlus_SavedVars.notifications.sound)
 	notifySound:SetScript("OnClick",function()
 		SocialPlus_SavedVars.notifications.sound=not SocialPlus_SavedVars.notifications.sound
 	end)
+	AddControl(notify,notifySound)
 
 	local notifyOffline=CreateFrame("CheckButton","SocialPlus_NotifyOfflineCheck",f,"UICheckButtonTemplate")
-	notifyOffline:SetPoint("TOPLEFT",notifySound,"BOTTOMLEFT",0,-6)
 	_G[notifyOffline:GetName().."Text"]:SetText(L.SETTING_NOTIFY_OFFLINE)
-	notifyOffline:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.notifications and SocialPlus_SavedVars.notifications.offline_too)
 	notifyOffline:SetScript("OnClick",function()
 		SocialPlus_SavedVars.notifications.offline_too=not SocialPlus_SavedVars.notifications.offline_too
 	end)
+	AddControl(notify,notifyOffline)
 
 	-- Only notify friends on this exact WoW version -- labelled dynamically
 	-- like "Show WoW friends first" above. Off by default: most players
@@ -689,13 +795,12 @@ end
 	-- this is an opt-in filter for people who specifically don't want
 	-- cross-version noise.
 	local notifySameVersion=CreateFrame("CheckButton","SocialPlus_NotifySameVersionCheck",f,"UICheckButtonTemplate")
-	notifySameVersion:SetPoint("TOPLEFT",notifyOffline,"BOTTOMLEFT",0,-6)
 	_G[notifySameVersion:GetName().."Text"]:SetText(
 		L.SETTING_NOTIFY_SAME_VERSION_PREFIX..currentVersionLabel..L.SETTING_NOTIFY_SAME_VERSION_SUFFIX)
-	notifySameVersion:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.notifications and SocialPlus_SavedVars.notifications.same_version_only)
 	notifySameVersion:SetScript("OnClick",function()
 		SocialPlus_SavedVars.notifications.same_version_only=not SocialPlus_SavedVars.notifications.same_version_only
 	end)
+	AddControl(notify,notifySameVersion)
 
 	-- Child checkboxes only mean anything while the parent "notify when
 	-- friends come online" toggle is on -- gray them out and disable
@@ -719,31 +824,32 @@ end
 		SocialPlus_ApplyToastCVars()
 		SocialPlus_UpdateNotifyChildState()
 	end)
-	SocialPlus_UpdateNotifyChildState()
 
-	-- Separator spanning almost full width, now directly below the notification checkboxes
-	local line=f:CreateTexture(nil,"ARTWORK")
-	line:SetSize(f:GetWidth()-24,1)
-	line:SetPoint("TOPLEFT",notifySameVersion,"BOTTOMLEFT",0,-12)
-	line:SetColorTexture(0.6,0.6,0.6,0.4)
-
-	-- Slider label + description
-	local lbl=f:CreateFontString(nil,"ARTWORK","GameFontHighlightSmall")
-	lbl:SetPoint("TOPLEFT",line,"BOTTOMLEFT",0,-10)
-	lbl:SetText(L.SETTING_SCROLL_SPEED)
+	----------------------------------------------------------------------
+	-- Scrolling
+	----------------------------------------------------------------------
+	--
+	-- The header carries the "Scroll speed" label the section used to repeat on
+	-- its own line directly underneath it.
+	local scroll=AddBlock("scroll",L.SETTING_SCROLL_SPEED)
 
 	local desc=f:CreateFontString(nil,"ARTWORK","GameFontNormalSmall")
-	desc:SetPoint("TOPLEFT",lbl,"BOTTOMLEFT",0,-6)
 	desc:SetText(L.SETTING_SCROLL_SPEED_DESC)
+	AddControl(scroll,desc,nil,nil,nil,false)
 
-	-- Slider (widened)
 	local slider=CreateFrame("Slider","SocialPlus_SettingsScrollSpeedSlider",f,"OptionsSliderTemplate")
-	slider:SetPoint("TOPLEFT",desc,"BOTTOMLEFT",0,-5)
 	slider:SetSize(f:GetWidth()-40,16)
 	slider:SetMinMaxValues(1.0,5.0)
 	slider:SetValueStep(0.1)
 	slider:SetObeyStepOnDrag(true)
 	slider:SetValue(SocialPlus_SavedVars and SocialPlus_SavedVars.scrollSpeed or SCROLL_BASE)
+	-- A little more room than a tick row. Nothing sits above the slider -- its
+	-- template's own label is moved below it just under this -- but its Low/High
+	-- captions and that number all hang BELOW its bottom edge, so the slider
+	-- needs to be clear of the description above it to look centred in its own
+	-- space. The height those captions need is measured, not guessed: see the
+	-- one-level-deeper pass in SocialPlus_FitSettingsPanel.
+	AddControl(scroll,slider,0,-10,nil,false)
 
 	-- Center numeric value under slider
 	slider.text=_G[slider:GetName().."Text"]
@@ -751,7 +857,7 @@ end
 		slider.text:ClearAllPoints()
 		slider.text:SetPoint("TOP",slider,"BOTTOM",0,-2)
 		slider.text:SetJustifyH("CENTER")
-		slider.text:SetText(string.format("%d%%",slider:GetValue()/SCROLL_BASE*100))
+		slider.text:SetText(format("%d%%",slider:GetValue()/SCROLL_BASE*100))
 	end
 
 	slider:SetScript("OnValueChanged",function(self,val)
@@ -759,43 +865,109 @@ end
 		val=math.floor(val*10+0.5)/10
 		self:SetValue(val)
 		if self.text then
-			self.text:SetText(string.format("%d%%",val/SCROLL_BASE*100))
+			self.text:SetText(format("%d%%",val/SCROLL_BASE*100))
 		end
 		if not SocialPlus_SavedVars then SocialPlus_SavedVars={} end
 		SocialPlus_SavedVars.scrollSpeed=val
 		pcall(SocialPlus_InitSmoothScroll)
 	end)
 
-	-- Sync on show (no more icon profile dropdown)
-	f:SetScript("OnShow",function()
-		hideOffline:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.hide_offline)
-		showLevel:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.show_level)
-		colourNames:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.colour_classes)
-		prioritizeCurrent:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.prioritize_current_client)
-		pvpRatings:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.pvp_ratings)
-		-- Re-tested every time the panel opens, in case ArenaPlus was enabled.
-		UpdatePvPRatingsState()
-		notifyEnable:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.notifications and SocialPlus_SavedVars.notifications.enabled)
-		notifyOffline:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.notifications and SocialPlus_SavedVars.notifications.offline_too)
-		notifySameVersion:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.notifications and SocialPlus_SavedVars.notifications.same_version_only)
-		notifySound:SetChecked(SocialPlus_SavedVars and SocialPlus_SavedVars.notifications and SocialPlus_SavedVars.notifications.sound)
+	----------------------------------------------------------------------
+
+	-- No "requires ArenaPlus" hover hint any more: it only ever appeared on the
+	-- greyed checkbox, and the checkbox is now hidden outright in exactly that
+	-- case, so the script could never run. L.SETTING_PVP_RATINGS_NEEDS is left
+	-- in Locales.lua unused rather than deleted across three languages, in case
+	-- the hint is wanted somewhere that can actually be seen.
+
+	-- The whole block is absent unless ArenaPlus is there to answer, rather
+	-- than greyed. These settings cannot do anything without it -- the tooltip
+	-- guards every call into ArenaPlusAPI and simply draws no block -- and a
+	-- greyed tick still takes up a line and still asks to be read before it can
+	-- be dismissed, on a panel where most people will never install that addon.
+	--
+	-- Tested on the published table rather than on the addon being loaded: an
+	-- ArenaPlus that is installed but disabled never runs its files and never
+	-- creates it, which is the same thing as absent from here.
+	--
+	-- Defined after every widget it touches, deliberately. Three times now a
+	-- widget has been added after it and come out nil -- a local declared below
+	-- its reader is not that local at all. The forward declaration above is what
+	-- lets the tick's own click handler still reach it.
+	function UpdatePvPRatingsState()
+		local ready=(_G.ArenaPlusAPI and _G.ArenaPlusAPI.GetLadder) and true or false
+
+		-- One flag, and Relayout does the rest -- including re-measuring the
+		-- panel, since rows have just appeared or disappeared and the content
+		-- is the only thing that knows by how much.
+		pvp.available=ready
+		Relayout()
+
+		-- With ArenaPlus present the bracket ticks still depend on the block
+		-- above them being switched on: a tick that changes nothing is a tick
+		-- that lies.
+		local live=ready and SocialPlus_SavedVars and SocialPlus_SavedVars.pvp_ratings
+		for _,check in ipairs(bracketChecks) do
+			local wanted=SocialPlus_SavedVars and SocialPlus_SavedVars.pvp_brackets
+			check:SetChecked(wanted and wanted[check.bracket] and true or false)
+
+			if live then check:Enable() else check:Disable() end
+			check.label:SetTextColor(live and 0.8 or 0.4,live and 0.8 or 0.4,live and 0.8 or 0.4)
+		end
+	end
+
+	-- Every tick read back from SavedVars in one place.
+	--
+	-- They used to be re-read in two -- some here, some inside
+	-- UpdatePvPRatingsState -- which is how a tick came to be synced by the
+	-- function that hides it.
+	local function SyncChecks()
+		local sv=SocialPlus_SavedVars
+		local notifications=sv and sv.notifications
+
+		hideOffline:SetChecked(sv and sv.hide_offline)
+		showLevel:SetChecked(sv and sv.show_level)
+		colourNames:SetChecked(sv and sv.colour_classes)
+		prioritizeCurrent:SetChecked(sv and sv.prioritize_current_client)
+		regionFlag:SetChecked(sv and sv.region_flag)
+		battleTag:SetChecked(sv and sv.show_battletag)
+
+		pvpRatings:SetChecked(sv and sv.pvp_ratings)
+		specIcon:SetChecked(sv and sv.pvp_spec_icon)
+
+		notifyEnable:SetChecked(notifications and notifications.enabled)
+		notifySound:SetChecked(notifications and notifications.sound)
+		notifyOffline:SetChecked(notifications and notifications.offline_too)
+		notifySameVersion:SetChecked(notifications and notifications.same_version_only)
 		SocialPlus_UpdateNotifyChildState()
 
-		local svSpeed=SocialPlus_SavedVars and SocialPlus_SavedVars.scrollSpeed or SCROLL_BASE
-		slider:SetValue(svSpeed)
+		local speed=(sv and sv.scrollSpeed) or SCROLL_BASE
+		slider:SetValue(speed)
 		if slider.text then
-			slider.text:SetText(string.format("%d%%",svSpeed/SCROLL_BASE*100))
+			slider.text:SetText(format("%d%%",speed/SCROLL_BASE*100))
 		end
+	end
 
-		-- Dynamically fit the panel height to its actual content, so it never
-		-- clips or leaves dead space as settings are added/removed over time.
-		local top=f:GetTop()
-		local bottom=(slider.text and slider.text:GetBottom()) or slider:GetBottom()
-		if top and bottom then
-			f:SetHeight((top-bottom)+20)
-		end
+	SyncChecks()
+	-- Anchors everything for the first time; also re-tests ArenaPlus.
+	UpdatePvPRatingsState()
+
+	-- Hooked, not set.
+	--
+	-- SetScript REPLACES the handler, hooks and all. The keyboard re-arm above
+	-- is installed with HookScript before this point, and it is installed onto
+	-- nothing -- so it simply becomes the OnShow script, and a SetScript here
+	-- threw it away. That is what this line used to be, which is why the panel
+	-- never did ask for the keyboard again on a later open: first built during
+	-- combat with propagation refused, Escape stopped closing it for the rest
+	-- of the session, and nothing else re-armed it (OnKeyDown cannot, because
+	-- the keyboard it would re-arm is the thing that is off).
+	f:HookScript("OnShow",function()
+		SyncChecks()
+		-- Re-tested every time the panel opens, in case ArenaPlus was enabled.
+		-- Relayout, and with it the height, comes along with it.
+		UpdatePvPRatingsState()
 	end)
-
 	f:Hide()
 
 	-- Sized on every open, not once: rows appear and disappear with ArenaPlus,
