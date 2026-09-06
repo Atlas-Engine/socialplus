@@ -2795,6 +2795,34 @@ local function SocialPlus_UpdateFriendButton(button)
 	local index=button.index
 	button.buttonType=FriendButtons[index].buttonType
 	button.id=FriendButtons[index].id
+
+	-- Is this row still drawing the friend it was built for?
+	--
+	-- SocialPlus_ListShape catches the reorders that change a count, which is
+	-- all of the ones we can name. This catches the rest by asking the only
+	-- question that cannot be got wrong: the index says this friend, the row
+	-- was built for that friend, do they match. Free on the happy path -- the
+	-- lookup is one raw call for the ~20 rows actually on screen, and the WoW
+	-- one is memoised for the frame already.
+	--
+	-- Only a POSITIVE mismatch counts. An index that resolves to nothing at
+	-- all means the list shrank, which moves a count, which the shape test
+	-- has already turned into a real derivation -- whereas treating a
+	-- transiently unresolved name as a mismatch would force one derivation
+	-- per render for as long as it stayed unresolved.
+	local rowKey=FriendButtons[index].key
+	if rowKey then
+		local nowKey
+		if button.buttonType==FRIENDS_BUTTON_TYPE_BNET then
+			nowKey=FG_BNGetFriendInfo(button.id)
+		elseif button.buttonType==FRIENDS_BUTTON_TYPE_WOW then
+			local rowInfo=FG_GetFriendInfoByIndex(button.id)
+			nowKey=rowInfo and rowInfo.name
+		end
+		if nowKey and nowKey~=rowKey then
+			SOCIALPLUS_ROWS_STALE=true
+		end
+	end
 	local height=FRIENDS_BUTTON_HEIGHTS[button.buttonType]
 	local nameText,nameColor,infoText,isFavoriteFriend
 	local hasTravelPassButton=false
@@ -3952,6 +3980,7 @@ function SocialPlus_UpdateFriends()
 	-- offset synchronously).
 	local offset=HybridScrollFrame_GetOffset(scrollFrame)
 
+	SOCIALPLUS_ROWS_STALE=false
 	for i=1,numButtons do
 		local button=buttons[i]
 		local index=offset+i
@@ -3962,6 +3991,29 @@ function SocialPlus_UpdateFriends()
 		else
 			button.index=nil
 			button:Hide()
+		end
+	end
+
+	-- A row above proved it was drawing somebody else. The rows are wrong,
+	-- not repairable in place -- their GROUP placement came from the same
+	-- stale mapping -- so the answer is the derivation that was skipped.
+	--
+	-- Forced, so it runs even in combat: the combat guard exists to skip work
+	-- that would only re-confirm what is on screen, and we have just measured
+	-- that what is on screen is wrong.
+	--
+	-- Next frame rather than here. This is called from inside the render, with
+	-- SocialPlus_InUpdateFriends set and the row loop's own state live; a
+	-- synchronous re-entry would rebuild the rows underneath it. One frame of
+	-- wrong names is the cost, against a whole fight of them before.
+	if SOCIALPLUS_ROWS_STALE then
+		SOCIALPLUS_ROWS_STALE=false
+		if not SOCIALPLUS_ROWS_REPAIRING then
+			SOCIALPLUS_ROWS_REPAIRING=true
+			C_Timer.After(0,function()
+				SOCIALPLUS_ROWS_REPAIRING=false
+				SocialPlus_Update(true)
+			end)
 		end
 	end
 
@@ -4264,6 +4316,32 @@ local function IncrementGroup(group,online)
 	end
 end
 
+-- [[ Friend-list shape: totals and online counts, as one comparable value ]]
+--
+-- A FriendButtons entry holds a LIST INDEX, and Blizzard re-sorts both friend
+-- lists when somebody logs on or off -- so an index recorded by one derivation
+-- can point at a different friend by the time anything renders it. Both
+-- deferral paths in SocialPlus_Update repaint WITHOUT re-deriving, and that is
+-- where the mismatch reaches the screen: the rows keep the group placement the
+-- old pass gave them while their names come from the new order, so friends
+-- appear under groups they are not in and the count beside a header no longer
+-- describes the names under it.
+--
+-- Reported live from combat, where the deferral holds for a whole fight rather
+-- than the single frame the coalescing path holds for.
+--
+-- Four O(1) counts. It cannot see a reorder that leaves every count identical,
+-- but a reorder comes from a login, a logout, or a friend added or removed,
+-- and each of those moves one of these numbers.
+--
+-- Global rather than a file local: this chunk is at Lua's 200-local ceiling
+-- (see the notes on the click catcher and the tooltip).
+function SocialPlus_ListShape()
+	local bnetTotal,bnetOnline=FG_BNGetNumFriends()
+	return format("%d/%d/%d/%d",bnetTotal or 0,bnetOnline or 0,
+		FG_GetNumFriends() or 0,FG_GetNumOnlineFriends() or 0)
+end
+
 -- [[ Master update: builds FriendButtons + groups ]]
     function SocialPlus_Update(forceUpdate)
 
@@ -4307,7 +4385,13 @@ end
 	-- only ever arrive through the unforced FriendsList_Update hook, so
 	-- exempting forced calls costs nothing and keeps every interaction exact.
 	local nowDataFrame=(GetTime and GetTime()) or 0
-	if not forceUpdate and SOCIALPLUS_LAST_DATA_FRAME==nowDataFrame then
+	-- ...unless the list itself moved. Coalescing assumes the rows already
+	-- built still describe the same friends, and a login landing mid-burst
+	-- breaks that for every row after it. Cheap enough to test on every
+	-- call, and it only costs a second derivation in the frame somebody
+	-- actually came online. See SocialPlus_ListShape.
+	if not forceUpdate and SOCIALPLUS_LAST_DATA_FRAME==nowDataFrame
+		and SocialPlus_ListShape()==SOCIALPLUS_LIST_SHAPE then
 		SOCIALPLUS_COALESCED_PASSES=(SOCIALPLUS_COALESCED_PASSES or 0)+1
 		if not SOCIALPLUS_DATA_CATCHUP_QUEUED then
 			SOCIALPLUS_DATA_CATCHUP_QUEUED=true
@@ -4337,7 +4421,14 @@ end
 	-- pass is still owed. Forced calls are exempt for the same reason they are
 	-- exempt from coalescing: those are somebody clicking something, and a
 	-- click has to answer even in combat.
-	if not forceUpdate and InCombatLockdown and InCombatLockdown() then
+	-- Same exception as the coalescing path above, and this is the one that
+	-- was reported: a fight lasts long enough for several friends to log on
+	-- and off, and holding the old index-to-friend mapping across that put
+	-- the wrong names under the group headers for the rest of the fight. A
+	-- friend coming online mid-pull now costs one derivation -- rare, and
+	-- the alternative is a list that is quietly wrong.
+	if not forceUpdate and InCombatLockdown and InCombatLockdown()
+		and SocialPlus_ListShape()==SOCIALPLUS_LIST_SHAPE then
 		SOCIALPLUS_DATA_DIRTY=true
 		SOCIALPLUS_COMBAT_DEFERRED=true
 		SocialPlus_UpdateFriends()
@@ -4392,6 +4483,9 @@ end
 	local numWoWTotal=FG_GetNumFriends()
 	local numWoWOnline=FG_GetNumOnlineFriends()
 	local numWoWOffline=numWoWTotal-numWoWOnline
+	-- The mapping the rows below are about to be built against. Every render
+	-- that skips this derivation checks it before trusting them.
+	SOCIALPLUS_LIST_SHAPE=SocialPlus_ListShape()
 	if QuickJoinToastButton then
 		QuickJoinToastButton:UpdateDisplayedFriendCount()
 	end
@@ -4409,6 +4503,44 @@ end
 	-- exactly the fact the derivation below wants.
 	local BNetShown={}
 
+	-- The stable identity of the friend a row was built for.
+	--
+	-- A row's .id is a LIST INDEX, and indices renumber on their own when
+	-- somebody logs on or off (see SocialPlus_ListShape). Every render that
+	-- skips the derivation is drawing from indices an older pass recorded, so
+	-- the row has to carry something that CANNOT drift for the render to
+	-- check itself against: presenceID for a Battle.net friend, the character
+	-- name for a WoW one.
+	--
+	-- Filled by the two bucketing loops below as they read each friend, so in
+	-- normal mode this costs no calls at all -- the lookup is only ever made
+	-- for a row the loops have not reached, which means search mode, where
+	-- AddButtonInfo builds the layout on its own and there are few rows.
+	--
+	-- Discarded with the pass, never a memo that outlives it -- same rule the
+	-- per-friend derivation states further down, and for the same reason.
+	local BNetKey={}
+	local WoWKey={}
+	local function RowKey(buttonType,id)
+		if buttonType==FRIENDS_BUTTON_TYPE_BNET then
+			local key=BNetKey[id]
+			if key==nil then
+				key=FG_BNGetFriendInfo(id) or false
+				BNetKey[id]=key
+			end
+			return key or nil
+		elseif buttonType==FRIENDS_BUTTON_TYPE_WOW then
+			local key=WoWKey[id]
+			if key==nil then
+				local info=FG_GetFriendInfoByIndex(id)
+				key=(info and info.name) or false
+				WoWKey[id]=key
+			end
+			return key or nil
+		end
+		return nil
+	end
+
 	local function AddButtonInfo(buttonType,id)
 		if buttonType==FRIENDS_BUTTON_TYPE_BNET then BNetShown[id]=true end
 		addButtonIndex=addButtonIndex+1
@@ -4417,6 +4549,7 @@ end
 		end
 		FriendButtons[addButtonIndex].buttonType=buttonType
 		FriendButtons[addButtonIndex].id=id
+		FriendButtons[addButtonIndex].key=RowKey(buttonType,id)
 		FriendButtons.count=addButtonIndex
 		totalButtonHeight=totalButtonHeight+FRIENDS_BUTTON_HEIGHTS[buttonType]
 	end
@@ -4665,6 +4798,9 @@ end
 		isOnline=isOnline and true or false
 
 		BNetOnlineStatus[i]=isOnline
+		-- Handed to RowKey above rather than looked up again: position 1 of
+		-- the tuple this loop already destructured.
+		BNetKey[i]=presenceID or false
 		-- The favourite key is just "BNET:"..battleTag (see
 		-- SocialPlus_GetFavoriteKey), and the tag is already in hand here.
 		-- Deriving it now saves the per-friend pass a whole BNGetFriendInfo
@@ -4737,6 +4873,7 @@ end
 		local fi=FG_GetFriendInfoByIndex(i)
 		local note=fi and fi.notes
 		local wowName=fi and fi.name
+		WoWKey[i]=wowName or false
 		-- Same cache-by-stable-identity approach as the BNet loop above --
 		-- character name, not list index.
 		local cached=wowName and SocialPlus_WoWNoteCache[wowName]
@@ -4784,6 +4921,7 @@ end
 		local fj=FG_GetFriendInfoByIndex(j)
 		local note=fj and fj.notes
 		local wowName=fj and fj.name
+		WoWKey[j]=wowName or false
 		local cached=wowName and SocialPlus_WoWNoteCache[wowName]
 		if cached and cached.rawNote==note then
 			WowSocialPlus[j]=cached.groups
@@ -5108,6 +5246,9 @@ SocialPlus_ApplyGroupOrder()
         local divider=TakeButton(index,group)
         divider.buttonType=FRIENDS_BUTTON_TYPE_DIVIDER
         divider.text=group
+        -- Rows are reused across passes and across types; a divider landing on
+        -- a slot that last held a friend must not inherit that friend's key.
+        divider.key=nil
 
         if not SocialPlus_IsCollapsedForDisplay(group) then
             -- 1) Friend invites bucket (always same behavior)
@@ -5117,6 +5258,7 @@ SocialPlus_ApplyGroupOrder()
                     local invite=TakeButton(index,group)
                     invite.buttonType=FRIENDS_BUTTON_TYPE_INVITE
                     invite.id=i
+                    invite.key=nil
                 end
             end
 
@@ -5179,6 +5321,7 @@ SocialPlus_ApplyGroupOrder()
                 local slot=TakeButton(index,group)
                 slot.buttonType=row.buttonType
                 slot.id=row.id
+                slot.key=RowKey(row.buttonType,row.id)
             end
 
             -- Offline at the bottom, unaffected by any of the above --
@@ -5206,6 +5349,7 @@ SocialPlus_ApplyGroupOrder()
                     local slot=TakeButton(index,group)
                     slot.buttonType=row.buttonType
                     slot.id=row.id
+                    slot.key=RowKey(row.buttonType,row.id)
                 end
             end
         end
