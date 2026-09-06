@@ -235,7 +235,7 @@ function SocialPlus_RepairRealmName(realmName,gameText)
 	return SocialPlus_GetRealmFromGameText(gameText) or realmName
 end
 
--- Tall enough for whatever is actually in it.
+-- Tall enough for whatever is actually in it, and no taller.
 --
 -- The height used to be a hand-kept number that every new setting had to
 -- remember to bump -- "404, not 380" in the comment that used to sit here,
@@ -243,41 +243,51 @@ end
 -- not bumped, so the notifications block and the scroll slider drew outside the
 -- panel, over the world, with no backdrop behind them.
 --
--- Measured on show rather than at build time: a hidden frame has no reliable
--- rect to read, and the panel is created hidden. Regions are measured as well
--- as children, since the section headers are font strings rather than frames.
+-- Measured over the objects the layout actually placed, NOT over the panel's
+-- children and regions at large. That was the first attempt and it could only
+-- ever grow the panel: this frame carries a backdrop, whose textures are
+-- regions of the frame spanning the whole of it, and a full-size tint frame on
+-- top of that. Both report a bottom edge equal to the panel's own, so the
+-- lowest thing found was always the panel itself and the height it computed was
+-- always the height it already had. Overflow still got fixed -- content below
+-- the backdrop does read as lower -- which is why it looked like it worked.
+-- Confirmed live by disabling ArenaPlus: the PvP block went away and left its
+-- height behind as empty panel.
 --
--- At file scope on purpose. It used to be declared at column 0 in the MIDDLE of
--- SocialPlus_CreateSettingsPanel, left there by an earlier edit -- legal Lua,
--- but it meant the global did not exist until the panel had been built once.
+-- IsVisible, not IsShown. IsShown is an object's OWN flag and stays true inside
+-- a hidden parent, so a hidden control's label would still have been measured.
 function SocialPlus_FitSettingsPanel(f)
-	if not (f and f.GetTop) then return end
+	if not (f and f.GetTop and f.SocialPlusLayout) then return end
 	local top=f:GetTop()
 	if not top then return end
 
 	local lowest=top
 	local function consider(obj)
-		if obj and obj.IsShown and obj:IsShown() and obj.GetBottom then
+		if obj and obj.IsVisible and obj:IsVisible() and obj.GetBottom then
 			local bottom=obj:GetBottom()
 			if bottom and bottom<lowest then lowest=bottom end
 		end
 	end
 
-	for _,child in ipairs({f:GetChildren()}) do
-		consider(child)
+	for _,obj in ipairs(f.SocialPlusLayout) do
+		consider(obj)
 		-- One level deeper as well.
 		--
 		-- A control's own label can hang BELOW it: the scroll slider carries its
-		-- percentage anchored under its bottom edge. Measuring only the child
-		-- stops at the slider and cuts that number off, which is what the
-		-- hand-written "+20" in the old OnShow handler existed to paper over.
-		if child.GetRegions then
-			for _,region in ipairs({child:GetRegions()}) do consider(region) end
+		-- percentage anchored under its bottom edge, with Low and High beside it.
+		-- Measuring only the control stops at the slider and cuts those off, which
+		-- is what the hand-written "+20" in the old OnShow handler papered over.
+		if obj.GetRegions then
+			for _,region in ipairs({obj:GetRegions()}) do consider(region) end
 		end
 	end
-	for _,region in ipairs({f:GetRegions()}) do consider(region) end
 
-	if lowest<top then f:SetHeight(top-lowest+14) end
+	-- 11 is the backdrop's own bottom inset (see its SetBackdrop below), so
+	-- anything closer than that to the frame edge is drawn UNDER the border
+	-- artwork rather than inside the panel -- which is where the slider's
+	-- percentage ended up sitting on the frame's bottom line. The 4 past it is
+	-- the actual margin; the measurement itself is exact.
+	if lowest<top then f:SetHeight(top-lowest+15) end
 end
 
 function SocialPlus_CreateSettingsPanel()
@@ -453,6 +463,10 @@ function SocialPlus_CreateSettingsPanel()
 	-- one flag on one block.
 	local blocks={}
 	local blocksByKey={}
+	-- Everything the layout positions, and nothing else -- this is what
+	-- SocialPlus_FitSettingsPanel measures, and why it can measure the panel
+	-- SHORTER as well as taller. See the note above that function.
+	f.SocialPlusLayout={}
 
 	local function IsCollapsed(key)
 		local saved=SocialPlus_SavedVars and SocialPlus_SavedVars.settingsCollapsed
@@ -498,6 +512,8 @@ function SocialPlus_CreateSettingsPanel()
 			Relayout()
 		end)
 
+		f.SocialPlusLayout[#f.SocialPlusLayout+1]=block.line
+		f.SocialPlusLayout[#f.SocialPlusLayout+1]=block.header
 		blocks[#blocks+1]=block
 		blocksByKey[key]=block
 		return block
@@ -514,6 +530,15 @@ function SocialPlus_CreateSettingsPanel()
 	-- pair=false keeps a control on a row of its own whatever it measures --
 	-- the scroll slider and its description, which are not tick-shaped.
 	local function AddControl(block,widget,indent,gap,cols,pair)
+		-- UICheckButtonTemplate frames are 32x32, and ten of those stacked is
+		-- most of the panel's height. The box actually drawn inside one is
+		-- smaller than its frame, so 24 loses nothing visible and takes about
+		-- eighty pixels off the panel. The bracket ticks set 20 themselves and
+		-- are already below this.
+		if widget.SetChecked and (widget:GetWidth() or 0)>24 then
+			widget:SetSize(24,24)
+		end
+		f.SocialPlusLayout[#f.SocialPlusLayout+1]=widget
 		block.widgets[#block.widgets+1]={
 			widget=widget,indent=indent,gap=gap,cols=cols,pair=pair,
 		}
@@ -606,11 +631,11 @@ function SocialPlus_CreateSettingsPanel()
 						end
 
 						anchor,point=rowFirst,"BOTTOMLEFT"
-						gap=-6
+						gap=-4
 					end
 				end
 
-				headerGap=-12
+				headerGap=-10
 			else
 				-- A hidden frame keeps its anchors, so a block that is not
 				-- available must not stay in the chain: nothing is anchored to
@@ -838,7 +863,10 @@ function SocialPlus_CreateSettingsPanel()
 	AddControl(scroll,desc,nil,nil,nil,false)
 
 	local slider=CreateFrame("Slider","SocialPlus_SettingsScrollSpeedSlider",f,"OptionsSliderTemplate")
-	slider:SetSize(f:GetWidth()-40,16)
+	-- Half the panel, not all of it. The range is 1.0 to 5.0 in tenths, and
+	-- spreading that across 460 pixels made a slider whose whole length was
+	-- travel nobody needed.
+	slider:SetSize((f:GetWidth()-28)/2,16)
 	slider:SetMinMaxValues(1.0,5.0)
 	slider:SetValueStep(0.1)
 	slider:SetObeyStepOnDrag(true)
