@@ -2804,7 +2804,7 @@ end
 -- ceiling, and this is meant to be edited.
 SocialPlus_VIP = {
 	["Dusk#12735"]     = true,
-	["gregsolo#1264"]  = true,
+	["gregsolo#1261"]  = true,
 	["Havityx#2993"]   = true,
 	["Havityx#2479"]   = true,
 }

@@ -96,6 +96,7 @@ L.SETTING_BATTLETAG          = "Show BattleTags instead of real names"
 L.SETTING_VIP = "VIP mode"
 L.SETTING_VIP_TIP = "Shows your VIP crest and title on this window."
 L.SETTING_VIP_TIP_NO = "Reserved for supporters of SocialPlus."
+L.SETTING_VIP_YOURS = "Your BattleTag: %s"
 L.SETTING_PVP_RATINGS_NEEDS  = "Requires the ArenaPlus addon, which supplies the ladder data. Install and enable it, then reload."
 L.TOOLTIP_PVP_HEADER         = "Ladder Standing"
 -- bracket, rating, rank. The rating arrives already coloured by title.

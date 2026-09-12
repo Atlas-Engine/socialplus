@@ -1,5 +1,10 @@
 ﻿# Changelog
 
+## 1.17b
+
+- The VIP mode setting now shows your own BattleTag in its tooltip, so it can be read off exactly rather than retyped from memory.
+- A correction to the VIP list.
+
 ## 1.17a
 
 - New: VIP mode. A crowned crest takes the portrait on your Friends List and a matching title sits across the top of it. Reserved for supporters, and switchable off under Display by anybody who would rather not have it.

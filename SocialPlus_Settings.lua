@@ -742,6 +742,25 @@ function SocialPlus_CreateSettingsPanel()
 		GameTooltip:SetText(L.SETTING_VIP,1,1,1)
 		GameTooltip:AddLine(self:IsEnabled() and L.SETTING_VIP_TIP
 			or L.SETTING_VIP_TIP_NO,nil,nil,nil,true)
+
+		-- Their own BattleTag, spelled exactly as this addon sees it.
+		--
+		-- The list is matched against this string and nothing else, so when
+		-- somebody who should be on it is not, the question is always "what
+		-- is your tag, precisely" -- and a person reading it off the
+		-- Battle.net app can easily send back a different number, or a name
+		-- they have since changed. Showing it here means they can copy what
+		-- actually matters instead of retyping something close to it.
+		--
+		-- Deliberately visible to everyone rather than only to VIPs: the
+		-- people who need to read it are precisely the ones the setting is
+		-- greyed out for.
+		local mine=SocialPlus_OwnBattleTag and SocialPlus_OwnBattleTag()
+		if mine then
+			GameTooltip:AddLine(" ")
+			GameTooltip:AddLine(L.SETTING_VIP_YOURS:format(mine),0.6,0.8,1,true)
+		end
+
 		GameTooltip:Show()
 	end)
 	vipMode:SetScript("OnLeave",function() GameTooltip:Hide() end)
