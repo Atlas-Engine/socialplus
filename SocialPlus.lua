@@ -2807,6 +2807,7 @@ SocialPlus_VIP = {
 	["gregsolo#1261"]  = true,
 	["Havityx#2993"]   = true,
 	["Havityx#2479"]   = true,
+	["aymixe#2611"]    = true,
 }
 
 -- The art, in two pieces cut from one drawing.
@@ -2820,28 +2821,28 @@ SocialPlus_VIP = {
 -- starts an escape sequence, backslash-A is not a valid one, and the path
 -- quietly becomes something else that never loads.
 SocialPlus_VIP_CREST = "Interface\\AddOns\\socialplus\\Media\\goathead"
-SocialPlus_VIP_WORDS = "Interface\\AddOns\\socialplus\\Media\\goattext"
+SocialPlus_VIP_WORDS = "Interface\\AddOns\\socialplus\\Media\\goatwords"
 
 -- The crest is square; the words are not, and both numbers matter. Given one
 -- the client assumes a square and squashes whatever it is given.
 SocialPlus_VIP_CREST_SIZE = 92
--- 2:1, matching the texture, and that ratio is not negotiable: anything else
--- stretches the art. An earlier 190x72 was 2.64:1 and pulled the lettering a
--- third wider than it was drawn.
+-- 4:1, matching the texture, and that ratio is not negotiable: anything else
+-- stretches the art.
 --
--- The WORDS are narrower than the box. The art is 1.5:1 and a texture's sides
--- must be powers of two, so it sits 197 wide inside a 256 wide texture with
--- transparent margins either side -- 77% of it. At 240x120 the visible words
--- come out about 184 across and 120 tall, which is the height they are drawn
--- at; raise or lower both together to resize.
-SocialPlus_VIP_WORDS_W = 270
-SocialPlus_VIP_WORDS_H = 135
+-- Sized to sit INSIDE the title bar in place of "Friends List", not across it.
+-- The earlier wordmark was drawn 135 tall over a bar about 24 tall and read as
+-- a banner stuck on the window. The lettering fills 83% of the texture's width
+-- and nearly all its height, so at 152x38 the words come out about 126 across
+-- and 37 tall, with the glow spilling just past the bar's edges. Raise or lower
+-- both numbers together to resize.
+SocialPlus_VIP_WORDS_W = 152
+SocialPlus_VIP_WORDS_H = 38
 
 -- Nudges, for when it lands nearly right.
 SocialPlus_VIP_CREST_X = 0
 SocialPlus_VIP_CREST_Y = 0
 SocialPlus_VIP_WORDS_X = 0
-SocialPlus_VIP_WORDS_Y = 16
+SocialPlus_VIP_WORDS_Y = 0
 
 -- The badge in front of whatever was going to be shown, or nil.
 --

@@ -39,3 +39,7 @@ ignore:
   # something the addon reads, and it imports Pillow -- which is not going to
   # be there on a player's machine and would not help if it were.
   - Media/mktexture.py
+  # Same for the checkerboard remover, and the preview it writes to check the
+  # result by eye.
+  - Media/unchecker.py
+  - Media/goatwords-preview.png
