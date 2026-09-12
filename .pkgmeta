@@ -35,3 +35,7 @@ ignore:
   # its SocialPlus.toc entry is wrapped in @do-not-package@ to match, so the
   # packaged .toc doesn't reference a file that isn't in the package.
   - SocialPlusSim.lua
+  # Converts art into the .tga the client can load. A build-time tool, not
+  # something the addon reads, and it imports Pillow -- which is not going to
+  # be there on a player's machine and would not help if it were.
+  - Media/mktexture.py

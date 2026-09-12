@@ -1,5 +1,9 @@
 ﻿# Changelog
 
+## 1.17a
+
+- New: VIP mode. A crowned crest takes the portrait on your Friends List and a matching title sits across the top of it. Reserved for supporters, and switchable off under Display by anybody who would rather not have it.
+
 ## 1.16d
 
 - The settings panel is reorganised into Display, PvP, Notifications and Scroll speed sections, each of which can be collapsed and stays that way. It is wider and much shorter, fits two settings to a row where they fit, and no longer leaves empty space below the last one when a section is hidden.

@@ -89,7 +89,13 @@ L.SETTING_SCROLL_SPEED_DESC  = "Adjust the scroll speed for the friends list."
 L.SETTING_PVP_RATINGS        = "Show PvP ratings in tooltips (needs ArenaPlus)"
 L.SETTING_PVP_SPEC_ICON      = "Show spec icon in tooltips (needs ArenaPlus)"
 L.SETTING_REGION_FLAG        = "Show a region flag beside friend names"
-L.SETTING_BATTLETAG          = "Show BattleTags instead of real names"
+L.SETTING_BATTLETAG          = "Show BattleTags instead of real names"
+-- Shown to everyone, usable only by those on the VIP list. Greyed rather than
+-- hidden: a setting that vanishes for most people is a setting nobody knows
+-- exists, and the point of the thing is that it is visibly a perk.
+L.SETTING_VIP = "VIP mode"
+L.SETTING_VIP_TIP = "Shows your VIP crest and title on this window."
+L.SETTING_VIP_TIP_NO = "Reserved for supporters of SocialPlus."
 L.SETTING_PVP_RATINGS_NEEDS  = "Requires the ArenaPlus addon, which supplies the ladder data. Install and enable it, then reload."
 L.TOOLTIP_PVP_HEADER         = "Ladder Standing"
 -- bracket, rating, rank. The rating arrives already coloured by title.

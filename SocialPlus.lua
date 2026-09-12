@@ -2791,6 +2791,118 @@ end
 
 
 -- [[ Core per-row button update ]]
+-- Who is a VIP.
+--
+-- A plain set of BattleTags: the whole tag, including the number, because
+-- the name half is not unique and the number is what makes it one account.
+-- Add a line per person; anybody not listed sees the window unchanged.
+--
+-- Two entries can share a name and differ only by number -- there are two
+-- Havityx below -- which is the whole reason the number is part of the key.
+--
+-- Global rather than a file local: this chunk is at Lua's 200-locals
+-- ceiling, and this is meant to be edited.
+SocialPlus_VIP = {
+	["Dusk#12735"]     = true,
+	["gregsolo#1264"]  = true,
+	["Havityx#2993"]   = true,
+	["Havityx#2479"]   = true,
+}
+
+-- The art, in two pieces cut from one drawing.
+--
+-- Two, because they go in two places: the crest replaces the portrait in the
+-- corner of the Friends List and the words sit across its title bar. That is
+-- the only part of this window with room for them -- beside the BattleTag
+-- there is barely fifty points, and less the longer somebody's name is.
+--
+-- Doubled backslashes, as every texture path in Lua needs: a single one
+-- starts an escape sequence, backslash-A is not a valid one, and the path
+-- quietly becomes something else that never loads.
+SocialPlus_VIP_CREST = "Interface\\AddOns\\socialplus\\Media\\goathead"
+SocialPlus_VIP_WORDS = "Interface\\AddOns\\socialplus\\Media\\goattext"
+
+-- The crest is square; the words are not, and both numbers matter. Given one
+-- the client assumes a square and squashes whatever it is given.
+SocialPlus_VIP_CREST_SIZE = 92
+-- 2:1, matching the texture, and that ratio is not negotiable: anything else
+-- stretches the art. An earlier 190x72 was 2.64:1 and pulled the lettering a
+-- third wider than it was drawn.
+--
+-- The WORDS are narrower than the box. The art is 1.5:1 and a texture's sides
+-- must be powers of two, so it sits 197 wide inside a 256 wide texture with
+-- transparent margins either side -- 77% of it. At 240x120 the visible words
+-- come out about 184 across and 120 tall, which is the height they are drawn
+-- at; raise or lower both together to resize.
+SocialPlus_VIP_WORDS_W = 270
+SocialPlus_VIP_WORDS_H = 135
+
+-- Nudges, for when it lands nearly right.
+SocialPlus_VIP_CREST_X = 0
+SocialPlus_VIP_CREST_Y = 0
+SocialPlus_VIP_WORDS_X = 0
+SocialPlus_VIP_WORDS_Y = 16
+
+-- The badge in front of whatever was going to be shown, or nil.
+--
+-- The text is handed straight back untouched. A BattleTag is the account's
+-- own name and replacing it loses the half that identifies it.
+-- Whether a tag is on the list, without caring about capitals.
+--
+-- A bare table lookup is exact, so "dusk#12735" in the list would never
+-- match the "Dusk#12735" the client reports -- and the symptom is nothing
+-- happening, which is indistinguishable from every other way this can fail.
+-- For a list typed out by hand from what people send you, that is a trap
+-- worth closing once rather than debugging per person.
+--
+-- The index is built on first use and kept. Editing the list means editing
+-- this file, which means a reload, which rebuilds it.
+-- This account's BattleTag, or nil.
+--
+-- Found by shape -- something, a hash, digits -- rather than by counting:
+-- BNGetInfo's return list has changed between game versions, and reading
+-- position two on a build that moved it would quietly find nobody.
+-- select() rather than a table, because a nil anywhere in the middle would
+-- stop ipairs before reaching the rest.
+function SocialPlus_OwnBattleTag()
+	local function Look(...)
+		for index=1,select("#",...) do
+			local value=select(index,...)
+			if type(value)=="string" and value:match("^[^#]+#%d+$") then
+				return value
+			end
+		end
+	end
+	return Look(FG_BNGetInfo())
+end
+
+-- Whether VIP decoration should be drawn for this tag.
+--
+-- Two questions in one: is this account on the list, and has the person
+-- switched the decoration off. The switch is theirs to set and lives in the
+-- settings panel, greyed out for anybody the first question answers no for.
+--
+-- Absent means on. A VIP who has never opened the settings should see the
+-- thing rather than have to go and find it.
+function SocialPlus_VIPEnabled()
+	local sv=SocialPlus_SavedVars
+	return not (sv and sv.vip_mode==false)
+end
+
+function SocialPlus_IsVIP(battleTag)
+	if not battleTag then return false end
+	if SocialPlus_VIP[battleTag] then return true end
+
+	if not SocialPlus_VIP_INDEX then
+		SocialPlus_VIP_INDEX={}
+		for tag in pairs(SocialPlus_VIP) do
+			SocialPlus_VIP_INDEX[tag:lower()]=true
+		end
+	end
+
+	return SocialPlus_VIP_INDEX[battleTag:lower()] and true or false
+end
+
 local function SocialPlus_UpdateFriendButton(button)
 	local index=button.index
 	button.buttonType=FriendButtons[index].buttonType
@@ -4342,6 +4454,137 @@ function SocialPlus_ListShape()
 		FG_GetNumFriends() or 0,FG_GetNumOnlineFriends() or 0)
 end
 
+-- Your own badge, across the top of the Friends List.
+--
+-- The crest takes the portrait in the corner and the words take the title
+-- bar. Nothing here touches the BattleTag: an earlier version put the art
+-- beside it and there is no room there -- the tag sits centred and grows
+-- both ways, so the gap shrinks as a name lengthens, and a banner big enough
+-- to read climbed over Blizzard's status dropdown.
+--
+-- The widget names are not certain across builds, so each is looked up from
+-- a short list and the whole thing gives up quietly if neither is found.
+-- /spbadge reports what it actually saw.
+function SocialPlus_VIPWidget(...)
+	for index=1,select("#",...) do
+		local found=_G[select(index,...)]
+		if found then return found,select(index,...) end
+	end
+end
+
+function SocialPlus_ApplyOwnVIP()
+	local frame=FriendsFrame
+	if not frame then return end
+
+	local tag=SocialPlus_OwnBattleTag()
+	local wanted=SocialPlus_IsVIP(tag) and SocialPlus_VIPEnabled()
+
+	local portrait=SocialPlus_VIPWidget("FriendsFramePortrait",
+		"FriendsFrameIcon","FriendsFramePortraitFrame")
+	local title=SocialPlus_VIPWidget("FriendsFrameTitleText")
+
+	-- A holder frame, not textures on FriendsFrame itself.
+	--
+	-- Draw layers only order things WITHIN one frame. The BattleTag bar is a
+	-- CHILD of FriendsFrame, so its artwork sits above everything the parent
+	-- draws no matter which layer that is -- which is why the bottom of the
+	-- wordmark was disappearing behind the bar rather than being clipped.
+	--
+	-- Twenty levels clear of the frame, so Blizzard adding another child
+	-- between them does not put us back underneath.
+	--
+	-- No EnableMouse: this covers the header and would otherwise swallow
+	-- clicks on the status dropdown and the settings cog beneath it.
+	if not frame.SocialPlusVIPHolder then
+		local holder=CreateFrame("Frame",nil,frame)
+		holder:SetAllPoints(frame)
+		holder:SetFrameLevel(frame:GetFrameLevel()+20)
+		frame.SocialPlusVIPHolder=holder
+		frame.SocialPlusCrest=holder:CreateTexture(nil,"OVERLAY",nil,7)
+		frame.SocialPlusWords=holder:CreateTexture(nil,"OVERLAY",nil,7)
+	end
+
+	local crest,words=frame.SocialPlusCrest,frame.SocialPlusWords
+
+	if not wanted then
+		crest:Hide()
+		words:Hide()
+		-- Put Blizzard's own title back, but only if we are the ones who
+		-- took it away. Showing a FontString nothing hid is harmless; it is
+		-- the bookkeeping that is worth not guessing at.
+		if title and frame.SocialPlusTookTitle then
+			title:Show()
+			frame.SocialPlusTookTitle=nil
+		end
+		return
+	end
+
+	-- Over the portrait, centred on it, a little larger so the glow reads
+	-- as deliberate rather than as a texture that did not quite fit.
+	if portrait then
+		crest:SetTexture(SocialPlus_VIP_CREST)
+		crest:SetSize(SocialPlus_VIP_CREST_SIZE,SocialPlus_VIP_CREST_SIZE)
+		crest:ClearAllPoints()
+		crest:SetPoint("CENTER",portrait,"CENTER",
+			SocialPlus_VIP_CREST_X,SocialPlus_VIP_CREST_Y)
+		crest:Show()
+	else
+		crest:Hide()
+	end
+
+	-- The words where the title was, and the title itself hidden -- two sets
+	-- of letters in the same place is a mess, and the art already says it.
+	if title then
+		words:SetTexture(SocialPlus_VIP_WORDS)
+		words:SetSize(SocialPlus_VIP_WORDS_W,SocialPlus_VIP_WORDS_H)
+		words:ClearAllPoints()
+		words:SetPoint("CENTER",title,"CENTER",
+			SocialPlus_VIP_WORDS_X,SocialPlus_VIP_WORDS_Y)
+		words:Show()
+		title:Hide()
+		frame.SocialPlusTookTitle=true
+	else
+		words:Hide()
+	end
+end
+
+--@do-not-package@
+-- Everything to the end marker is stripped out of a packaged build.
+--
+-- A diagnostic worth keeping while developing and not worth shipping: it adds
+-- a public slash command to every player's client to answer a question only
+-- this machine ever asks. Same treatment SocialPlusSim.lua already gets, and
+-- the packager honours these markers inside a .lua as well as in the .toc.
+-- Says what the badge can and cannot see, because none of it can be checked
+-- from outside the game and "nothing happened" is the same symptom for a
+-- tag that is not listed, a widget under another name, and a texture that
+-- failed to load.
+SLASH_SOCIALPLUSVIP1 = "/spvip"
+SlashCmdList["SOCIALPLUSVIP"] = function()
+	local function Say(text) DEFAULT_CHAT_FRAME:AddMessage("|cff7ac0ffSocialPlus|r "..text) end
+
+	local tag=SocialPlus_OwnBattleTag()
+	Say("your tag: "..tostring(tag))
+	Say("VIP: "..tostring(SocialPlus_IsVIP(tag))
+		.."   mode on: "..tostring(SocialPlus_VIPEnabled()))
+
+	local _,portraitName=SocialPlus_VIPWidget("FriendsFramePortrait",
+		"FriendsFrameIcon","FriendsFramePortraitFrame")
+	local _,titleName=SocialPlus_VIPWidget("FriendsFrameTitleText")
+	Say("portrait widget: "..tostring(portraitName))
+	Say("title widget: "..tostring(titleName))
+
+	local frame=FriendsFrame
+	if frame and frame.SocialPlusCrest then
+		Say(("crest shown: %s  words shown: %s"):format(
+			tostring(frame.SocialPlusCrest:IsShown()),
+			tostring(frame.SocialPlusWords:IsShown())))
+	else
+		Say("textures not created yet -- open the Friends List first")
+	end
+end
+--@end-do-not-package@
+
 -- [[ Master update: builds FriendButtons + groups ]]
     function SocialPlus_Update(forceUpdate)
 
@@ -4357,6 +4600,9 @@ end
 			if tabID and tabID~=1 then return end
 		end
 	end
+
+	-- Your own badge across the top, which the per-row code never sees.
+	SocialPlus_ApplyOwnVIP()
 
 	-- At most one full per-friend derivation per frame.
 	--

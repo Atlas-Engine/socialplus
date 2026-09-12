@@ -721,6 +721,32 @@ function SocialPlus_CreateSettingsPanel()
 	end)
 	AddControl(display,battleTag)
 
+	-- VIP mode, shown to everyone and usable only by those on the list.
+	--
+	-- Greyed rather than hidden. A setting that disappears for most people
+	-- is a setting nobody knows exists, and half the point of this one is
+	-- that it is visibly a perk -- the other half is letting a VIP who
+	-- would rather not have a goat on their window turn it off.
+	local vipMode=CreateFrame("CheckButton","SocialPlus_VIPModeCheck",f,"UICheckButtonTemplate")
+	_G[vipMode:GetName().."Text"]:SetText(L.SETTING_VIP)
+	vipMode:SetScript("OnClick",function(self)
+		-- Stored as a real false rather than by absence, because absence
+		-- means "never touched it" and that has to read as ON: a VIP who
+		-- has not opened this panel should see the thing.
+		SocialPlus_SavedVars.vip_mode=self:GetChecked() and true or false
+		if SocialPlus_ApplyOwnVIP then SocialPlus_ApplyOwnVIP() end
+		SocialPlus_Update()
+	end)
+	vipMode:SetScript("OnEnter",function(self)
+		GameTooltip:SetOwner(self,"ANCHOR_RIGHT")
+		GameTooltip:SetText(L.SETTING_VIP,1,1,1)
+		GameTooltip:AddLine(self:IsEnabled() and L.SETTING_VIP_TIP
+			or L.SETTING_VIP_TIP_NO,nil,nil,nil,true)
+		GameTooltip:Show()
+	end)
+	vipMode:SetScript("OnLeave",function() GameTooltip:Hide() end)
+	AddControl(display,vipMode)
+
 	----------------------------------------------------------------------
 	-- PvP -- present only while ArenaPlus is there to answer
 	----------------------------------------------------------------------
@@ -959,6 +985,21 @@ function SocialPlus_CreateSettingsPanel()
 		prioritizeCurrent:SetChecked(sv and sv.prioritize_current_client)
 		regionFlag:SetChecked(sv and sv.region_flag)
 		battleTag:SetChecked(sv and sv.show_battletag)
+
+		-- Ticked unless it has been deliberately turned off, and usable
+		-- only by a VIP. Never written to from here: reading a setting
+		-- must not change it, and greying the box must not silently
+		-- switch anything for somebody who is not on the list.
+		vipMode:SetChecked(not (sv and sv.vip_mode==false))
+		local amVIP=SocialPlus_IsVIP and SocialPlus_OwnBattleTag
+			and SocialPlus_IsVIP(SocialPlus_OwnBattleTag())
+		if amVIP then
+			vipMode:Enable()
+			_G[vipMode:GetName().."Text"]:SetTextColor(NORMAL_FONT_COLOR:GetRGB())
+		else
+			vipMode:Disable()
+			_G[vipMode:GetName().."Text"]:SetTextColor(GRAY_FONT_COLOR:GetRGB())
+		end
 
 		pvpRatings:SetChecked(sv and sv.pvp_ratings)
 		specIcon:SetChecked(sv and sv.pvp_spec_icon)
