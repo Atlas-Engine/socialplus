@@ -1,0 +1,197 @@
+name: Publish release
+
+# Cuts a release from CHANGELOG.md whenever a new version section lands on main.
+#
+# Why it is NOT triggered by pushing a tag: CurseForge builds its file the
+# moment a tag appears and generates its own changelog from the git log. A
+# workflow reacting to that same tag publishes the Release seconds later --
+# always too late, and CurseForge never re-reads it. Creating the tag and the
+# Release together via `gh release create` closes that window, so the tag
+# CurseForge sees already has proper notes attached.
+#
+# Nothing here talks to CurseForge; its existing GitHub integration does the
+# rest, so no API key or secret is involved.
+on:
+  # Manual re-run, for redoing a release after its tag has been deleted.
+  # The path filter below only applies to push, so this needs no changelog edit.
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - CHANGELOG.md
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # Tags are needed to tell an already-released version from a new one.
+          fetch-depth: 0
+
+      - name: Work out whether there is a new version to release
+        id: check
+        run: |
+          set -euo pipefail
+
+          # Topmost "## <version>" heading is the version being released.
+          VERSION="$(grep -m1 '^## ' CHANGELOG.md | sed -e 's/^## //' -e 's/[[:space:]]*$//')"
+          if [ -z "${VERSION}" ]; then
+            echo "No '## <version>' heading found in CHANGELOG.md" >&2
+            exit 1
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+          # Already released: this push changed the changelog for some other
+          # reason (a typo fix, an older entry). Nothing to do -- and skipping
+          # rather than failing keeps such edits from showing as red builds.
+          if git rev-parse -q --verify "refs/tags/${VERSION}" >/dev/null; then
+            echo "Tag ${VERSION} already exists -- nothing to release."
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build release notes
+        if: steps.check.outputs.release == 'true'
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.check.outputs.version }}"
+
+          # This version's section only: everything after its heading, up to
+          # the next "## ".
+          awk -v want="## ${VERSION}" '
+            $0 == want { grab = 1; next }
+            grab && /^## / { exit }
+            grab { print }
+          ' CHANGELOG.md > section.md
+
+          if [ ! -s section.md ]; then
+            echo "No '## ${VERSION}' section found in CHANGELOG.md" >&2
+            exit 1
+          fi
+
+          # Plain text, deliberately NOT Markdown. CurseForge shows these notes
+          # unrendered: a "[text](url)" link displays as literal syntax and a
+          # "---" rule as three dashes. A bare URL auto-links on both CurseForge
+          # and GitHub, so this reads correctly in both places.
+          {
+            sed -e '/./,$!d' section.md
+            printf '\nView all changelogs: https://github.com/%s/blob/main/CHANGELOG.md\n' "${GITHUB_REPOSITORY}"
+          } > notes.md
+
+          echo "--- release notes ---"
+          cat notes.md
+
+      - name: Commit the single-version changelog CurseForge will use
+        id: notescommit
+        if: steps.check.outputs.release == 'true'
+        run: |
+          set -euo pipefail
+          # CurseForge does NOT read the GitHub Release body -- it generates its
+          # own changelog from the commits between tags. .pkgmeta manual-changelog
+          # overrides that, but it points at a FILE in the repo, so the file has
+          # to exist at the tagged commit. Writing just this version keeps
+          # CurseForge showing the release entries, not history or commit noise.
+          cp notes.md CHANGELOG-RELEASE.md
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG-RELEASE.md
+          if git diff --cached --quiet; then
+            echo "CHANGELOG-RELEASE.md already current."
+          else
+            # Only this file: touching CHANGELOG.md would re-trigger the workflow.
+            git commit -m "Update release changelog for ${{ steps.check.outputs.version }}"
+            git push origin HEAD:main
+          fi
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Create tag and release together
+        if: steps.check.outputs.release == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.check.outputs.version }}"
+
+          # --target creates the tag at this commit as part of publishing, so a
+          # tag never exists on its own. That ordering is the entire point.
+          # Tag the changelog commit, not the pushed one: the tagged commit must
+          # contain CHANGELOG-RELEASE.md or CurseForge builds without it.
+          TARGET="${{ steps.notescommit.outputs.sha }}"
+          if [ -z "${TARGET}" ]; then TARGET="${GITHUB_SHA}"; fi
+          gh release create "${VERSION}" \
+            --target "${TARGET}" \
+            --title "${VERSION}" \
+            --notes-file notes.md
+
+      - name: Announce it in Discord
+        # Optional, and silently skipped when no webhook is configured: the
+        # release itself must never fail because an announcement could not be
+        # sent. Add DISCORD_WEBHOOK under Settings -> Secrets and variables ->
+        # Actions to turn it on.
+        #
+        # The secret is a Discord webhook URL, which is a password: anybody
+        # holding it can post into that channel as the app. It lives in GitHub's
+        # secret store and nowhere else -- never in the repository, never in a
+        # log. Nothing below echoes it.
+        #
+        # Linked to the CurseForge PROJECT rather than to the new file, and that
+        # is deliberate. CurseForge builds from the tag asynchronously, so at the
+        # moment this runs the file usually does not exist yet -- a direct file
+        # link would 404 for the first minute or two. The project page always
+        # resolves and always shows the newest file.
+        #
+        # By id, not by slug: the id is in the .toc, so there is nothing here to
+        # guess or to keep in step with a rename.
+        #
+        # jq builds the JSON. The notes contain quotes, apostrophes, em-dashes
+        # and newlines -- every one of which breaks a hand-assembled payload --
+        # and --rawfile hands the file to jq without the shell touching it.
+        if: ${{ steps.check.outputs.release == 'true' }}
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+        run: |
+          set -euo pipefail
+          if [ -z "${DISCORD_WEBHOOK:-}" ]; then
+            echo "No DISCORD_WEBHOOK secret; nothing announced."
+            exit 0
+          fi
+
+          VERSION="${{ steps.check.outputs.version }}"
+          PROJECT="https://www.curseforge.com/projects/1396027"
+
+          # Discord caps an embed description at 4096 characters. Truncated on a
+          # character count rather than a line count, because one long bullet is
+          # as capable of overflowing it as thirty short ones.
+          # The BOM goes first. CHANGELOG-RELEASE.md is written UTF-8 with one,
+          # and left in place it becomes the first character of the embed --
+          # invisible, but it is the sort of thing that shows up later as a
+          # stray glyph in something that renders more strictly than Discord.
+          sed -i '1s/^ï»¿//' notes.md
+
+          head -c 3900 notes.md > body.md
+          if [ "$(wc -c < notes.md)" -gt 3900 ]; then
+            echo "" >> body.md
+            echo "..." >> body.md
+          fi
+
+          jq -n \
+            --arg title "SocialPlus ${{ steps.check.outputs.version }}" \
+            --arg url "${PROJECT}" \
+            --rawfile body body.md \
+            '{embeds: [{title: $title, url: $url, description: $body, color: 10181046}]}' \
+            > payload.json
+
+          # --fail so a rejected post is a failed step rather than a silent one.
+          # The webhook goes in as a variable and is never printed.
+          curl --fail --silent --show-error \
+            -H "Content-Type: application/json" \
+            -d @payload.json \
+            "${DISCORD_WEBHOOK}"
+
+          echo "Announced ${VERSION}."
