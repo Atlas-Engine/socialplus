@@ -1,5 +1,4 @@
 ﻿local ADDON_NAME, ns = ...
-local L = ns.L
 
 -- Taken off ns and aliased back to locals, so the handler below reads exactly
 -- as it did in SocialPlus.lua and pays an upvalue rather than a table lookup on
@@ -22,7 +21,6 @@ local SocialPlus_QueueFriendScan = ns.SocialPlus_QueueFriendScan
 local SocialPlus_QueueNotifyCheck = ns.SocialPlus_QueueNotifyCheck
 local SocialPlus_ScheduleCollapseSettle = ns.SocialPlus_ScheduleCollapseSettle
 local SocialPlus_UpdateFriends = ns.SocialPlus_UpdateFriends
-local GetFriendInfoById = ns.GetFriendInfoById
 
 -- The event dispatcher, lifted out of SocialPlus.lua unchanged.
 --
@@ -106,7 +104,7 @@ frame:SetScript("OnEvent",function(self,event,...)
 
 		FG_InitFactionIcon()
 
-		Hook("FriendsList_Update",SocialPlus_Update,true)
+		Hook("FriendsList_Update",SocialPlus_Update)
 
 		-- The two spammy events come off Blizzard's own frame, and this addon
 		-- drives them instead.
@@ -330,9 +328,7 @@ frame:SetScript("OnEvent",function(self,event,...)
 		-- whole list on each is what made the members appear to move across one
 		-- by one. SocialPlus_BeginBulkNotes redraws once the notes have all read
 		-- back, which is the only point at which the list is actually right.
-		if SocialPlus_BulkNotesActive() then
-			SocialPlus_BulkNotesSaw()
-		elseif SOCIALPLUS_DRIVING_REFRESH then
+		if SOCIALPLUS_DRIVING_REFRESH and not SocialPlus_BulkNotesActive() then
 			SocialPlus_RequestListRefresh()
 		end
 	elseif event=="CHAT_MSG_ADDON" then

@@ -27,6 +27,7 @@ Forget "X has come online":
 - Collapse/expand individually or all at once, with online/total counters
 - Group-wide actions on the header: **invite everyone**, rename, delete, mute
 - In-game (character) friends automatically get their own **In-game Friends** section — tag or favorite one and they move out on their own
+- **Snipe mode** lifts that section to sit directly under Favorites, above every group you made — a character friend needs nobody's acceptance, so it is where the names you are watching for the queue live, and they become the first thing you see
 
 ### 📬 Friend requests
 Pending Battle.net requests show up as their own section right in the list — accept or decline with one click, no digging through toasts. And if a request is broken on Blizzard's end, SocialPlus tells you instead of ignoring the click.
@@ -62,7 +63,7 @@ Class colors, faction crests, consistent game icons, a note indicator at a glanc
 English, French, and Spanish — follows your client automatically.
 
 ## Settings
-Cogwheel next to your Battle.net tag: hide offline friends, class colors, scroll speed, region flags, BattleTags instead of real names, which brackets the PvP block lists, and full notification controls (master, offline lines, same-version only, notification sound). Shows the installed version in the corner.
+Cogwheel next to your Battle.net tag: hide offline friends, class colors, scroll speed, region flags, BattleTags instead of real names, snipe mode, the VIP crest and title (supporters only), which brackets the PvP block lists, and full notification controls (master, offline lines, same-version only, notification sound). Shows the installed version in the corner.
 
 > 💡 **Tip:** the default **General** group starts muted. Unmute it from its header if you want notifications for ungrouped friends too.
 
