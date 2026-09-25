@@ -4215,7 +4215,13 @@ local function FillGroups(groups,note,...)
 			-- tag that was nothing but pipes) must not collide with the same
 			-- "" sentinel used for "no tags at all" below.
 			v=v:gsub("|","")
-			if v~="" then
+			-- Recently Added's internal name is not a group either, whatever a
+			-- note says: until 1.18a the group menu could offer it as a
+			-- destination and write it into the note, and a friend filed under
+			-- it that way stayed there with nothing to clear it. Skipped on the
+			-- way in, so the tag falls out of the note the next time the note
+			-- is written from the groups.
+			if v~="" and v~=SocialPlus_RECENT_GROUP then
 				groups[v]=true
 				added=true
 			end
@@ -6076,9 +6082,9 @@ StaticPopupDialogs["SocialPlus_COPY_NAME"]={
 
 local function InviteOrGroup(clickedgroup,invite)
 	-- Extra safety: never run bulk ops on the implicit [no group] bucket
-	-- or the synthetic In-game Friends bucket (its menu never opens, but
-	-- guard anyway -- deleting it would try to rewrite notes that hold no
-	-- such tag)
+	-- or the synthetic In-game Friends and Recently Added buckets (their
+	-- menus never open, but guard anyway -- deleting one would try to
+	-- rewrite notes that hold no such tag)
 	if not clickedgroup or clickedgroup=="" or clickedgroup==SP_INGAME_GROUP
 		or clickedgroup==SocialPlus_RECENT_GROUP then
 		return
