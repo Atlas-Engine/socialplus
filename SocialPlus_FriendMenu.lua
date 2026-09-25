@@ -112,11 +112,11 @@ SocialPlus_FriendMenu.initialize=function(self,level)
 			local kind,index=SocialPlus_GetDropdownFriend()
 			if kind~="BNET" or not index or not BNGetFriendInfo then return end
 
-			-- MoP-style BNGetFriendInfo:
-			-- presenceID = t[1], bnetIDAccount = last value
-			local t={BNGetFriendInfo(index)}
-			local presenceID=t[1]
-			local bnetIDAccount=t[#t]
+			-- On this client the presence id IS the Battle.net account id, and
+			-- it is the first return. The last return used to be read for it,
+			-- which on a list with holes is whatever # happens to answer.
+			local presenceID=BNGetFriendInfo(index)
+			local bnetIDAccount=presenceID
 
 			if not presenceID then return end
 
@@ -360,9 +360,7 @@ SocialPlus_FriendMenu.initialize=function(self,level)
 
 	elseif level==2 then
 		if L_UIDROPDOWNMENU_MENU_VALUE=="SocialPlus_ADD_SUB" then
-			SocialPlus_BuildGroupSubmenu("ADD",level)
-		elseif L_UIDROPDOWNMENU_MENU_VALUE=="SocialPlus_DEL_SUB" then
-			SocialPlus_BuildGroupSubmenu("DEL",level)
+			SocialPlus_BuildGroupSubmenu(level)
 		elseif L_UIDROPDOWNMENU_MENU_VALUE=="SocialPlus_INVITE_SUB" then
 			SocialPlus_BuildInviteAccountSubmenu(level)
 		end

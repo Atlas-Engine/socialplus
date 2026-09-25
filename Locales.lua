@@ -73,7 +73,6 @@ L.GROUP_BULK_WRITING      = "Updating %d friends. Battle.net applies these one a
 L.GROUP_BULK_DONE         = "%d of %d saved."
 L.GROUP_SETTINGS          = "SocialPlus Settings"
 L.GROUP_NO_GROUPS         = "No groups available"
-L.GROUP_NO_GROUPS_REMOVE  = "No groups to remove"
 L.GROUP_MUTE_NOTIFICATIONS = "Mute Notifications"
 
 ----------------------------------------------------------------
@@ -84,6 +83,11 @@ L.SETTING_SHOW_LEVEL         = "Display friends levels"
 L.SETTING_COLOR_NAMES        = "Color names by class"
 L.SETTING_PRIORITIZE_PREFIX  = "Show "
 L.SETTING_PRIORITIZE_SUFFIX  = " friends first"
+-- Character friends need no acceptance, so the In-game Friends section is
+-- where a player keeps the names they are watching for a queue. This lifts it
+-- to the top, under Favorites.
+L.SETTING_SNIPE              = "Snipe mode"
+L.SETTING_SNIPE_TIP          = "Puts In-game Friends directly under Favorites, above every other group. Character friends need no acceptance, so this is where the names you are watching for a queue sit -- and they become the first thing you see."
 L.SETTING_SCROLL_SPEED       = "Scroll speed"
 L.SETTING_SCROLL_SPEED_DESC  = "Adjust the scroll speed for the friends list."
 L.SETTING_PVP_RATINGS        = "Show PvP ratings in tooltips (needs ArenaPlus)"
@@ -93,8 +97,12 @@ L.SETTING_BATTLETAG          = "Show BattleTags instead of real names"
 -- Shown to everyone, usable only by those on the VIP list. Greyed rather than
 -- hidden: a setting that vanishes for most people is a setting nobody knows
 -- exists, and the point of the thing is that it is visibly a perk.
-L.SETTING_VIP = "VIP mode"
-L.SETTING_VIP_TIP = "Shows your VIP crest and title on this window."
+-- Two pieces of art, two switches: the crest over the portrait and the
+-- wordmark in the title bar.
+L.SETTING_VIP_CREST = "VIP crest"
+L.SETTING_VIP_CREST_TIP = "Shows the VIP goat crest over the portrait in the corner of your Friends List."
+L.SETTING_VIP_TITLE = "VIP title"
+L.SETTING_VIP_TITLE_TIP = "Shows the VIP goat title in the Friends List title bar, in place of its name."
 L.SETTING_VIP_TIP_NO = "Reserved for supporters of SocialPlus."
 L.SETTING_VIP_YOURS = "Your BattleTag: %s"
 L.SETTING_PVP_RATINGS_NEEDS  = "Requires the ArenaPlus addon, which supplies the ladder data. Install and enable it, then reload."
@@ -197,6 +205,8 @@ if locale == "frFR" then
     L.GROUP_UNGROUPED         = "Général"
     L.GROUP_FAVORITES         = "Favoris"
     L.GROUP_INGAME            = "Amis en jeu"
+    L.GROUP_RECENT            = "Ajoutés récemment"
+    L.GROUP_RECENT_CLEAR      = "Vider la liste des ajouts récents"
 
     ----------------------------------------------------------------
     -- Group menu (header right-click)
@@ -208,7 +218,6 @@ if locale == "frFR" then
     L.GROUP_BULK_DONE         = "%d sur %d enregistres."
     L.GROUP_SETTINGS          = "Paramètres SocialPlus"
     L.GROUP_NO_GROUPS         = "Aucun groupe disponible"
-    L.GROUP_NO_GROUPS_REMOVE  = "Aucun groupe à retirer"
     L.GROUP_MUTE_NOTIFICATIONS = "Couper les notifications"
 
     ----------------------------------------------------------------
@@ -219,6 +228,8 @@ if locale == "frFR" then
     L.SETTING_COLOR_NAMES        = "Colorer les noms selon la classe"
     L.SETTING_PRIORITIZE_PREFIX  = "Afficher les amis "
     L.SETTING_PRIORITIZE_SUFFIX  = " en premier"
+    L.SETTING_SNIPE              = "Mode snipe"
+    L.SETTING_SNIPE_TIP          = "Place les Amis en jeu juste sous les Favoris, au-dessus de tous les autres groupes. Un ami de personnage n'a pas besoin d'accepter, c'est donc là que se trouvent les noms que vous guettez pour la file d'attente -- et ils deviennent la première chose que vous voyez."
     L.SETTING_SCROLL_SPEED       = "Vitesse de défilement"
     L.SETTING_SCROLL_SPEED_DESC  = "Ajuste la vitesse de défilement de la liste d’amis."
     L.SETTING_SECTION_DISPLAY    = "Affichage"
@@ -226,8 +237,14 @@ if locale == "frFR" then
     L.SETTING_SECTION_NOTIFICATIONS = "Notifications"
     L.SETTING_PVP_RATINGS        = "Afficher les cotes JcJ dans les infobulles (nécessite ArenaPlus)"
     L.SETTING_PVP_SPEC_ICON      = "Afficher l'icône de spécialisation dans les infobulles (nécessite ArenaPlus)"
-L.SETTING_REGION_FLAG        = "Afficher le drapeau de la région à côté des noms"
+    L.SETTING_REGION_FLAG        = "Afficher le drapeau de la région à côté des noms"
     L.SETTING_BATTLETAG          = "Afficher les BattleTags au lieu des vrais noms"
+    L.SETTING_VIP_CREST          = "Blason VIP"
+    L.SETTING_VIP_CREST_TIP      = "Affiche le blason VIP (la chèvre) par-dessus le portrait, dans le coin de votre liste d'amis."
+    L.SETTING_VIP_TITLE          = "Titre VIP"
+    L.SETTING_VIP_TITLE_TIP      = "Affiche le titre VIP (la chèvre) dans la barre de titre de la liste d'amis, à la place de son nom."
+    L.SETTING_VIP_TIP_NO         = "Réservé aux soutiens de SocialPlus."
+    L.SETTING_VIP_YOURS          = "Votre BattleTag : %s"
     L.SETTING_PVP_RATINGS_NEEDS  = "Nécessite l'addon ArenaPlus, qui fournit les données du classement. Installez-le et activez-le, puis rechargez l'interface."
 
     L.TOOLTIP_PVP_HEADER         = "Classement"
@@ -320,6 +337,8 @@ elseif locale == "esES" or locale == "esMX" then
     L.GROUP_UNGROUPED         = "General"
     L.GROUP_FAVORITES         = "Favoritos"
     L.GROUP_INGAME            = "Amigos en el juego"
+    L.GROUP_RECENT            = "Añadidos recientemente"
+    L.GROUP_RECENT_CLEAR      = "Vaciar la lista de añadidos recientes"
 
     ----------------------------------------------------------------
     -- Group menu (header right-click)
@@ -331,7 +350,6 @@ elseif locale == "esES" or locale == "esMX" then
     L.GROUP_BULK_DONE         = "%d de %d guardados."
     L.GROUP_SETTINGS          = "Configuración de SocialPlus"
     L.GROUP_NO_GROUPS         = "No hay grupos disponibles"
-    L.GROUP_NO_GROUPS_REMOVE  = "No hay grupos para eliminar"
     L.GROUP_MUTE_NOTIFICATIONS = "Silenciar notificaciones"
 
     ----------------------------------------------------------------
@@ -342,6 +360,8 @@ elseif locale == "esES" or locale == "esMX" then
     L.SETTING_COLOR_NAMES        = "Colorear nombres según la clase"
     L.SETTING_PRIORITIZE_PREFIX  = "Mostrar primero los amigos de "
     L.SETTING_PRIORITIZE_SUFFIX  = ""
+    L.SETTING_SNIPE              = "Modo snipe"
+    L.SETTING_SNIPE_TIP          = "Coloca los Amigos en el juego justo debajo de Favoritos, por encima de todos los demás grupos. Un amigo de personaje no necesita aceptar, así que ahí están los nombres que vigilas para la cola -- y pasan a ser lo primero que ves."
     L.SETTING_SCROLL_SPEED       = "Velocidad de desplazamiento"
     L.SETTING_SCROLL_SPEED_DESC  = "Ajusta la velocidad de desplazamiento de la lista de amigos."
     L.SETTING_SECTION_DISPLAY    = "Visualización"
@@ -349,8 +369,14 @@ elseif locale == "esES" or locale == "esMX" then
     L.SETTING_SECTION_NOTIFICATIONS = "Notificaciones"
     L.SETTING_PVP_RATINGS        = "Mostrar la clasificación JcJ en las descripciones (requiere ArenaPlus)"
     L.SETTING_PVP_SPEC_ICON      = "Mostrar el icono de especialización en las descripciones (requiere ArenaPlus)"
-L.SETTING_REGION_FLAG        = "Mostrar la bandera de la región junto a los nombres"
+    L.SETTING_REGION_FLAG        = "Mostrar la bandera de la región junto a los nombres"
     L.SETTING_BATTLETAG          = "Mostrar BattleTags en lugar de nombres reales"
+    L.SETTING_VIP_CREST          = "Emblema VIP"
+    L.SETTING_VIP_CREST_TIP      = "Muestra el emblema VIP (la cabra) sobre el retrato, en la esquina de tu lista de amigos."
+    L.SETTING_VIP_TITLE          = "Título VIP"
+    L.SETTING_VIP_TITLE_TIP      = "Muestra el título VIP (la cabra) en la barra de título de la lista de amigos, en lugar de su nombre."
+    L.SETTING_VIP_TIP_NO         = "Reservado para quienes apoyan SocialPlus."
+    L.SETTING_VIP_YOURS          = "Tu BattleTag: %s"
     L.SETTING_PVP_RATINGS_NEEDS  = "Requiere el addon ArenaPlus, que proporciona los datos de la clasificación. Instálalo y actívalo, y luego recarga la interfaz."
 
     L.TOOLTIP_PVP_HEADER         = "Clasificación"

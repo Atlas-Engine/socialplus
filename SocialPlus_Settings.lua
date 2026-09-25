@@ -14,7 +14,6 @@ local SCROLL_BASE = ns.SCROLL_BASE
 -- section here reads as the same kind of thing.
 local TEX_PLUS  = "Interface\\Buttons\\UI-PlusButton-Up"
 local TEX_MINUS = "Interface\\Buttons\\UI-MinusButton-Up"
-local frame = ns.frame
 
 -- The preferences panel, lifted out of SocialPlus.lua unchanged.
 --
@@ -462,7 +461,6 @@ function SocialPlus_CreateSettingsPanel()
 	-- hand-written re-anchoring pass inside UpdatePvPRatingsState, and is now
 	-- one flag on one block.
 	local blocks={}
-	local blocksByKey={}
 	-- Everything the layout positions, and nothing else -- this is what
 	-- SocialPlus_FitSettingsPanel measures, and why it can measure the panel
 	-- SHORTER as well as taller. See the note above that function.
@@ -515,7 +513,6 @@ function SocialPlus_CreateSettingsPanel()
 		f.SocialPlusLayout[#f.SocialPlusLayout+1]=block.line
 		f.SocialPlusLayout[#f.SocialPlusLayout+1]=block.header
 		blocks[#blocks+1]=block
-		blocksByKey[key]=block
 		return block
 	end
 
@@ -693,6 +690,28 @@ function SocialPlus_CreateSettingsPanel()
 	end)
 	AddControl(display,prioritizeCurrent)
 
+	-- Snipe mode: In-game Friends directly under Favorites.
+	--
+	-- A character friend needs nobody's acceptance, which makes that section
+	-- the way to watch a name that is not a friend at all -- whoever you are
+	-- hoping to meet in the queue. Ordinarily it sits just above General; this
+	-- lifts it to the top, under Favorites, so it is the first thing seen.
+	local snipeMode=CreateFrame("CheckButton","SocialPlus_SnipeModeCheck",f,"UICheckButtonTemplate")
+	_G[snipeMode:GetName().."Text"]:SetText(L.SETTING_SNIPE)
+	snipeMode:SetScript("OnClick",function()
+		SocialPlus_SavedVars.snipe_mode=not SocialPlus_SavedVars.snipe_mode
+		-- Full rebuild: the group order is worked out in the data pass.
+		SocialPlus_Update(true)
+	end)
+	snipeMode:SetScript("OnEnter",function(self)
+		GameTooltip:SetOwner(self,"ANCHOR_RIGHT")
+		GameTooltip:SetText(L.SETTING_SNIPE,1,1,1)
+		GameTooltip:AddLine(L.SETTING_SNIPE_TIP,nil,nil,nil,true)
+		GameTooltip:Show()
+	end)
+	snipeMode:SetScript("OnLeave",function() GameTooltip:Hide() end)
+	AddControl(display,snipeMode)
+
 	-- These two live here rather than under PvP, where they used to sit purely
 	-- because that is where they had been added. Neither needs another addon --
 	-- the flags ship here -- and both change what the NAME area of a row shows,
@@ -721,27 +740,19 @@ function SocialPlus_CreateSettingsPanel()
 	end)
 	AddControl(display,battleTag)
 
-	-- VIP mode, shown to everyone and usable only by those on the list.
+	-- VIP crest and VIP title, shown to everyone and usable only by those on
+	-- the list. Two ticks rather than one so the pieces can be had separately:
+	-- the crest over the portrait and the wordmark in the title bar are
+	-- different amounts of goat, and somebody may want one without the other.
 	--
 	-- Greyed rather than hidden. A setting that disappears for most people
-	-- is a setting nobody knows exists, and half the point of this one is
-	-- that it is visibly a perk -- the other half is letting a VIP who
+	-- is a setting nobody knows exists, and half the point of these is
+	-- that they are visibly a perk -- the other half is letting a VIP who
 	-- would rather not have a goat on their window turn it off.
-	local vipMode=CreateFrame("CheckButton","SocialPlus_VIPModeCheck",f,"UICheckButtonTemplate")
-	_G[vipMode:GetName().."Text"]:SetText(L.SETTING_VIP)
-	vipMode:SetScript("OnClick",function(self)
-		-- Stored as a real false rather than by absence, because absence
-		-- means "never touched it" and that has to read as ON: a VIP who
-		-- has not opened this panel should see the thing.
-		SocialPlus_SavedVars.vip_mode=self:GetChecked() and true or false
-		if SocialPlus_ApplyOwnVIP then SocialPlus_ApplyOwnVIP() end
-		SocialPlus_Update()
-	end)
-	vipMode:SetScript("OnEnter",function(self)
+	local function VIPTooltip(self,label,tip)
 		GameTooltip:SetOwner(self,"ANCHOR_RIGHT")
-		GameTooltip:SetText(L.SETTING_VIP,1,1,1)
-		GameTooltip:AddLine(self:IsEnabled() and L.SETTING_VIP_TIP
-			or L.SETTING_VIP_TIP_NO,nil,nil,nil,true)
+		GameTooltip:SetText(label,1,1,1)
+		GameTooltip:AddLine(self:IsEnabled() and tip or L.SETTING_VIP_TIP_NO,nil,nil,nil,true)
 
 		-- Their own BattleTag, spelled exactly as this addon sees it.
 		--
@@ -762,9 +773,28 @@ function SocialPlus_CreateSettingsPanel()
 		end
 
 		GameTooltip:Show()
-	end)
-	vipMode:SetScript("OnLeave",function() GameTooltip:Hide() end)
-	AddControl(display,vipMode)
+	end
+
+	local function VIPCheck(name,key,label,tip)
+		local check=CreateFrame("CheckButton",name,f,"UICheckButtonTemplate")
+		_G[check:GetName().."Text"]:SetText(label)
+		check:SetScript("OnClick",function(self)
+			-- Stored as a real false rather than by absence, because absence
+			-- means "never touched it" and that has to read as ON: a VIP who
+			-- has not opened this panel should see the thing.
+			SocialPlus_SavedVars[key]=self:GetChecked() and true or false
+			-- Nothing in the list changes with these; the header is redrawn on
+			-- its own rather than through a rebuild of every row.
+			if SocialPlus_ApplyOwnVIP then SocialPlus_ApplyOwnVIP() end
+		end)
+		check:SetScript("OnEnter",function(self) VIPTooltip(self,label,tip) end)
+		check:SetScript("OnLeave",function() GameTooltip:Hide() end)
+		AddControl(display,check)
+		return check
+	end
+
+	local vipCrest=VIPCheck("SocialPlus_VIPCrestCheck","vip_crest",L.SETTING_VIP_CREST,L.SETTING_VIP_CREST_TIP)
+	local vipTitle=VIPCheck("SocialPlus_VIPTitleCheck","vip_title",L.SETTING_VIP_TITLE,L.SETTING_VIP_TITLE_TIP)
 
 	----------------------------------------------------------------------
 	-- PvP -- present only while ArenaPlus is there to answer
@@ -1002,22 +1032,26 @@ function SocialPlus_CreateSettingsPanel()
 		showLevel:SetChecked(sv and sv.show_level)
 		colourNames:SetChecked(sv and sv.colour_classes)
 		prioritizeCurrent:SetChecked(sv and sv.prioritize_current_client)
+		snipeMode:SetChecked(sv and sv.snipe_mode)
 		regionFlag:SetChecked(sv and sv.region_flag)
 		battleTag:SetChecked(sv and sv.show_battletag)
 
-		-- Ticked unless it has been deliberately turned off, and usable
-		-- only by a VIP. Never written to from here: reading a setting
-		-- must not change it, and greying the box must not silently
-		-- switch anything for somebody who is not on the list.
-		vipMode:SetChecked(not (sv and sv.vip_mode==false))
+		-- Ticked unless deliberately turned off, and usable only by a VIP.
+		-- Never written to from here: reading a setting must not change it,
+		-- and greying the box must not silently switch anything for somebody
+		-- who is not on the list.
 		local amVIP=SocialPlus_IsVIP and SocialPlus_OwnBattleTag
 			and SocialPlus_IsVIP(SocialPlus_OwnBattleTag())
-		if amVIP then
-			vipMode:Enable()
-			_G[vipMode:GetName().."Text"]:SetTextColor(NORMAL_FONT_COLOR:GetRGB())
-		else
-			vipMode:Disable()
-			_G[vipMode:GetName().."Text"]:SetTextColor(GRAY_FONT_COLOR:GetRGB())
+		vipCrest:SetChecked(not (sv and sv.vip_crest==false))
+		vipTitle:SetChecked(not (sv and sv.vip_title==false))
+		for _,check in ipairs({vipCrest,vipTitle}) do
+			if amVIP then
+				check:Enable()
+				_G[check:GetName().."Text"]:SetTextColor(NORMAL_FONT_COLOR:GetRGB())
+			else
+				check:Disable()
+				_G[check:GetName().."Text"]:SetTextColor(GRAY_FONT_COLOR:GetRGB())
+			end
 		end
 
 		pvpRatings:SetChecked(sv and sv.pvp_ratings)

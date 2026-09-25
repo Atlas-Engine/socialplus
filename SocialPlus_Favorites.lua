@@ -128,11 +128,6 @@ function SocialPlus_ClearRecentFriends()
 	SocialPlus_Update(true)
 end
 
-function SocialPlus_HasRecentFriends()
-	local recent=SocialPlus_SavedVars and SocialPlus_SavedVars.recent
-	return recent~=nil and next(recent)~=nil
-end
-
 -- key is optional: a caller that already holds this friend's key (the rebuild's
 -- per-friend pass does, from the BNGetFriendInfo it made while bucketing) can
 -- pass it and skip the lookup, which is an API call per friend per rebuild.
@@ -173,10 +168,15 @@ function SocialPlus_IsRecent(buttonType,id,groups,key)
 	local favorites=SocialPlus_SavedVars.favorites
 	if favorites and favorites[key]==true then return false end
 
-	-- groups carries "" alone when the friend has no tags at all.
+	-- groups carries "" alone when the friend has no tags at all -- or the
+	-- In-game Friends sentinel, which the rebuild writes over "" for a
+	-- character friend before asking here. That sentinel is where an
+	-- unfiled character friend lands, not a group they were filed into, so
+	-- it must not count as one: it did, and no character friend was ever
+	-- recently added.
 	if groups then
 		for name in pairs(groups) do
-			if name~="" then return false end
+			if name~="" and name~=ns.SP_INGAME_GROUP then return false end
 		end
 	end
 

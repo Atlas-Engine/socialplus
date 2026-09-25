@@ -3,7 +3,6 @@ local L = ns.L
 
 local LibDD = LibStub("LibUIDropDownMenu-4.0")
 
-local hooks = {}
 
 -- Shared click sound for the settings/group cogwheels and reorder arrows
 -- (the same "open a menu" sound as clicking Options from the Escape menu).
@@ -84,22 +83,15 @@ function FG_Debug(...)
 	end
 end
 
--- Handle drag stop: determine target group and reorder	
-local function Hook(source,target,secure)
-	-- MoP Classic: skip hooking UnitPopup_* entirely; its implementation differs from modern retail
-	if source=="UnitPopup_ShowMenu" or source=="UnitPopup_OnClick" or source=="UnitPopup_HideButtons" then
-		return
-	end
-	local orig=_G[source]
-	hooks[source]=orig
-	if secure then
-		if type(orig)=="function" then
-			hooksecurefunc(source,target)
-		end
-	else
-		if type(orig)=="function" then
-			_G[source]=target
-		end
+-- Hooks a Blizzard function, securely: theirs still runs, ours runs after it.
+-- The one hook this addon installs is on FriendsList_Update.
+--
+-- Only ever secure. The other way -- writing our own function over the
+-- global -- taints everything the replaced function then touches, which on
+-- this window meant CopyToClipboard in the /who popup stopped working.
+local function Hook(source,target)
+	if type(_G[source])=="function" then
+		hooksecurefunc(source,target)
 	end
 end
 
@@ -122,10 +114,16 @@ local SocialPlus_NAME_COLOR=NORMAL_FONT_COLOR
 -- name rather than declaring its own, so the file's 200-local ceiling is
 -- unmoved.
 local SocialPlus_SetCustomGroupOrderFromMove
-local SocialPlus_IsRowInDraggedGroup
 local SocialPlus_CancelGroupDrag
 local SocialPlus_HardResetScrollRows
 local SocialPlus_ScheduleCollapseSettle
+-- The scroll frame and its row template, resolved further down where the
+-- client's own names for them are looked up. Declared up here because two drag
+-- helpers above that point read FriendsScrollFrame: declared below them, the
+-- name they closed over was a global no client defines, so the drop marker
+-- between groups never showed and the drag ghost never got its invite icon.
+local FriendsScrollFrame
+local FriendButtonTemplate
 -- SocialPlus_GetVersionLabelText is a global: it is defined in the settings
 -- panel file and called from here, and a global needs no forward declaration.
 -- No forward declarations here for the names defined with "function X()"
@@ -239,6 +237,27 @@ function SocialPlus_EnsureSavedVars()
         SocialPlus_SavedVars.prioritize_current_client=true
     end
 
+    -- Snipe mode: In-game Friends directly under Favorites, above every
+    -- group you made. Off until asked for -- for everybody else that
+    -- section sits just above General, where character friends have
+    -- always been.
+    if SocialPlus_SavedVars.snipe_mode==nil then
+        SocialPlus_SavedVars.snipe_mode=false
+    end
+
+    -- VIP mode was one switch and is two now, one per piece of art. Somebody
+    -- who had switched the whole thing off keeps both pieces off; anybody
+    -- else keeps both on, which absent already means -- see
+    -- SocialPlus_VIPCrestEnabled. The old key goes so nothing reads it by
+    -- accident, and so this runs once.
+    if SocialPlus_SavedVars.vip_mode~=nil then
+        if SocialPlus_SavedVars.vip_mode==false then
+            SocialPlus_SavedVars.vip_crest=false
+            SocialPlus_SavedVars.vip_title=false
+        end
+        SocialPlus_SavedVars.vip_mode=nil
+    end
+
     SocialPlus_SavedVars.collapsed=type(SocialPlus_SavedVars.collapsed)=="table" and SocialPlus_SavedVars.collapsed or {}
     SocialPlus_SavedVars.groupOrder=type(SocialPlus_SavedVars.groupOrder)=="table" and SocialPlus_SavedVars.groupOrder or {}
 
@@ -270,15 +289,6 @@ function SocialPlus_EnsureSavedVars()
     -- addon-level control -- confirmed live on TBC).
     SocialPlus_SavedVars.favorites=type(SocialPlus_SavedVars.favorites)=="table" and SocialPlus_SavedVars.favorites or {}
 
-    -- NEW: ensure icon profile has a sane default, but don't override a saved value
-    if SocialPlus_GetDefaultIconProfileID and SocialPlus_SavedVars.iconProfile==nil then
-        SocialPlus_SavedVars.iconProfile=SocialPlus_GetDefaultIconProfileID()
-    end
-
-    -- NEW: rebuild icon mapping AFTER SavedVars are ready
-    if SocialPlus_RebuildGameIcons then
-        SocialPlus_RebuildGameIcons()
-    end
 end
 
 -- Group / leader helpers
@@ -312,18 +322,20 @@ function SocialPlus_ShouldSuggestInvite()
 	return SocialPlus_IsPlayerInGroup() and not SocialPlus_IsPlayerGroupLeader()
 end
 
--- MoP Classic restriction codes (REALM is unused/nil in Classic)
+-- MoP Classic restriction codes (REALM is unused/nil in Classic). The ones
+-- commented out are Blizzard's numbering, kept so the sequence reads right;
+-- nothing here tests for them, and each local costs a slot at the ceiling.
 local INVITE_RESTRICTION_NO_GAME_ACCOUNTS=0
-local INVITE_RESTRICTION_CLIENT=1
-local INVITE_RESTRICTION_LEADER=2
+-- INVITE_RESTRICTION_CLIENT=1  (unused here)
+-- INVITE_RESTRICTION_LEADER=2  (unused here)
 local INVITE_RESTRICTION_FACTION=3
 local INVITE_RESTRICTION_REALM=nil
 local INVITE_RESTRICTION_INFO=4
 local INVITE_RESTRICTION_WOW_PROJECT_ID=5
-local INVITE_RESTRICTION_WOW_PROJECT_MAINLINE=6
-local INVITE_RESTRICTION_WOW_PROJECT_CLASSIC=7
+-- INVITE_RESTRICTION_WOW_PROJECT_MAINLINE=6  (unused here)
+-- INVITE_RESTRICTION_WOW_PROJECT_CLASSIC=7  (unused here)
 local INVITE_RESTRICTION_NONE=8
-local INVITE_RESTRICTION_MOBILE=9
+-- INVITE_RESTRICTION_MOBILE=9  (unused here)
 -- Own code (not a Blizzard restriction ID), split out from the generic
 -- INVITE_RESTRICTION_INFO catch-all so icon-fade logic can exclude JUST
 -- this reason -- being already in the player's own party/raid isn't
@@ -562,6 +574,20 @@ local SP_INGAME_GROUP="\001INGAME"
 -- Global, not a file-local: this chunk is at Lua's 200-locals ceiling.
 SocialPlus_RECENT_GROUP=string.char(1).."RECENT"
 
+-- Whether a header names one of the synthetic sections rather than a group
+-- somebody made: Friend Requests, Favorites, Recently Added, In-game Friends
+-- and the implicit General bucket. None can be dragged, dropped onto, or
+-- written into the saved group order. Recently Added was missing from every
+-- one of those lists: its header could be dragged, showed its raw sentinel on
+-- the ghost, and left "\001RECENT" behind in the saved order.
+--
+-- Global rather than local: the main chunk is at Lua's 200-local ceiling.
+function SocialPlus_IsPinnedGroup(name)
+	return name==nil or name=="" or name==FriendRequestString
+		or name==SP_FAVORITES_GROUP or name==SP_INGAME_GROUP
+		or name==SocialPlus_RECENT_GROUP
+end
+
 -- Blizzard ships a global FAVORITES string (Mount/Pet Journal use it) --
 -- prefer it so the label matches the client's own language/terminology
 -- automatically; L.GROUP_FAVORITES is the fallback if that global is ever
@@ -573,7 +599,6 @@ end
 local SocialPlus_DragSourceGroup=nil   -- non-nil while dragging a group header
 local SocialPlus_DragHoverGroup=nil    -- group key under the cursor during a group-header drag
 local SocialPlus_DragHoverEverSet=false -- true once hover tracking has fired at least once this drag
-local SocialPlus_DragSourceButton=nil
 local SocialPlus_DragGhostFrame=nil
 
 -- Global collapse/expand button state
@@ -854,13 +879,12 @@ end
 
 -- [[ Drag insertion-line indicator ]]
 -- One reusable line, repositioned on hover changes (never on OnUpdate).
--- Parented to UIParent (always exists) rather than FriendsScrollFrame --
--- confirmed live that this can be first created from inside a nested
--- Blizzard call chain (FriendsFrameTooltip_Show -> our hooked OnEnter,
--- itself triggered from FriendsList_Update during drag-start) where
--- FriendsScrollFrame was unexpectedly nil. SetPoint below anchors it to
--- specific row buttons regardless of its own parent, so this doesn't
--- affect positioning.
+-- Parented to UIParent (always exists) rather than FriendsScrollFrame.
+-- The nil FriendsScrollFrame once seen here live, and blamed on a nested
+-- Blizzard call chain, was this file reading the name above its own local
+-- declaration -- an unset global -- which moving the declaration to the
+-- top of the file fixed. The parent stays as it is: SetPoint below anchors
+-- the line to specific row buttons regardless of its own parent.
 local SocialPlus_DragInsertLine=nil
 local function SocialPlus_GetDragInsertLine()
 	if not SocialPlus_DragInsertLine then
@@ -895,9 +919,8 @@ end
 -- visible members are on screen -- when dragging down.
 local function SocialPlus_UpdateDragInsertionLine(groupKey)
 	local line=SocialPlus_GetDragInsertLine()
-	if not SocialPlus_DragSourceGroup or not groupKey or groupKey==SocialPlus_DragSourceGroup
-		or groupKey==FriendRequestString or groupKey==SP_FAVORITES_GROUP
-		or groupKey==SP_INGAME_GROUP then
+	if not SocialPlus_DragSourceGroup or groupKey==SocialPlus_DragSourceGroup
+		or SocialPlus_IsPinnedGroup(groupKey) then
 		line:Hide()
 		return
 	end
@@ -913,7 +936,7 @@ local function SocialPlus_UpdateDragInsertionLine(groupKey)
 	local headerButton,lastMemberButton
 	if FriendsScrollFrame and FriendsScrollFrame.buttons then
 		for _,btn in ipairs(FriendsScrollFrame.buttons) do
-			if btn:IsShown() and btn.index then
+			if btn:IsVisible() and btn.index then
 				if btn.buttonType==FRIENDS_BUTTON_TYPE_DIVIDER and btn.SocialPlusGroupName==groupKey then
 					headerButton=btn
 				elseif btn.buttonType~=FRIENDS_BUTTON_TYPE_DIVIDER then
@@ -1013,6 +1036,16 @@ local function SocialPlus_ApplyGroupOrder()
 	if hasFavorites then
 		table.insert(GroupSorted,SP_FAVORITES_GROUP)
 	end
+	-- Snipe mode: In-game Friends directly under Favorites, above everything
+	-- else. A character friend needs nobody's acceptance, which makes that
+	-- section the way to keep an eye on people who are not friends at all --
+	-- the names being watched for a queue -- and a list kept for that wants
+	-- to be the first thing seen, not the last. Pinned either way; only where
+	-- it is pinned changes.
+	local snipe=SocialPlus_SavedVars and SocialPlus_SavedVars.snipe_mode
+	if hasInGame and snipe then
+		table.insert(GroupSorted,SP_INGAME_GROUP)
+	end
 	-- Directly under Favorites, and like Favorites never enters the
 	-- user-reorderable list: it is not a group you made, and it will be gone by
 	-- tomorrow, so a persisted position for it would mean nothing.
@@ -1022,9 +1055,9 @@ local function SocialPlus_ApplyGroupOrder()
 	for _,name in ipairs(others) do
 		table.insert(GroupSorted,name)
 	end
-	-- In-game Friends (ungrouped native friends) always renders right
-	-- above General, pinned like the other synthetic buckets.
-	if hasInGame then
+	-- In-game Friends (ungrouped native friends) renders right above General
+	-- unless snipe mode lifted it, pinned like the other synthetic buckets.
+	if hasInGame and not snipe then
 		table.insert(GroupSorted,SP_INGAME_GROUP)
 	end
 	if hasGeneral then
@@ -1036,13 +1069,9 @@ end
 -- with direction-aware behavior (drag up = above target, drag down = below).
 SocialPlus_SetCustomGroupOrderFromMove=function(source,target)
 	if not source or not target or source==target then return end
-	-- don’t drag Friend Requests or the implicit General bucket
-	if source==FriendRequestString or source=="" then return end
-	if target==FriendRequestString or target=="" then return end
-	-- Favorites and In-game Friends are synthetic and pinned -- never a
-	-- drag source or target, and never persisted into groupOrder.
-	if source==SP_FAVORITES_GROUP or target==SP_FAVORITES_GROUP then return end
-	if source==SP_INGAME_GROUP or target==SP_INGAME_GROUP then return end
+	-- Neither end of a move can be a synthetic section -- they are pinned, and
+	-- never persisted into groupOrder.
+	if SocialPlus_IsPinnedGroup(source) or SocialPlus_IsPinnedGroup(target) then return end
 
 	SocialPlus_EnsureSavedVars()
 
@@ -1051,7 +1080,7 @@ SocialPlus_SetCustomGroupOrderFromMove=function(source,target)
 	local sourceIndex,targetIndex
 
 	for _,name in ipairs(GroupSorted or {}) do
-		if name~=FriendRequestString and name~="" and name~=SP_FAVORITES_GROUP and name~=SP_INGAME_GROUP then
+		if not SocialPlus_IsPinnedGroup(name) then
 			table.insert(base,name)
 			local idx=#base
 			if name==source then sourceIndex=idx end
@@ -1100,12 +1129,11 @@ end
 local function SocialPlus_OnGroupDragStart(self)
 	local group=self and self.SocialPlusGroupName
 	-- don’t drag pinned buckets
-	if not group or group==FriendRequestString or group=="" or group==SP_FAVORITES_GROUP or group==SP_INGAME_GROUP then
+	if SocialPlus_IsPinnedGroup(group) then
 		return
 	end
 
 	SocialPlus_DragSourceGroup=group
-	SocialPlus_DragSourceButton=self
 	SocialPlus_DragHoverEverSet=false
 	SocialPlus_HideDragInsertLine()
 
@@ -1260,7 +1288,7 @@ local function SocialPlus_OnGroupDragStop(self)
 	-- land is more likely to produce a surprise move than a useful one --
 	-- cancel instead.
 	if hoverEverSet
-		and (not target or target==source or target==FriendRequestString or target=="" or target==SP_FAVORITES_GROUP or target==SP_INGAME_GROUP)
+		and (not target or target==source or SocialPlus_IsPinnedGroup(target))
 		and self then
 		local fallback
 		if self.buttonType==FRIENDS_BUTTON_TYPE_DIVIDER then
@@ -1269,12 +1297,11 @@ local function SocialPlus_OnGroupDragStop(self)
 			fallback=SocialPlus_GetGroupKeyFromRow(self)
 		end
 
-		if fallback and fallback~=source and fallback~=FriendRequestString and fallback~="" and fallback~=SP_FAVORITES_GROUP and fallback~=SP_INGAME_GROUP then
+		if fallback and fallback~=source and not SocialPlus_IsPinnedGroup(fallback) then
 			target=fallback
 		end
 	end
 
-    SocialPlus_DragSourceButton=nil
     SocialPlus_DragSourceGroup=nil
     SocialPlus_DragHoverGroup=nil
     SocialPlus_DragHoverEverSet=false
@@ -1285,8 +1312,7 @@ local function SocialPlus_OnGroupDragStop(self)
     end
 
     -- still no valid target, or hover never fired at all? Cancel.
-    if not hoverEverSet or not target or target==source
-		or target==FriendRequestString or target=="" or target==SP_FAVORITES_GROUP or target==SP_INGAME_GROUP then
+    if not hoverEverSet or not target or target==source or SocialPlus_IsPinnedGroup(target) then
         return
     end
 	-- Perform the move
@@ -1306,7 +1332,6 @@ SocialPlus_CancelGroupDrag=function()
 	end
 	SocialPlus_HideDragInsertLine()
 
-	SocialPlus_DragSourceButton=nil
 	SocialPlus_DragSourceGroup=nil
 	SocialPlus_DragHoverGroup=nil
 	SocialPlus_DragHoverEverSet=false
@@ -1852,8 +1877,7 @@ local function FG_GetClientTextureSafe(client)
 end
 
 -- [[ Friends list frame references ]]	
-local FriendsScrollFrame
-local FriendButtonTemplate
+-- Assigned into the locals declared near the top of the file; see there.
 
 if FriendsListFrameScrollFrame then
 	FriendsScrollFrame=FriendsListFrameScrollFrame
@@ -2165,15 +2189,6 @@ function SocialPlus_GetRowIdentityKey(buttonType,id)
 	return nil
 end
 
-local function FG_GetSelectedFriend()
-	if C_FriendList and C_FriendList.GetSelectedFriend then
-		return C_FriendList.GetSelectedFriend()
-	elseif GetSelectedFriend then
-		return GetSelectedFriend()
-	end
-	return 0
-end
-
 local function FG_SetFriendNotes(index,note)
 	-- The per-frame memo has to go: this changes the very record it caches,
 	-- and a reader later in the same frame would otherwise be handed the note
@@ -2214,30 +2229,6 @@ function FG_BNGetFriendInfo(idx)
 	return nil
 end
 
-local function FG_BNGetFriendInfoByID(id)
-	if type(id)~="number" then
-		for i=1,FG_BNGetNumFriends() do
-			local tt={FG_BNGetFriendInfo(i)}
-			if tt then
-				for _,v in ipairs(tt) do
-					if type(v)=="string" and v==id then
-						local presence=tt[1]
-						if presence and BNGetFriendInfoByID then
-							return BNGetFriendInfoByID(presence)
-						end
-						return unpack(tt)
-					end
-				end
-			end
-		end
-		return nil
-	end
-	if BNGetFriendInfoByID then
-		return BNGetFriendInfoByID(id)
-	end
-	return nil
-end
-
 local function FG_BNGetNumFriendInvites()
 	if BNGetNumFriendInvites then
 		return BNGetNumFriendInvites()
@@ -2250,13 +2241,6 @@ local function FG_BNGetFriendInviteInfo(idx)
 		return BNGetFriendInviteInfo(idx)
 	end
 	return nil
-end
-
-local function FG_BNGetSelectedFriend()
-	if BNGetSelectedFriend then
-		return BNGetSelectedFriend()
-	end
-	return 0
 end
 
 local function FG_BNGetInfo()
@@ -2715,12 +2699,12 @@ function SocialPlus_SampleGroupFriends(headerIndex,maxCount)
 				local id=row.id
 				local accountName,characterName,class,level,isFavoriteFriend,
 					isOnline,bnetAccountId,client,canCoop,wowProjectID,lastOnline,
-					isAFK,isGameAFK,isDND,isGameBusy,mobile,zoneName,gameText,realmName=
+					isAFK,isGameAFK,isDND,isGameBusy,mobile,zoneName,gameText,realmName,_,_,battleTag=
 					GetFriendInfoById(id)
 
 				if accountName or characterName then
 					display=SocialPlus_GetBNetButtonNameText(
-						accountName,client,canCoop,characterName,class,level,realmName
+						accountName,client,canCoop,characterName,class,level,realmName,battleTag
 					)
 					if not isOnline then
 						status="offline"
@@ -2877,17 +2861,23 @@ function SocialPlus_OwnBattleTag()
 	return Look(FG_BNGetInfo())
 end
 
--- Whether VIP decoration should be drawn for this tag.
+-- Whether each piece of VIP decoration should be drawn.
 --
--- Two questions in one: is this account on the list, and has the person
--- switched the decoration off. The switch is theirs to set and lives in the
--- settings panel, greyed out for anybody the first question answers no for.
+-- Two switches, one per piece of art, and both live in the settings panel,
+-- greyed out for anybody SocialPlus_IsVIP answers no for. Being on the list is
+-- the caller's question; these only say whether the person has turned the
+-- piece off.
 --
 -- Absent means on. A VIP who has never opened the settings should see the
 -- thing rather than have to go and find it.
-function SocialPlus_VIPEnabled()
+function SocialPlus_VIPCrestEnabled()
 	local sv=SocialPlus_SavedVars
-	return not (sv and sv.vip_mode==false)
+	return not (sv and sv.vip_crest==false)
+end
+
+function SocialPlus_VIPTitleEnabled()
+	local sv=SocialPlus_SavedVars
+	return not (sv and sv.vip_title==false)
 end
 
 function SocialPlus_IsVIP(battleTag)
@@ -3469,11 +3459,11 @@ local function SocialPlus_UpdateFriendButton(button)
 
 	-- Cogwheel: same texture as the settings button, opens the same group
 	-- menu as right-clicking the header (mute notifications, rename, etc.)
-	-- Friend Requests and In-game Friends are pseudo-groups -- none of the
-	-- menu's actions (invite all, rename, delete, mute) apply, so no
-	-- cogwheel.
+	-- Friend Requests, In-game Friends and Recently Added are pseudo-groups --
+	-- none of the menu's actions (invite all, rename, delete, mute) apply, so
+	-- no cogwheel. Recently Added has its own X there instead.
 	if button.SocialPlusGroupGearButton then
-		if group==FriendRequestString or group==SP_INGAME_GROUP then
+		if group==FriendRequestString or group==SP_INGAME_GROUP or group==SocialPlus_RECENT_GROUP then
 			button.SocialPlusGroupGearButton:Hide()
 		else
 			button.SocialPlusGroupGearButton:Show()
@@ -3613,7 +3603,9 @@ local function SocialPlus_UpdateFriendButton(button)
     -- different friend if Blizzard reorders its list while someone's
     -- selected. Falls back to the raw pair only if an identity key
     -- couldn't be resolved for either side.
-    local rowIdentity=SocialPlus_GetRowIdentityKey(FriendButtons[index].buttonType,FriendButtons[index].id)
+    -- Derived only while something is selected: it is a C_BattleNet call per
+    -- Battle.net row per render, and the common case has nothing to compare.
+    local rowIdentity=SocialPlus_SelectedRow and SocialPlus_GetRowIdentityKey(FriendButtons[index].buttonType,FriendButtons[index].id)
     local isSelectedRow=SocialPlus_SelectedRow and (
         (SocialPlus_SelectedRow.identityKey and rowIdentity and SocialPlus_SelectedRow.identityKey==rowIdentity)
         or (not SocialPlus_SelectedRow.identityKey
@@ -4181,10 +4173,16 @@ function SocialPlus_UpdateFriends()
 	-- Keep global collapse/expand button state in sync
 	SocialPlus_UpdateCollapseAllButtonVisual()
 
-	-- Clean up collapsed groups that no longer exist
-	for key,_ in pairs(SocialPlus_SavedVars.collapsed) do
-		if not GroupTotal[key] then
-			SocialPlus_SavedVars.collapsed[key]=nil
+	-- Clean up collapsed groups that no longer exist.
+	--
+	-- Not while a search is up. The plain search path builds its rows without
+	-- counting groups, so GroupTotal is empty then, and pruning against it
+	-- forgot every collapsed group the moment a letter was typed.
+	if not SocialPlus_SearchTerm then
+		for key,_ in pairs(SocialPlus_SavedVars.collapsed) do
+			if not GroupTotal[key] then
+				SocialPlus_SavedVars.collapsed[key]=nil
+			end
 		end
 	end
 
@@ -4217,7 +4215,13 @@ local function FillGroups(groups,note,...)
 			-- tag that was nothing but pipes) must not collide with the same
 			-- "" sentinel used for "no tags at all" below.
 			v=v:gsub("|","")
-			if v~="" then
+			-- Recently Added's internal name is not a group either, whatever a
+			-- note says: until 1.18a the group menu could offer it as a
+			-- destination and write it into the note, and a friend filed under
+			-- it that way stayed there with nothing to clear it. Skipped on the
+			-- way in, so the tag falls out of the note the next time the note
+			-- is written from the groups.
+			if v~="" and v~=SocialPlus_RECENT_GROUP then
 				groups[v]=true
 				added=true
 			end
@@ -4478,7 +4482,10 @@ function SocialPlus_ApplyOwnVIP()
 	if not frame then return end
 
 	local tag=SocialPlus_OwnBattleTag()
-	local wanted=SocialPlus_IsVIP(tag) and SocialPlus_VIPEnabled()
+	local isVIP=SocialPlus_IsVIP(tag)
+	-- Each piece on its own switch, so the two can be had in any combination.
+	local wantCrest=isVIP and SocialPlus_VIPCrestEnabled()
+	local wantWords=isVIP and SocialPlus_VIPTitleEnabled()
 
 	local portrait=SocialPlus_VIPWidget("FriendsFramePortrait",
 		"FriendsFrameIcon","FriendsFramePortraitFrame")
@@ -4507,22 +4514,9 @@ function SocialPlus_ApplyOwnVIP()
 
 	local crest,words=frame.SocialPlusCrest,frame.SocialPlusWords
 
-	if not wanted then
-		crest:Hide()
-		words:Hide()
-		-- Put Blizzard's own title back, but only if we are the ones who
-		-- took it away. Showing a FontString nothing hid is harmless; it is
-		-- the bookkeeping that is worth not guessing at.
-		if title and frame.SocialPlusTookTitle then
-			title:Show()
-			frame.SocialPlusTookTitle=nil
-		end
-		return
-	end
-
 	-- Over the portrait, centred on it, a little larger so the glow reads
 	-- as deliberate rather than as a texture that did not quite fit.
-	if portrait then
+	if wantCrest and portrait then
 		crest:SetTexture(SocialPlus_VIP_CREST)
 		crest:SetSize(SocialPlus_VIP_CREST_SIZE,SocialPlus_VIP_CREST_SIZE)
 		crest:ClearAllPoints()
@@ -4535,7 +4529,7 @@ function SocialPlus_ApplyOwnVIP()
 
 	-- The words where the title was, and the title itself hidden -- two sets
 	-- of letters in the same place is a mess, and the art already says it.
-	if title then
+	if wantWords and title then
 		words:SetTexture(SocialPlus_VIP_WORDS)
 		words:SetSize(SocialPlus_VIP_WORDS_W,SocialPlus_VIP_WORDS_H)
 		words:ClearAllPoints()
@@ -4546,6 +4540,13 @@ function SocialPlus_ApplyOwnVIP()
 		frame.SocialPlusTookTitle=true
 	else
 		words:Hide()
+		-- Put Blizzard's own title back, but only if we are the ones who
+		-- took it away. Showing a FontString nothing hid is harmless; it is
+		-- the bookkeeping that is worth not guessing at.
+		if title and frame.SocialPlusTookTitle then
+			title:Show()
+			frame.SocialPlusTookTitle=nil
+		end
 	end
 end
 
@@ -4567,7 +4568,8 @@ SlashCmdList["SOCIALPLUSVIP"] = function()
 	local tag=SocialPlus_OwnBattleTag()
 	Say("your tag: "..tostring(tag))
 	Say("VIP: "..tostring(SocialPlus_IsVIP(tag))
-		.."   mode on: "..tostring(SocialPlus_VIPEnabled()))
+		.."   crest on: "..tostring(SocialPlus_VIPCrestEnabled())
+		.."   title on: "..tostring(SocialPlus_VIPTitleEnabled()))
 
 	local _,portraitName=SocialPlus_VIPWidget("FriendsFramePortrait",
 		"FriendsFrameIcon","FriendsFramePortraitFrame")
@@ -4724,9 +4726,7 @@ end
 
 	SOCIALPLUS_DATA_PASS_COUNT=(SOCIALPLUS_DATA_PASS_COUNT or 0)+1
 
-	local numBNetTotal,numBNetOnline=FG_BNGetNumFriends()
-	numBNetTotal=numBNetTotal or 0
-	numBNetOnline=numBNetOnline or 0
+	local numBNetTotal=FG_BNGetNumFriends() or 0
 	local numWoWTotal=FG_GetNumFriends()
 	local numWoWOnline=FG_GetNumOnlineFriends()
 	local numWoWOffline=numWoWTotal-numWoWOnline
@@ -4897,7 +4897,7 @@ end
 				-- Normalize first word for search (ignores accents and symbols)
 				local normalized=SocialPlus_NormalizeText(firstWord(primaryName))
 				local classNormalized=SocialPlus_NormalizeText(SocialPlus_BuildClassSearchBlob(class))
-				local noteText=select(13,FG_BNGetFriendInfo(i))
+				local _,rawAccountName,_,_,_,_,_,_,_,_,_,_,noteText=FG_BNGetFriendInfo(i)
 				local noteNormalized=SocialPlus_NormalizeText(SocialPlus_BuildNoteSearchBlob(FRIENDS_BUTTON_TYPE_BNET,i,noteText))
 
 				-- accountName is the Real ID display name when Battle.net
@@ -4919,7 +4919,6 @@ end
 				-- reject the masked shape outright instead of trusting
 				-- either source; a masked name just means "no match this
 				-- refresh" rather than matching on garbage.
-				local rawAccountName=select(2,FG_BNGetFriendInfo(i))
 				local realNameNormalized=""
 				if rawAccountName and not SocialPlus_IsMaskedPlaceholder(rawAccountName) then
 					realNameNormalized=SocialPlus_NormalizeText(rawAccountName)
@@ -5555,10 +5554,11 @@ SocialPlus_ApplyGroupOrder()
                 if a.buttonType~=b.buttonType then
                     return a.buttonType==FRIENDS_BUTTON_TYPE_BNET
                 end
-                if a.sortKey and b.sortKey then
-                    local an,bn=SocialPlus_AsciiLower(a.sortKey),SocialPlus_AsciiLower(b.sortKey)
-                    if an~=bn then return an<bn end
-                end
+                -- A missing name sorts first rather than falling through to the id: a
+                -- comparator that skips a rule for some pairs is not an ordering, and
+                -- table.sort is entitled to throw on one.
+                local an,bn=SocialPlus_AsciiLower(a.sortKey or ""),SocialPlus_AsciiLower(b.sortKey or "")
+                if an~=bn then return an<bn end
                 return (a.id or 0)<(b.id or 0)
             end)
 
@@ -5581,10 +5581,11 @@ SocialPlus_ApplyGroupOrder()
                 local offlineRows=OfflineRowsByGroup[group] or EMPTY_ROWS
 
                 table.sort(offlineRows,function(a,b)
-                    if a.sortKey and b.sortKey then
-                        local an,bn=SocialPlus_AsciiLower(a.sortKey),SocialPlus_AsciiLower(b.sortKey)
-                        if an~=bn then return an<bn end
-                    end
+                    -- A missing name sorts first rather than falling through to the id: a
+                    -- comparator that skips a rule for some pairs is not an ordering, and
+                    -- table.sort is entitled to throw on one.
+                    local an,bn=SocialPlus_AsciiLower(a.sortKey or ""),SocialPlus_AsciiLower(b.sortKey or "")
+                    if an~=bn then return an<bn end
                     if a.buttonType~=b.buttonType then
                         return a.buttonType==FRIENDS_BUTTON_TYPE_BNET
                     end
@@ -5748,6 +5749,32 @@ local function SocialPlus_Rename(self,old)
 		if muted[old] then
 			muted[old]=nil
 			muted[input]=true
+		end
+	end
+
+	-- And its place in the custom order, and whether it was collapsed.
+	--
+	-- Neither carried over before. The renamed group fell to the end of the
+	-- list -- ApplyGroupOrder appends any name it has not seen -- and the old
+	-- name stayed behind in the saved order, where an exact search for it
+	-- focused a group that no longer existed and showed nothing but headers.
+	-- Renaming onto a name that already exists is a merge, and the group that
+	-- was already there keeps its place and its state.
+	if SocialPlus_SavedVars then
+		local order=SocialPlus_SavedVars.groupOrder
+		local at,existing
+		for i,name in ipairs(order or {}) do
+			if name==old and not at then at=i end
+			if name==input and not existing then existing=i end
+		end
+		if at then
+			if existing then table.remove(order,at) else order[at]=input end
+		end
+
+		local collapsed=SocialPlus_SavedVars.collapsed
+		if collapsed and collapsed[old] then
+			collapsed[old]=nil
+			if not existing then collapsed[input]=true end
 		end
 	end
 
@@ -6055,10 +6082,11 @@ StaticPopupDialogs["SocialPlus_COPY_NAME"]={
 
 local function InviteOrGroup(clickedgroup,invite)
 	-- Extra safety: never run bulk ops on the implicit [no group] bucket
-	-- or the synthetic In-game Friends bucket (its menu never opens, but
-	-- guard anyway -- deleting it would try to rewrite notes that hold no
-	-- such tag)
-	if not clickedgroup or clickedgroup=="" or clickedgroup==SP_INGAME_GROUP then
+	-- or the synthetic In-game Friends and Recently Added buckets (their
+	-- menus never open, but guard anyway -- deleting one would try to
+	-- rewrite notes that hold no such tag)
+	if not clickedgroup or clickedgroup=="" or clickedgroup==SP_INGAME_GROUP
+		or clickedgroup==SocialPlus_RECENT_GROUP then
 		return
 	end
 
@@ -6095,11 +6123,11 @@ local function InviteOrGroup(clickedgroup,invite)
 
 		if isMember then
 			if invite then
-				local allowed=SocialPlus_GetInviteStatus("BNET",i)
-				if allowed and presenceID and isOnline then
-					if BNInviteFriend then
-						pcall(BNInviteFriend,presenceID)
-					end
+				-- The same path as the row's own invite button, which picks an
+				-- eligible account for a friend with several licences online
+				-- rather than whichever Battle.net names first.
+				if isOnline and SocialPlus_GetInviteStatus("BNET",i) then
+					SocialPlus_PerformInvite("BNET",i)
 				end
 			elseif not isFavorites then
 				groups[clickedgroup]=nil
@@ -6129,11 +6157,8 @@ local function InviteOrGroup(clickedgroup,invite)
 
 		if isMember then
 			if invite and connected and name and name~="" then
-				local allowed=SocialPlus_GetInviteStatus("WOW",i)
-				if allowed then
-					if C_PartyInfo and C_PartyInfo.InviteUnit then
-					C_PartyInfo.InviteUnit(name)
-				end
+				if SocialPlus_GetInviteStatus("WOW",i) then
+					SocialPlus_PerformInvite("WOW",i)
 				end
 			elseif not invite and not isFavorites then
 				groups[clickedgroup]=nil
@@ -6505,23 +6530,24 @@ SocialPlus_ClickCatcher:SetScript("OnMouseDown",function(self,button)
     self:Hide()
 end)
 
--- Hover-forward target is kept as a field on the frame itself, and the
--- setter below is nested inside this one OnUpdate closure (not a
--- top-level local) -- this file is already right at Lua's 200-local
--- per-chunk ceiling for its main chunk.
-SocialPlus_ClickCatcher:SetScript("OnUpdate",function(self)
-    local function SetHover(target)
-        if target==self.hoverButton then return end
-        if self.hoverButton then
-            local onLeave=self.hoverButton:GetScript("OnLeave")
-            if onLeave then onLeave(self.hoverButton) end
-        end
-        if target then
-            local onEnter=target:GetScript("OnEnter")
-            if onEnter then onEnter(target) end
-        end
-        self.hoverButton=target
+-- Hover-forward target is kept as a field on the frame itself, and so is
+-- the setter: this file is already right at Lua's 200-local per-chunk
+-- ceiling for its main chunk, and a closure built inside OnUpdate was a
+-- new function every frame the catcher was up.
+function SocialPlus_ClickCatcher.SetHover(self,target)
+    if target==self.hoverButton then return end
+    if self.hoverButton then
+        local onLeave=self.hoverButton:GetScript("OnLeave")
+        if onLeave then onLeave(self.hoverButton) end
     end
+    if target then
+        local onEnter=target:GetScript("OnEnter")
+        if onEnter then onEnter(target) end
+    end
+    self.hoverButton=target
+end
+
+SocialPlus_ClickCatcher:SetScript("OnUpdate",function(self)
 
     local dropOpen=SocialPlus_IsAnyDropDownOpen()
     local searchFocused=SocialPlus_Searchbox and SocialPlus_Searchbox:HasFocus()
@@ -6532,7 +6558,7 @@ SocialPlus_ClickCatcher:SetScript("OnUpdate",function(self)
     -- re-showed for exactly that purpose (confirmed live).
     local searchActive=SocialPlus_SearchTerm~=nil
     if not dropOpen and not searchFocused and not searchActive then
-        SetHover(nil)
+        self:SetHover(nil)
         self:Hide()
         return
     end
@@ -6544,7 +6570,7 @@ SocialPlus_ClickCatcher:SetScript("OnUpdate",function(self)
     -- the open menu, on request. Only forward hover for a plain search
     -- interaction, never while a menu is up.
     if dropOpen then
-        SetHover(nil)
+        self:SetHover(nil)
         return
     end
 
@@ -6571,7 +6597,7 @@ SocialPlus_ClickCatcher:SetScript("OnUpdate",function(self)
             end
         end
     end
-    SetHover(hoverTarget)
+    self:SetHover(hoverTarget)
 end)
 
 -- Escape should close an open menu first, not the whole Friends panel --
@@ -6919,7 +6945,10 @@ end
 -- Global: the friend row dropdown lives in its own file now.
 function SocialPlus_ApplyMenuMinWidth(level)
     level=level or 1
-    local listFrame=_G["DropDownList"..level]
+    -- The library's list, not Blizzard's: every menu here is a LibUIDropDownMenu
+    -- menu, and its frames are named L_DropDownList<n>. The unprefixed name
+    -- found Blizzard's hidden list instead, so the width was never applied.
+    local listFrame=_G["L_DropDownList"..level]
     if not listFrame then return end
 
     -- Longest top-level label (EN/FR safe via L)
@@ -7023,10 +7052,10 @@ local function SocialPlus_OnClick(self,button)
 		local groupKey=self.SocialPlusGroupName or ""
 
 		if button=="RightButton" then
-			-- Friend Requests and In-game Friends are pseudo-groups: none
-			-- of the group menu's actions apply, so no context menu (their
+			-- Friend Requests, In-game Friends and Recently Added are pseudo-groups:
+			-- none of the group menu's actions apply, so no context menu (their
 			-- cogwheels are likewise hidden at render time).
-			if groupKey==FriendRequestString or groupKey==SP_INGAME_GROUP then
+			if groupKey==FriendRequestString or groupKey==SP_INGAME_GROUP or groupKey==SocialPlus_RECENT_GROUP then
 				return
 			end
 			-- Still allow the header context menu everywhere else. No menu
@@ -7973,25 +8002,11 @@ function SocialPlus_GetDropdownFriend()
 		end
 	end
 
-	local dropdown=FriendsFrameDropDown or L_UIDROPDOWNMENU_INIT_MENU or UIDROPDOWNMENU_INIT_MENU
-	if not dropdown then return nil end
-
-	if dropdown.bnetIDAccount then
-		return "BNET",dropdown.bnetIDAccount
-	end
-
-	if dropdown.id then
-		return "WOW",dropdown.id
-	end
-
-	if dropdown.name then
-		for i=1,FG_GetNumFriends() do
-			local info=FG_GetFriendInfoByIndex(i)
-			if info and info.name==dropdown.name then
-				return "WOW",i
-			end
-		end
-	end
+	-- Nothing else to fall back on. Every menu here goes through
+	-- SocialPlus_SetCurrentFriend, so a friend that can no longer be resolved
+	-- has been removed while the menu was up, and answering with whatever
+	-- Blizzard's own dropdown last held pointed some actions at the wrong row.
+	return nil
 end
 
 function SocialPlus_GetDropdownFriendNote()
@@ -8113,11 +8128,6 @@ function SocialPlus_BulkNoteFor(presenceID)
 	local item=SocialPlus_BulkPendingByID[presenceID]
 	if item and not item.done then return item.note end
 	return nil
-end
-
--- Kept only so the event handler has something harmless to call; the burst now
--- ends on the notes reading back, not on confirmations arriving.
-function SocialPlus_BulkNotesSaw()
 end
 
 function SocialPlus_BeginBulkNotes(pending)
@@ -8532,10 +8542,8 @@ function SocialPlus_RemoveCurrentFriend()
 	pcall(SocialPlus_Update)
 end
 
--- [[ Group submenu builder for "Add"/"Remove from group" ]]
-function SocialPlus_BuildGroupSubmenu(mode,level)
-	local dropdown=FriendsFrameDropDown or L_UIDROPDOWNMENU_INIT_MENU or UIDROPDOWNMENU_INIT_MENU
-	if not dropdown then return end
+-- [[ Group submenu builder for "Add to group" ]]
+function SocialPlus_BuildGroupSubmenu(level)
 
 	local _,_,note=SocialPlus_GetDropdownFriendNote()
 	local groups={}
@@ -8543,32 +8551,24 @@ function SocialPlus_BuildGroupSubmenu(mode,level)
 
 	local choices={}
 
-	if mode=="ADD" then
-		for _,group in ipairs(GroupSorted or {}) do
-			-- Favorites and In-game Friends aren't real groups a friend can
-			-- be tagged into via their note -- both are display-time
-			-- buckets (favorite flag / ungrouped native friends).
-			if group~="" and group~=SP_FAVORITES_GROUP and group~=SP_INGAME_GROUP
-				and group~=FriendRequestString and not groups[group] then
-				table.insert(choices,group)
-			end
+	for _,group in ipairs(GroupSorted or {}) do
+		-- The pinned buckets -- Favorites, In-game Friends, Recently Added,
+		-- requests -- aren't groups a friend can be tagged into via their
+		-- note. Recently Added was missing from the hand-written list that
+		-- stood here, so with anybody in it the menu offered it as a
+		-- destination and wrote its internal name into the note.
+		if not SocialPlus_IsPinnedGroup(group) and not groups[group] then
+			table.insert(choices,group)
 		end
-		-- Already in the same order the groups actually appear in the
-		-- list (GroupSorted) -- don't alphabetize on top of that (confirmed
-		-- live: "Move to another Group" should read rdru -> Godcomp -> RBG,
-		-- matching the visible order, not A-Z).
-	else
-		for group,present in pairs(groups) do
-			if present and group~="" then
-				table.insert(choices,group)
-			end
-		end
-		table.sort(choices)
 	end
+	-- Already in the same order the groups actually appear in the
+	-- list (GroupSorted) -- don't alphabetize on top of that (confirmed
+	-- live: "Move to another Group" should read rdru -> Godcomp -> RBG,
+	-- matching the visible order, not A-Z).
 
 	local info=LibDD:UIDropDownMenu_CreateInfo()
 		if #choices==0 then
-		info.text=(mode=="ADD") and L.GROUP_NO_GROUPS or L.GROUP_NO_GROUPS_REMOVE
+		info.text=L.GROUP_NO_GROUPS
 		info.notCheckable=true
 		info.disabled=true
 		LibDD:UIDropDownMenu_AddButton(info,level)
@@ -8582,7 +8582,7 @@ function SocialPlus_BuildGroupSubmenu(mode,level)
 		info=LibDD:UIDropDownMenu_CreateInfo()
 		info.text="["..hex..group.."|r]"
 		info.notCheckable=true
-		info.func=function() SocialPlus_ModifyGroupFromDropdown(group,mode) end
+		info.func=function() SocialPlus_ModifyGroupFromDropdown(group,"ADD") end
 		LibDD:UIDropDownMenu_AddButton(info,level)
 	end
 end
@@ -8747,17 +8747,6 @@ local SocialPlus_NotifyDebounceTimer={}
 -- reading a nil global and its "or 0" turned the whole warmup check into a
 -- no-op that nothing reported.
 
--- Find the friend-LIST INDEX for a given presence ID (bnetIDAccount).
-local function SocialPlus_FindFriendIndexByPresenceID(bnetIDAccount)
-	for i=1,FG_BNGetNumFriends() do
-		local presenceID=FG_BNGetFriendInfo(i)
-		if presenceID==bnetIDAccount then
-			return i
-		end
-	end
-	return nil
-end
-
 -- Inline faction icon (Horde/Alliance) for a friend at the given friend-LIST
 -- INDEX, or "" if unknown. Uses the same icon textures and faction-lookup
 -- path (C_BattleNet.GetFriendAccountInfo) already used by FG_InitFactionIcon
@@ -8801,20 +8790,6 @@ SocialPlus_RegionFlagArt={
 	[1]={ texture="Interface\\AddOns\\SocialPlus\\Media\\region-us", texels={ 23,105,10,54 } },
 	[3]={ texture="Interface\\AddOns\\SocialPlus\\Media\\region-eu", texels={ 23,105,4,59 } },
 }
-
-function SocialPlus_FormatRegionFlag(regionID,height)
-	if not (SocialPlus_SavedVars and SocialPlus_SavedVars.region_flag) then return nil end
-
-	local art=SocialPlus_RegionFlagArt
-	local flag=regionID and art and art[regionID]
-	if not flag then return nil end
-
-	height=height or 12
-
-	return ("|T%s:%d:%d:0:0:128:64:%d:%d:%d:%d|t"):format(
-		flag.texture,height,math.floor(height*art.aspect+0.5),
-		flag.texels[1],flag.texels[2],flag.texels[3],flag.texels[4])
-end
 
 -- What the row draws beside a name: the flag, and the spec icon.
 --
@@ -9068,7 +9043,7 @@ end
 -- source for offline/left-WoW messages, whose real game-account data
 -- Blizzard has often already cleared by the time we notice.
 local function SocialPlus_CaptureFriendState(bnetIDAccount)
-	local index=SocialPlus_FindFriendIndexByPresenceID(bnetIDAccount)
+	local index=SocialPlus_FindBNetIndexByPresenceID(bnetIDAccount)
 	if not index then
 		return {online=false}
 	end
@@ -9289,9 +9264,14 @@ function SocialPlus_ApplyToastCVars()
 		SetCVar("showToastOnline","0")
 		SetCVar("showToastOffline","0")
 	else
-		SetCVar("showToastOnline",(saved and saved.online) or "1")
-		SetCVar("showToastOffline",(saved and saved.offline) or "1")
-		SocialPlus_SavedVars.toastCVars=nil
+		-- Only what was captured. With nothing captured -- every login after the
+		-- notifications were switched off -- there is nothing of theirs to put
+		-- back, and writing "1" here switched on toasts they had turned off.
+		if saved then
+			SetCVar("showToastOnline",saved.online or "1")
+			SetCVar("showToastOffline",saved.offline or "1")
+			SocialPlus_SavedVars.toastCVars=nil
+		end
 	end
 end
 
@@ -9307,6 +9287,7 @@ end
 -- way -- see SocialPlus_ScanWarmupUntil above.
 
 ns.GetFriendInfoById = GetFriendInfoById
+ns.SP_INGAME_GROUP = SP_INGAME_GROUP
 ns.SCROLL_BASE = SCROLL_BASE
 ns.NoteAndGroups = NoteAndGroups
 ns.RemoveGroup = RemoveGroup
