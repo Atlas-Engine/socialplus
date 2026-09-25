@@ -879,13 +879,12 @@ end
 
 -- [[ Drag insertion-line indicator ]]
 -- One reusable line, repositioned on hover changes (never on OnUpdate).
--- Parented to UIParent (always exists) rather than FriendsScrollFrame --
--- confirmed live that this can be first created from inside a nested
--- Blizzard call chain (FriendsFrameTooltip_Show -> our hooked OnEnter,
--- itself triggered from FriendsList_Update during drag-start) where
--- FriendsScrollFrame was unexpectedly nil. SetPoint below anchors it to
--- specific row buttons regardless of its own parent, so this doesn't
--- affect positioning.
+-- Parented to UIParent (always exists) rather than FriendsScrollFrame.
+-- The nil FriendsScrollFrame once seen here live, and blamed on a nested
+-- Blizzard call chain, was this file reading the name above its own local
+-- declaration -- an unset global -- which moving the declaration to the
+-- top of the file fixed. The parent stays as it is: SetPoint below anchors
+-- the line to specific row buttons regardless of its own parent.
 local SocialPlus_DragInsertLine=nil
 local function SocialPlus_GetDragInsertLine()
 	if not SocialPlus_DragInsertLine then
@@ -937,7 +936,7 @@ local function SocialPlus_UpdateDragInsertionLine(groupKey)
 	local headerButton,lastMemberButton
 	if FriendsScrollFrame and FriendsScrollFrame.buttons then
 		for _,btn in ipairs(FriendsScrollFrame.buttons) do
-			if btn:IsShown() and btn.index then
+			if btn:IsVisible() and btn.index then
 				if btn.buttonType==FRIENDS_BUTTON_TYPE_DIVIDER and btn.SocialPlusGroupName==groupKey then
 					headerButton=btn
 				elseif btn.buttonType~=FRIENDS_BUTTON_TYPE_DIVIDER then
@@ -6080,7 +6079,8 @@ local function InviteOrGroup(clickedgroup,invite)
 	-- or the synthetic In-game Friends bucket (its menu never opens, but
 	-- guard anyway -- deleting it would try to rewrite notes that hold no
 	-- such tag)
-	if not clickedgroup or clickedgroup=="" or clickedgroup==SP_INGAME_GROUP then
+	if not clickedgroup or clickedgroup=="" or clickedgroup==SP_INGAME_GROUP
+		or clickedgroup==SocialPlus_RECENT_GROUP then
 		return
 	end
 
@@ -8546,11 +8546,12 @@ function SocialPlus_BuildGroupSubmenu(level)
 	local choices={}
 
 	for _,group in ipairs(GroupSorted or {}) do
-		-- Favorites and In-game Friends aren't real groups a friend can
-		-- be tagged into via their note -- both are display-time
-		-- buckets (favorite flag / ungrouped native friends).
-		if group~="" and group~=SP_FAVORITES_GROUP and group~=SP_INGAME_GROUP
-			and group~=FriendRequestString and not groups[group] then
+		-- The pinned buckets -- Favorites, In-game Friends, Recently Added,
+		-- requests -- aren't groups a friend can be tagged into via their
+		-- note. Recently Added was missing from the hand-written list that
+		-- stood here, so with anybody in it the menu offered it as a
+		-- destination and wrote its internal name into the note.
+		if not SocialPlus_IsPinnedGroup(group) and not groups[group] then
 			table.insert(choices,group)
 		end
 	end
