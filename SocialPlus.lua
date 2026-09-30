@@ -1189,7 +1189,9 @@ local function SocialPlus_OnGroupDragStart(self)
 			entry.name:Show()
 
 			if s.icon then
-				entry.gameIcon:SetTexture(s.icon)
+				-- Through the same helper as the rows: a plain SetTexture drew
+				-- the WoW logo's whole shop sheet here, uncropped.
+				SocialPlus_SetIconTexture(entry.gameIcon,s.icon)
 				entry.gameIcon:SetAlpha(s.iconAlpha or 1)
 				entry.gameIcon:Show()
 			else
@@ -1749,6 +1751,34 @@ SOCIALPLUS_TEXCOORD_BY_ICONPATH={
 	["Interface\\Shop\\CatalogShopProductLogos2x"]={0.370,0.565,0.114,0.514},
 }
 
+-- An icon's texture, and its crop where it has one.
+--
+-- The WoW logo is drawn by the game itself, the way Blizzard's own friends
+-- list does it on 5.5.4: C_Texture.SetTitleIconTexture with the client's
+-- name. It was a crop of the shop's logo sheet at measured texcoords, and a
+-- patch that laid that sheet out anew left the crop on the wrong art -- a
+-- faint outline, off the row's centre (2026-09-30). A sheet made for the shop
+-- can be rearranged by any patch; the title icon is the game's own. The crop
+-- stays only for a client without the call. Every other client keeps its
+-- chat icon file, which is the whole file and needs no crop.
+function SocialPlus_SetIconTexture(icon,iconPath)
+	if iconPath==SOCIALPLUS_ICON_IDS_CUSTOM.WoW and C_Texture and C_Texture.SetTitleIconTexture
+		and Enum and Enum.TitleIconVersion and Enum.TitleIconVersion.Medium then
+		-- The coords reset first: the row is pooled, and whatever crop the
+		-- last occupant's icon had would otherwise apply to this one.
+		icon:SetTexCoord(0,1,0,1)
+		C_Texture.SetTitleIconTexture(icon,BNET_CLIENT_WOW or "WoW",Enum.TitleIconVersion.Medium)
+		return
+	end
+	local tc=SOCIALPLUS_TEXCOORD_BY_ICONPATH[iconPath]
+	if tc then
+		icon:SetTexCoord(tc[1],tc[2],tc[3],tc[4])
+	else
+		icon:SetTexCoord(0,1,0,1)
+	end
+	icon:SetTexture(iconPath)
+end
+
 -- Apply a game/faction icon to a button's gameIcon texture
 -- If iconPath is nil or empty, hides the icon
 local function FG_ApplyGameIcon(button,iconPath,size,point,relPoint,offX,offY)
@@ -1805,15 +1835,7 @@ local function FG_ApplyGameIcon(button,iconPath,size,point,relPoint,offX,offY)
 
 
 
-	-- Special texcoords for atlas-based icons
-	local tc=SOCIALPLUS_TEXCOORD_BY_ICONPATH[iconPath]
-	if tc then
-		icon:SetTexCoord(tc[1],tc[2],tc[3],tc[4])
-	else
-		icon:SetTexCoord(0,1,0,1)
-	end
-
-	icon:SetTexture(iconPath)
+	SocialPlus_SetIconTexture(icon,iconPath)
 	icon:Show()
 end
 
