@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.18b
+
+- Fixed the WoW logo beside Retail friends (and in the icon you drag) showing as a faint, off-centre outline after a game patch; it is now drawn by the game itself, the way Blizzard's friends list draws it.
+
 ## 1.18a
 
 - New: Snipe mode. A Display setting that puts In-game Friends directly under Favorites, above every group you made, so the characters you have added to watch are the first thing you see. A character friend needs nobody's acceptance, which is what makes that section the place to keep an eye on the names you are hoping to meet in the queue.
