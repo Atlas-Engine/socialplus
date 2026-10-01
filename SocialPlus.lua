@@ -1863,8 +1863,11 @@ local SocialPlus_IconStyles={
 		offX=-21,
 		offY=0,
 	},
+	-- 34 to the game icons' 32: the game draws those to the edge of their
+	-- box (SetTitleIconTexture), and the crest's art sits inside a margin of
+	-- its own, so at 30 it read a size smaller than the logo beside it.
 	crest={
-		size=30,
+		size=34,
 		point="RIGHT",
 		relPoint="RIGHT",
 		offX=-22,
@@ -3089,7 +3092,9 @@ local function SocialPlus_UpdateFriendButton(button)
 			local wowAllowed,wowReason,wowRestriction=SocialPlus_GetInviteStatus("WOW",FriendButtons[index].id)
 
 			if FACTION_ICON_PATH then
-				FG_ApplyGameIcon(button,FACTION_ICON_PATH,30,"RIGHT","RIGHT",-22,0)
+				-- The crest style's size, so a character friend's crest matches a
+				-- Battle.net friend's.
+				FG_ApplyGameIcon(button,FACTION_ICON_PATH,SocialPlus_IconStyles.crest.size,"RIGHT","RIGHT",-22,0)
 				-- Same already-grouped exclusion as the BNet row below.
 				button.SocialPlusIconAlpha=(wowAllowed or wowRestriction==INVITE_RESTRICTION_ALREADY_GROUPED) and 1 or 0.4
 			elseif button.gameIcon then
@@ -3768,7 +3773,8 @@ local function SocialPlus_UpdateFriendButton(button)
 				button.SocialPlusRegionFlag:SetTexCoord(
 					rowFlag.texels[1]/128,rowFlag.texels[2]/128,
 					rowFlag.texels[3]/64,rowFlag.texels[4]/64)
-				button.SocialPlusRegionFlag:SetSize(math.floor(13*art.aspect+0.5),13)
+				-- 15 tall, up from 13, beside the larger game icons and crests.
+				button.SocialPlusRegionFlag:SetSize(math.floor(15*art.aspect+0.5),15)
 				button.SocialPlusRegionFlag:Show()
 			end
 
