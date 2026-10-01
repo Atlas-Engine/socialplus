@@ -1691,9 +1691,15 @@ SOCIALPLUS_GAME_ICONS=SOCIALPLUS_GAME_ICONS or {}
 SOCIALPLUS_DEFAULT_BNET_ICON=(SOCIALPLUS_ICON_IDS and (SOCIALPLUS_ICON_IDS.BNET or SOCIALPLUS_ICON_IDS.APP)) or -6
 SOCIALPLUS_UNKNOWN_CLIENTS=SOCIALPLUS_UNKNOWN_CLIENTS or {}
 
+-- And the other way: each icon's Battle.net client, for the game to draw it
+-- (SocialPlus_SetIconTexture). The first client registered for an icon keeps
+-- it, so the app's logo is the App's however many clients share it.
+SOCIALPLUS_ICON_CLIENT=SOCIALPLUS_ICON_CLIENT or {}
+
 local function SocialPlus_RegisterIcon(clientConst,fileID)
 	if clientConst and fileID then
 		SOCIALPLUS_GAME_ICONS[clientConst]=fileID
+		if SOCIALPLUS_ICON_CLIENT[fileID]==nil then SOCIALPLUS_ICON_CLIENT[fileID]=clientConst end
 	end
 end
 
@@ -1708,7 +1714,10 @@ function SocialPlus_RebuildGameIcons()
 	SOCIALPLUS_ICON_IDS=SOCIALPLUS_ICON_IDS_CUSTOM
 	SOCIALPLUS_DEFAULT_BNET_ICON=(SOCIALPLUS_ICON_IDS and (SOCIALPLUS_ICON_IDS.BNET or SOCIALPLUS_ICON_IDS.APP)) or -6
 
-	if wipe then wipe(SOCIALPLUS_GAME_ICONS) end
+	if wipe then wipe(SOCIALPLUS_GAME_ICONS) wipe(SOCIALPLUS_ICON_CLIENT) end
+	-- The Battle.net logo is the App's, registered ahead of CLNT, which uses
+	-- the same file and comes first below.
+	SOCIALPLUS_ICON_CLIENT[SOCIALPLUS_ICON_IDS_CUSTOM.APP]=BNET_CLIENT_APP or "App"
 
 	SocialPlus_RegisterIcon(BNET_CLIENT_WOW        or "WoW" ,SocialPlus_PickIcon("WoW" ))
 	SocialPlus_RegisterIcon(BNET_CLIENT_SC2        or "S2"  ,SocialPlus_PickIcon("SC2" ))
@@ -1753,21 +1762,24 @@ SOCIALPLUS_TEXCOORD_BY_ICONPATH={
 
 -- An icon's texture, and its crop where it has one.
 --
--- The WoW logo is drawn by the game itself, the way Blizzard's own friends
--- list does it on 5.5.4: C_Texture.SetTitleIconTexture with the client's
--- name. It was a crop of the shop's logo sheet at measured texcoords, and a
--- patch that laid that sheet out anew left the crop on the wrong art -- a
--- faint outline, off the row's centre (2026-09-30). A sheet made for the shop
--- can be rearranged by any patch; the title icon is the game's own. The crop
--- stays only for a client without the call. Every other client keeps its
--- chat icon file, which is the whole file and needs no crop.
+-- Every Battle.net client's icon -- WoW, the other games, the app -- is drawn
+-- by the game itself, the way Blizzard's own friends list does it on 5.5.4:
+-- C_Texture.SetTitleIconTexture with the client's name (SOCIALPLUS_ICON_CLIENT).
+-- The WoW logo was a crop of the shop's logo sheet at measured texcoords, and
+-- a patch that laid that sheet out anew left the crop on the wrong art -- a
+-- faint outline, off the row's centre (2026-09-30); the others were chat icon
+-- files, which a patch can as well rename or retire. The game's own title
+-- icons are what its friends list draws, so they are kept current with it.
+-- The files and the crop stay only for a client without the call. Faction
+-- crests are no client's icon, so they keep their own textures.
 function SocialPlus_SetIconTexture(icon,iconPath)
-	if iconPath==SOCIALPLUS_ICON_IDS_CUSTOM.WoW and C_Texture and C_Texture.SetTitleIconTexture
+	local client=iconPath and SOCIALPLUS_ICON_CLIENT[iconPath]
+	if client and C_Texture and C_Texture.SetTitleIconTexture
 		and Enum and Enum.TitleIconVersion and Enum.TitleIconVersion.Medium then
 		-- The coords reset first: the row is pooled, and whatever crop the
 		-- last occupant's icon had would otherwise apply to this one.
 		icon:SetTexCoord(0,1,0,1)
-		C_Texture.SetTitleIconTexture(icon,BNET_CLIENT_WOW or "WoW",Enum.TitleIconVersion.Medium)
+		C_Texture.SetTitleIconTexture(icon,client,Enum.TitleIconVersion.Medium)
 		return
 	end
 	local tc=SOCIALPLUS_TEXCOORD_BY_ICONPATH[iconPath]
