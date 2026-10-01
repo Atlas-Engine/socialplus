@@ -1866,11 +1866,14 @@ local SocialPlus_IconStyles={
 	-- 34 to the game icons' 32: the game draws those to the edge of their
 	-- box (SetTitleIconTexture), and the crest's art sits inside a margin of
 	-- its own, so at 30 it read a size smaller than the logo beside it.
+	-- offX keeps its centre on the game icon's: 21 + 32/2 = 20 + 34/2 = 37
+	-- from the row's right edge. Grown from 30 at the old -22, the box grew
+	-- leftwards and the crest sat 2 px left of the logos under it.
 	crest={
 		size=34,
 		point="RIGHT",
 		relPoint="RIGHT",
-		offX=-22,
+		offX=-20,
 		offY=0,
 	},
 }
@@ -3094,7 +3097,7 @@ local function SocialPlus_UpdateFriendButton(button)
 			if FACTION_ICON_PATH then
 				-- The crest style's size, so a character friend's crest matches a
 				-- Battle.net friend's.
-				FG_ApplyGameIcon(button,FACTION_ICON_PATH,SocialPlus_IconStyles.crest.size,"RIGHT","RIGHT",-22,0)
+				FG_ApplyGameIcon(button,FACTION_ICON_PATH,SocialPlus_IconStyles.crest.size,"RIGHT","RIGHT",SocialPlus_IconStyles.crest.offX,0)
 				-- Same already-grouped exclusion as the BNet row below.
 				button.SocialPlusIconAlpha=(wowAllowed or wowRestriction==INVITE_RESTRICTION_ALREADY_GROUPED) and 1 or 0.4
 			elseif button.gameIcon then
